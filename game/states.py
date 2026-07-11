@@ -325,6 +325,11 @@ class GameplayState:
         self.camera.x = self.player.x - SW//2
         self.camera.y = self.player.y - SH//2
 
+        # Paragon rolls (Stage B3) - upgrades some already-spawned enemies
+        # in place; Level itself stays unaware Paragon exists at all.
+        from game.affixes import apply_paragon_rolls
+        apply_paragon_rolls(self.level.enemies, self.player)
+
         # Boss, driven by the level's metadata (LEVEL_MAPS[level_num]["boss"])
         self.boss = None
         self.hearts = []
@@ -458,39 +463,27 @@ class GameplayState:
             self._update_heart_spawns(dt)
             self._check_heart_pickups()
 
+        boss_was_alive = self.boss.alive if self.boss else False
+
         if self.boss:
             if self.player.attacking:
                 atk_rect = self.player.get_attack_rect()
                 hit_boss = atk_rect.colliderect(self.boss.rect)
-                boss_was_alive = self.boss.alive
                 self.boss.take_damage(self.player.attack_damage if hit_boss else 0)
                 if hit_boss:
                     self.camera.shake(5, 0.12)
                     self.camera.zoom_pulse(0.05, 0.15)
-                if boss_was_alive and not self.boss.alive:
-                    self.player.gain_xp(self.boss.xp_reward)
-                    # Instant credit, not a walk-over pickup like regular
-                    # enemies - the level ends immediately (victory screen),
-                    # so there's no gameplay window to walk over a dropped
-                    # coin. Particle burst instead, for the visual payoff.
-                    self.player.gold += self.boss.gold_reward
-                    for _ in range(15):
-                        self.level_up_particles.append(
-                            Particle(self.boss.x + self.boss.width/2,
-                                     self.boss.y + self.boss.height/2, ACCENT_GOLD)
-                        )
-                    boss_key = self.level.data.get("boss")
-                    self.player.boss_kills[boss_key] = self.player.boss_kills.get(boss_key, 0) + 1
             self.boss.update(dt, self.player, self.level.walls)
-            if not self.boss.alive:
-                self.next_state = self.level.data["victory"]
         else:
             self.level.update(dt, self.player, self.audio)
             if self.level.check_exit(self.player):
                 self.next_state = f"next:{self.level.data['next']}"
 
         # Fireball projectiles - checked against whichever targets this
-        # level actually has (regular enemies, a boss, or none).
+        # level actually has (regular enemies, a boss, or none). Handled
+        # after the melee/boss branch above so a boss (or enemy) killed by
+        # Fireball is credited exactly the same as one killed by melee -
+        # this used to only grant xp/gold on the melee path.
         cast_targets = list(self.level.enemies) + ([self.boss] if self.boss else [])
         for proj in self.player_projectiles:
             proj.update(dt, self.level.walls)
@@ -500,8 +493,27 @@ class GameplayState:
                 if getattr(target, "alive", True) and proj.rect.colliderect(target.rect):
                     target.take_damage(proj.damage)
                     proj.alive = False
+                    if not target.alive and hasattr(target, "etype"):
+                        self.level.credit_kill(self.player, target)
                     break
         self.player_projectiles = [p for p in self.player_projectiles if p.alive]
+
+        if self.boss and boss_was_alive and not self.boss.alive:
+            self.player.gain_xp(self.boss.xp_reward)
+            # Instant credit, not a walk-over pickup like regular enemies -
+            # the level ends immediately (victory screen), so there's no
+            # gameplay window to walk over a dropped coin. Particle burst
+            # instead, for the visual payoff.
+            self.player.gold += self.boss.gold_reward
+            for _ in range(15):
+                self.level_up_particles.append(
+                    Particle(self.boss.x + self.boss.width/2,
+                             self.boss.y + self.boss.height/2, ACCENT_GOLD)
+                )
+            boss_key = self.level.data.get("boss")
+            self.player.boss_kills[boss_key] = self.player.boss_kills.get(boss_key, 0) + 1
+        if self.boss and not self.boss.alive:
+            self.next_state = self.level.data["victory"]
 
         # Screen shake feedback when the player takes damage (from boss or
         # regular enemies alike - both paths run above, so a simple hp diff

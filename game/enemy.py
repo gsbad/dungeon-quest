@@ -5,6 +5,7 @@ from game.assets import create_enemy_sprite, create_projectile_sprite, create_it
 from game.player import TILE
 from game.stats import StatBlock, ENEMY_ARCHETYPES, BASE_XP, GOLD_DROPS, scale_archetype
 from game.status_effects import StatusEffectCarrier
+from game.affixes import AFFIXES
 
 class EnemyProjectile:
     def __init__(self, x, y, vx, vy, damage=1, color=(160,100,255),
@@ -207,6 +208,10 @@ class Enemy:
         self.attack_cooldown = 0
         self.attack_cd_max = flavor["atk_cd"]
         self.color = flavor["color"]
+        # Set by game/affixes.py's make_paragon() - a rare upgraded monster
+        # with x4 xp/gold and one random affix (Stage B3).
+        self.is_paragon = False
+        self.affix = None
 
         self.hit_flash = 0
         self.sprite = create_enemy_sprite(etype)
@@ -258,6 +263,8 @@ class Enemy:
                 player.take_damage(proj.damage)
                 if proj.status_effect and random.random() < proj.status_chance:
                     player.status.apply(proj.status_effect)
+                if self.affix == "vampiric":
+                    self.hp = min(self.max_hp, self.hp + proj.damage * 0.2)
                 proj.alive = False
         self.projectiles = [p for p in self.projectiles if p.alive]
 
@@ -309,6 +316,8 @@ class Enemy:
                 self.attack_cooldown = self.attack_cd_max
             elif self.attack_cooldown <= 0 and dist < self.attack_range:
                 player.take_damage(self.damage)
+                if self.affix == "vampiric":
+                    self.hp = min(self.max_hp, self.hp + self.damage * 0.2)
                 self.attack_cooldown = self.attack_cd_max
         else:
             # Patrol
@@ -380,6 +389,20 @@ class Enemy:
 
         sx = int(self.x - cam_x)
         sy = int(self.y - cam_y)
+
+        if self.is_paragon:
+            import time
+            from game.theme import font, GOLD
+            t = time.time()
+            radius = int(26 + 6 * math.sin(t * 4))
+            aura = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(aura, (255, 215, 0, 90), (radius, radius), radius)
+            surface.blit(aura, (sx + self.width // 2 - radius, sy + self.height // 2 - radius))
+            f_name = font(13, bold=True)
+            label = f"PARAGON - {AFFIXES[self.affix]['name']}"
+            txt = f_name.render(label, True, GOLD)
+            surface.blit(txt, (sx + self.width // 2 - txt.get_width() // 2, sy - 26))
+
         surface.blit(sprite, (sx - 8, sy - 10))
 
         # HP bar

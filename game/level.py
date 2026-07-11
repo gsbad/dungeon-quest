@@ -1,8 +1,10 @@
 import pygame
 import random
+import math
 from game.assets import create_tile
 from game.enemy import Enemy, BASE_XP, GOLD_DROPS, GoldDrop
 from game.stats import xp_for_kill, gold_for_kill
+from game.affixes import PARAGON_REWARD_MULT
 from game.theme import font, ACCENT_GOLD
 
 TILE = 48
@@ -299,15 +301,30 @@ class Level:
         if player.attacking:
             atk_rect = player.get_attack_rect()
             for enemy in self.enemies:
-                if enemy.alive and atk_rect.colliderect(enemy.rect):
-                    enemy.take_damage(player.attack_damage)
-                    if not enemy.alive:
-                        player.gain_xp(xp_for_kill(BASE_XP[enemy.etype], enemy.ml, player.level))
-                        self.gold_drops.append(GoldDrop(
-                            enemy.x + enemy.width / 2, enemy.y + enemy.height / 2,
-                            gold_for_kill(GOLD_DROPS[enemy.etype], enemy.ml)
-                        ))
-                        player.kills[enemy.etype] = player.kills.get(enemy.etype, 0) + 1
+                if not (enemy.alive and atk_rect.colliderect(enemy.rect)):
+                    continue
+                if enemy.affix == "warded" and random.random() < 0.25:
+                    continue  # blocked - Paragon affix
+                enemy.take_damage(player.attack_damage)
+                if not enemy.alive:
+                    self.credit_kill(player, enemy)
+
+    def credit_kill(self, player, enemy):
+        """XP/gold/kill-tracking for a just-died regular enemy - shared by
+        the melee path above and game/states.py's Fireball collision, so a
+        kill is rewarded identically no matter which weapon landed it."""
+        reward_mult = PARAGON_REWARD_MULT if enemy.is_paragon else 1
+        player.gain_xp(xp_for_kill(BASE_XP[enemy.etype], enemy.ml, player.level) * reward_mult)
+        self.gold_drops.append(GoldDrop(
+            enemy.x + enemy.width / 2, enemy.y + enemy.height / 2,
+            gold_for_kill(GOLD_DROPS[enemy.etype], enemy.ml) * reward_mult
+        ))
+        player.kills[enemy.etype] = player.kills.get(enemy.etype, 0) + 1
+        if enemy.affix == "volatile":
+            ex, ey = enemy.x + enemy.width / 2, enemy.y + enemy.height / 2
+            px, py = player.x + player.width / 2, player.y + player.height / 2
+            if math.hypot(px - ex, py - ey) <= 70:
+                player.take_damage(15)
 
     def check_exit(self, player):
         if self.exit_open and self.exit_rect:

@@ -30,6 +30,9 @@ class Player:
         self.profession = determine_profession(self.stats)
         self.selected_spell = SPELL_ORDER[0]
         self.spell_cooldowns = {}
+        # Pity counter for game/affixes.py's Paragon roll - not persisted
+        # (it's a short-lived streak-breaker, not meaningful progress).
+        self.paragon_pity = 0
         # Set by refresh_profession() when spending/respec-ing points changes
         # the derived profession; GameplayState reads and clears it each
         # frame to trigger a toast (same pattern as pending_level_up below).

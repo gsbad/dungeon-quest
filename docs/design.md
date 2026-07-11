@@ -48,6 +48,26 @@ XP/ouro por kill escalam pela mesma fórmula (`scale_by_ml`, `+35%` por ML acima
 
 `tools/balance_sim.py` (roda sem pygame — `python tools/balance_sim.py`) imprime curva de XP, progressão de jogador/monstro, matriz de time-to-kill, XP/ouro por kill, e contribuição de DPS dos status effects. Usar antes de qualquer ajuste manual de número de combate.
 
+## Paragon e afixos (Stage B3)
+
+`game/affixes.py` — um registro, dois consumidores por design: Paragon agora, afixos de nível de dificuldade (Cursed Ground, etc.) depois no Stage B5, reusando o mesmo `AFFIXES`.
+
+- **Taxa:** 3% por spawn (tier Normal — dificuldades futuras somam +2%/tier). **Pity:** contador de spawns sem Paragon (`player.paragon_pity`, não persistido); ao atingir 20 spawns sem nenhum, o próximo é forçado — ~um "ato" de 3 fases.
+- **Efeito:** +2 níveis de monstro, x4 XP e ouro na morte, aura dourada pulsante + nome flutuante, 1 afixo sorteado dos 6:
+
+| Afixo | Efeito |
+|---|---|
+| Frenetico | +40% velocidade de ataque |
+| Colossal | +80% HP, +15% tamanho (visual + colisão) |
+| Volatil | Explode ao morrer (15 dano em raio 70 se o jogador estiver perto) |
+| Veloz | +30% velocidade de movimento |
+| Protegido | 25% de chance de bloquear completamente um golpe |
+| Vampirico | Cura 20% do dano causado ao jogador |
+
+O rolamento de Paragon acontece uma vez, logo após `Level` spawnar os inimigos (`apply_paragon_rolls`, chamado por `GameplayState.__init__`) — `game/level.py` nunca precisa saber que Paragon existe.
+
+**Correção feita durante esta etapa:** matar um inimigo com Bola de Fogo não concedia XP/ouro nenhum — essa lógica só existia no caminho de ataque corpo-a-corpo. Extraída pra `Level.credit_kill()`, chamada pelos dois caminhos (corpo-a-corpo em `game/level.py`, Bola de Fogo em `game/states.py`) — inclui também o crédito de XP/ouro de boss morto por Bola de Fogo, que tinha o mesmo problema.
+
 ## Ouro e itens
 
 Ouro dropa fisicamente no mapa em kills de inimigo comum (`GoldDrop`, 3s visível + 2s piscando, depois desaparece se não coletado) — visualiza a decisão do jogador de arriscar ir buscar ou seguir em frente. Kills de boss creditam ouro instantaneamente (sem pickup: a fase termina imediatamente na morte do boss, não há janela de jogo pra andar até uma moeda).
