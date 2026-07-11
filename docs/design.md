@@ -36,13 +36,21 @@ Algoritmo:
 
 `xp_to_next(L) = round(20·L^1.4)`. Nível máximo 30. `POINTS_PER_LEVEL = 4` pontos de atributo por level-up (ver seção "Correções de escopo" abaixo — a implementação inicial usou 3 sem confirmação, corrigido nesta sessão).
 
-XP por inimigo (`game/enemy.py BASE_XP`): esqueleto 10, goblin 8, dark_knight 25. Bosses (`xp_reward`): Rei das Sombras 150, Cacodemon 300. Sem escalonamento por nível de monstro ainda — isso é o passo B1 do roadmap (ver plano em `.claude/plans/`).
+`BASE_XP`/`GOLD_DROPS` (`game/stats.py` — dados puros, sem dependência de pygame, para `tools/balance_sim.py` poder rodar headless): esqueleto 10 XP/4 ouro, goblin 8/3, dark_knight 25/10. Bosses (`xp_reward`/`gold_reward` fixos, não escalam por ML — são encontros únicos calibrados à mão, não mobs fungíveis): Rei das Sombras 150 XP/60 ouro, Cacodemon 300/120.
+
+## Nível de monstro (ML) — Stage B1
+
+`MONSTER_GROWTH_VECTOR = {vigor: +2, strength: +1, dexterity: +0.5}` por ML, aplicado em cima do bloco de atributos do arquétipo (`scale_archetype()`). ML1 é um no-op — reproduz exatamente a calibração da Stage A3, sem mudança de comportamento nos monstros de ML1.
+
+XP/ouro por kill escalam pela mesma fórmula (`scale_by_ml`, `+35%` por ML acima de 1), sem tabela de multiplicador separada. **Regra anti-farm:** um monstro 5+ níveis abaixo do jogador dá só 10% do XP — impede que grindar conteúdo trivial também grinde XP trivialmente. Ouro **não** tem essa penalidade de propósito: farmar fase já limpa por ouro (pra comprar poção antes da próxima dificuldade) é o loop pretendido, não algo a suprimir.
+
+`LEVEL_MAPS[n]["monster_level"]`: Floresta Encantada ML1, Ruínas do Deserto ML4, Masmorra das Sombras ML8 — rampa dentro da campanha Normal atual (3 fases).
+
+`tools/balance_sim.py` (roda sem pygame — `python tools/balance_sim.py`) imprime curva de XP, progressão de jogador/monstro, matriz de time-to-kill, XP/ouro por kill, e contribuição de DPS dos status effects. Usar antes de qualquer ajuste manual de número de combate.
 
 ## Ouro e itens
 
 Ouro dropa fisicamente no mapa em kills de inimigo comum (`GoldDrop`, 3s visível + 2s piscando, depois desaparece se não coletado) — visualiza a decisão do jogador de arriscar ir buscar ou seguir em frente. Kills de boss creditam ouro instantaneamente (sem pickup: a fase termina imediatamente na morte do boss, não há janela de jogo pra andar até uma moeda).
-
-`GOLD_DROPS` (`game/enemy.py`): esqueleto 4, goblin 3, dark_knight 10. `gold_reward` de boss: Rei das Sombras 60, Cacodemon 120.
 
 Itens (`game/items.py`):
 - Poção de Vida — 15g, cura 50% da vida máxima atual.

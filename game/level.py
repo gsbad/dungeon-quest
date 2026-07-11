@@ -2,6 +2,7 @@ import pygame
 import random
 from game.assets import create_tile
 from game.enemy import Enemy, BASE_XP, GOLD_DROPS, GoldDrop
+from game.stats import xp_for_kill, gold_for_kill
 from game.theme import font, ACCENT_GOLD
 
 TILE = 48
@@ -13,6 +14,7 @@ LEVEL_MAPS = {
         "boss": None,
         "next": 2,
         "victory": None,
+        "monster_level": 1,
         "weather": "fog",
         "tileset": "grass",
         "floor": "grass",
@@ -46,6 +48,7 @@ LEVEL_MAPS = {
         "victory": None,
         "speed_multiplier": 1.2,
         "hazards": {"puddles": True},
+        "monster_level": 4,
         "weather": "rain",
         "tileset": "sand",
         "floor": "sand",
@@ -79,6 +82,7 @@ LEVEL_MAPS = {
         "victory": None,
         "speed_multiplier": 1.2,
         "hazards": {"puddles": True},
+        "monster_level": 8,
         "weather": "snow",
         "tileset": "floor",
         "floor": "floor",
@@ -234,6 +238,7 @@ class Level:
         ei = 0
 
         speed_mul = self.data.get("speed_multiplier", 1.0)
+        monster_level = self.data.get("monster_level", 1)
 
         for row_i, row in enumerate(self.layout):
             for col_i, ch in enumerate(row):
@@ -247,7 +252,7 @@ class Level:
                     spawn_col, spawn_row = self._find_enemy_spawn(col_i, row_i)
                     spawn_x = spawn_col * TILE
                     spawn_y = spawn_row * TILE
-                    self.enemies.append(Enemy(spawn_x + 8, spawn_y + 8, etype, speed_multiplier=speed_mul))
+                    self.enemies.append(Enemy(spawn_x + 8, spawn_y + 8, etype, speed_multiplier=speed_mul, ml=monster_level))
                     self._used_enemy_tiles.add((spawn_col, spawn_row))
 
         if self.data["exit"]:
@@ -297,10 +302,10 @@ class Level:
                 if enemy.alive and atk_rect.colliderect(enemy.rect):
                     enemy.take_damage(player.attack_damage)
                     if not enemy.alive:
-                        player.gain_xp(BASE_XP[enemy.etype])
+                        player.gain_xp(xp_for_kill(BASE_XP[enemy.etype], enemy.ml, player.level))
                         self.gold_drops.append(GoldDrop(
                             enemy.x + enemy.width / 2, enemy.y + enemy.height / 2,
-                            GOLD_DROPS[enemy.etype]
+                            gold_for_kill(GOLD_DROPS[enemy.etype], enemy.ml)
                         ))
                         player.kills[enemy.etype] = player.kills.get(enemy.etype, 0) + 1
 

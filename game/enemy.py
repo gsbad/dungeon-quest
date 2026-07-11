@@ -3,7 +3,7 @@ import math
 import random
 from game.assets import create_enemy_sprite, create_projectile_sprite, create_item_sprite
 from game.player import TILE
-from game.stats import StatBlock, ENEMY_ARCHETYPES
+from game.stats import StatBlock, ENEMY_ARCHETYPES, BASE_XP, GOLD_DROPS, scale_archetype
 
 class EnemyProjectile:
     def __init__(self, x, y, vx, vy, damage=1, color=(160,100,255),
@@ -136,23 +136,10 @@ ENEMY_FLAVOR = {
     "dark_knight": {"atk_cd": 1.2, "color": (40,40,60)},
 }
 
-# XP awarded per kill. Monster-level scaling (base_xp * (1 + 0.35*(ML-1)))
-# is a Stage B feature; monster levels don't exist yet, so this is the whole
-# formula for now.
-BASE_XP = {
-    "skeleton": 10,
-    "goblin": 8,
-    "dark_knight": 25,
-}
-
-# Gold dropped per kill (as a world pickup, not an instant credit - see
-# GoldDrop below) - same flat-for-now treatment as BASE_XP (no monster-level
-# scaling yet).
-GOLD_DROPS = {
-    "skeleton": 4,
-    "goblin": 3,
-    "dark_knight": 10,
-}
+# BASE_XP/GOLD_DROPS live in game/stats.py now (Stage B1) - re-exported here
+# so existing `from game.enemy import BASE_XP, GOLD_DROPS` call sites don't
+# need to change. Monster-level scaling: see game.stats.xp_for_kill()/
+# gold_for_kill().
 
 
 class GoldDrop:
@@ -197,14 +184,15 @@ class GoldDrop:
 
 
 class Enemy:
-    def __init__(self, x, y, etype="skeleton", speed_multiplier=1.0):
+    def __init__(self, x, y, etype="skeleton", speed_multiplier=1.0, ml=1):
         self.x = float(x)
         self.y = float(y)
         self.etype = etype
+        self.ml = ml
         self.width = 32
         self.height = 36
 
-        self.stats = StatBlock(**ENEMY_ARCHETYPES[etype])
+        self.stats = StatBlock(**scale_archetype(ENEMY_ARCHETYPES[etype], ml))
         flavor = ENEMY_FLAVOR[etype]
         self.max_hp = self.stats.max_hp
         self.hp = self.max_hp
