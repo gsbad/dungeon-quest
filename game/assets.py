@@ -150,11 +150,15 @@ def create_enemy_sprite(etype="skeleton"):
     return s
 
 
-def create_boss_sprite(phase=1):
+def create_boss_sprite(phase=1, body_colors=None, eye_colors=None):
+    """body_colors/eye_colors: optional ((phase1), (phase2)) color pairs -
+    None keeps the original Rei das Sombras purple/red palette, so other
+    bosses (Stage B4) get a distinct look via the same sprite shape without
+    touching this function's default behavior."""
     SC = 4
     s = pygame.Surface((24*SC, 24*SC), pygame.SRCALPHA)
-    body_color = (80,0,120) if phase == 1 else (160,0,0)
-    eye_color  = (255,50,50) if phase == 1 else (255,200,0)
+    body_color = (body_colors or ((80,0,120), (160,0,0)))[phase - 1]
+    eye_color = (eye_colors or ((255,50,50), (255,200,0)))[phase - 1]
     # Main body
     for y in range(8,18):
         for x in range(4,20):
@@ -280,6 +284,12 @@ def create_tile(tile_type):
             pygame.draw.circle(s, (230, 120, 30), pos, 6)
         for pos in [(12,12),(36,24),(20,36),(8,28)]:
             pygame.draw.circle(s, (255, 170, 50), pos, 3)
+    elif tile_type == "swamp":
+        s.fill((40, 55, 30))
+        for pos in [(10,14),(30,10),(20,30),(38,36),(6,40)]:
+            pygame.draw.circle(s, (60, 80, 40), pos, 5)
+        for pos in [(10,14),(30,10),(20,30),(38,36),(6,40)]:
+            pygame.draw.circle(s, (30, 90, 60), pos, 2)
     return s
 
 

@@ -136,3 +136,25 @@ Atribuído por nível via `LEVEL_MAPS[n]["weather"]` — Floresta Encantada (fog
 ## Correções de escopo aplicadas depois da primeira implementação
 
 - **Pontos de atributo por level-up: 3 → 4.** O usuário especificou 4 desde o início; a implementação inicial usou 3 sem confirmação. Corrigido nesta sessão, com migração de save (ver `save-schema.md`).
+
+## Campanha em 3 atos e bosses generalizados (Stage B4)
+
+O que era 1 boss único (Rei das Sombras) + 1 fase secreta virou 3 atos, cada um com 3 fases de combate + 1 boss próprio — sem duplicar a classe `Boss`. `game/boss.py`'s `Boss.__init__(x, y, boss_id=...)` agora lê um bloco de atributos de `BOSS_ARCHETYPES` (`game/stats.py`) em vez de ter valores fixos no corpo da classe — mesma jogada de "um rig, várias skins" que `ENEMY_ARCHETYPES`/Paragon já usam. `create_boss_sprite()` (`game/assets.py`) ganhou parâmetros opcionais `body_colors`/`eye_colors` (`None` reproduz a paleta original do Rei das Sombras, byte a byte). O boost de velocidade da fase 2 (enrage) passou de um valor fixo (`130`) para proporcional (`stats.speed * 1.625`), preservando o número exato do Rei das Sombras enquanto funciona para qualquer arquétipo.
+
+`BOSS_REGISTRY` (`game/states.py`) mapeia a chave `"boss"` de cada `LEVEL_MAPS[n]` pra uma fábrica — Orc Warlord/Necromante/Rei das Sombras compartilham a fábrica lambda genérica (`Boss(x, y, boss_id=...)`); só o Cacodemon (fase secreta) continua sendo uma classe própria, por ter um padrão de ataque realmente diferente, não por limitação do registry.
+
+**Numeração de fases (`LEVEL_MAPS`, 1-13):**
+
+| Fase | Título | Tipo | Boss | ML |
+|---|---|---|---|---|
+| 1-3 | Floresta Encantada / Ruínas do Deserto / Masmorra das Sombras | combate | — | 1/4/8 |
+| 4 | Acampamento de Guerra | boss | Senhor da Guerra Orc | — |
+| 5-7 | Pântano Sombrio / Torre Amaldiçoada / Cripta Perdida | combate | — | 12/16/20 |
+| 8 | Cripta do Necromante | boss | Necromante | — |
+| 9-11 | Salão dos Ecos / Abismo de Cinzas / Corredor Final | combate | — | 24/28/32 |
+| 12 | Trono das Trevas | boss (final da campanha, `victory:"victory"`) | Rei das Sombras | — |
+| 13 | Fase Secreta: INFERNO | boss (`victory:"secret_victory"`) | Cacodemon | — |
+
+Recompensa dos 3 bosses escalada à mão pra refletir a posição na campanha (não pela fórmula de ML, que é só pra mobs comuns): Orc Warlord 100 XP/40 ouro, Necromante 200/80, Rei das Sombras 300/120 (subiu de 150/60 — deixou de ser o único boss do jogo pra ser o final do Ato 3). `game/states.py`'s `_continue_level()` (cap do botão CONTINUAR) e o alvo da transição `"secret"` foram atualizados de `4`/`5` pra `12`/`13`.
+
+Nenhum arquétipo de inimigo comum novo — os 6 novos mapas de combate reusam goblin/esqueleto/dark_knight em proporções crescentes (mais dark_knight nas fases mais tardias), e ganham um tile novo (`"swamp"`, `create_tile()` em `game/assets.py`) só pro Pântano Sombrio.

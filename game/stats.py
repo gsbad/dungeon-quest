@@ -89,6 +89,32 @@ GOLD_DROPS = {
     "dark_knight": 10,
 }
 
+# Boss identities (Stage B4) - the campaign now has 3 acts, each ending in
+# its own boss, instead of one boss for the whole game. All 3 share the
+# exact same Boss class/attack-pattern shape (see game/boss.py) - only the
+# attribute block, name, palette, and reward differ, same "one rig, several
+# palette-swapped encounters" idea as ENEMY_ARCHETYPES vs. Paragon. Shadow
+# King's own numbers are untouched from Stage A3's calibration (still 270
+# hp) - only its reward moved up, since it's now the campaign's true final
+# boss (Act 3) rather than its only one.
+BOSS_ARCHETYPES = {
+    "orc_warlord": dict(
+        name="Senhor da Guerra Orc", strength=10, dexterity=0, vigor=46.67,
+        weapon_base=2, base_speed=90, xp_reward=100, gold_reward=40,
+        body_colors=((90, 60, 10), (150, 40, 10)), eye_colors=((255, 180, 40), (255, 90, 30)),
+    ),
+    "necromancer": dict(
+        name="Necromante", strength=10, dexterity=0, vigor=63.33,
+        weapon_base=2.5, base_speed=70, xp_reward=200, gold_reward=80,
+        body_colors=((20, 70, 40), (10, 100, 60)), eye_colors=((120, 255, 140), (180, 255, 120)),
+    ),
+    "shadow_king": dict(
+        name="Rei das Sombras", strength=10, dexterity=0, vigor=83.33,
+        weapon_base=3, base_speed=80, xp_reward=300, gold_reward=120,
+        body_colors=None, eye_colors=None,  # keeps create_boss_sprite's original palette
+    ),
+}
+
 # Per-monster-level growth (Stage B1 "divergence" pass) - same curve for
 # every archetype, applied on top of its ENEMY_ARCHETYPES base block so ML1
 # reproduces the Stage A3 calibration exactly (no change at ML1).

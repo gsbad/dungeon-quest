@@ -51,27 +51,40 @@ class Projectile:
 
 
 class Boss:
-    def __init__(self, x, y):
+    """One rig, several bosses (Stage B4) - the campaign's 3 acts each end
+    in their own boss (Orc Warlord, Necromancer, Shadow King), but they
+    share this exact class/attack-pattern shape. Only the attribute block,
+    name, and palette differ per boss_id (game/stats.py's BOSS_ARCHETYPES) -
+    same "one rig, palette-swapped" idea already used for Paragon."""
+
+    def __init__(self, x, y, boss_id="shadow_king"):
+        from game.stats import BOSS_ARCHETYPES
+        archetype = BOSS_ARCHETYPES[boss_id]
+        self.boss_id = boss_id
+        self.name = archetype["name"]
+
         self.x = float(x)
         self.y = float(y)
         self.width = 96
         self.height = 96
-        # vigor=83.33 -> max_hp=270, i.e. same 30-hit TTK as before now that
-        # the player's attack_damage went from a flat 1 to stats-driven 9
-        # (see states.py's boss.take_damage(player.attack_damage) call).
-        self.stats = StatBlock(strength=10, dexterity=0, vigor=83.33, weapon_base=3, base_speed=80)
+        # vigor=83.33 (shadow_king) -> max_hp=270, i.e. the same 30-hit TTK
+        # as before now that the player's attack_damage went from a flat 1
+        # to stats-driven 9 (see states.py's boss.take_damage(...) call).
+        self.stats = StatBlock(strength=archetype["strength"], dexterity=archetype["dexterity"],
+                                vigor=archetype["vigor"], weapon_base=archetype["weapon_base"],
+                                base_speed=archetype["base_speed"])
         self.max_hp = self.stats.max_hp
         self.hp = self.max_hp
         self.burst_dmg = self.stats.physical_damage
         self.aimed_dmg = self.burst_dmg * 2
-        self.xp_reward = 150
-        self.gold_reward = 60
+        self.xp_reward = archetype["xp_reward"]
+        self.gold_reward = archetype["gold_reward"]
         self._saved_max_hp = None
         self._saved_hp = None
         self.phase = 1
         self.alive = True
 
-        self.speed = 80
+        self.speed = self.stats.speed
         self.projectiles = []
         self.particles = []
 
@@ -81,8 +94,8 @@ class Boss:
         self.move_dir = (1, 0)
         self.hit_flash = 0
 
-        self.sprite_p1 = create_boss_sprite(1)
-        self.sprite_p2 = create_boss_sprite(2)
+        self.sprite_p1 = create_boss_sprite(1, archetype["body_colors"], archetype["eye_colors"])
+        self.sprite_p2 = create_boss_sprite(2, archetype["body_colors"], archetype["eye_colors"])
 
         self.hp_bar = ProgressBar(self.width, 10, (60,0,0), (220,220,220), border_width=1)
         self.hud_bar = ProgressBar(400, 16, (40,0,60), (200,200,220), border_width=2, margin=2)
@@ -126,7 +139,7 @@ class Boss:
         elif self.hp <= self.max_hp // 2 and self.phase == 1:
             self.phase = 2
             self.attack_interval = 1.2
-            self.speed = 130
+            self.speed = self.stats.speed * 1.625  # same enrage ratio as the original 80->130
 
     def _shoot_circle(self, cx, cy, count, speed, damage, color,
                        status_effect=None, status_chance=0.0):
@@ -278,7 +291,7 @@ class Boss:
     def draw_hud(self, surface, screen_w):
         """Big boss HP bar at top of screen"""
         f = font(18, bold=True)
-        label = f.render("REI DAS SOMBRAS" if self.phase==1 else "⚡ ENRAIVECIDO!", True,
+        label = f.render(self.name.upper() if self.phase==1 else "⚡ ENRAIVECIDO!", True,
                           TITLE_PAUSE if self.phase==1 else (255,150,50))
         bx = screen_w//2 - self.hud_bar.w//2
         by = 16

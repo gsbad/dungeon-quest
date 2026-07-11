@@ -24,8 +24,15 @@ from game.ui import draw_text, TextButton, Panel
 # Maps a level's "boss" key (LEVEL_MAPS) to (BossClass, spawn_dx_from_center, spawn_y).
 # Data-driven so new levels/bosses only need a registry entry + LEVEL_MAPS metadata,
 # not new level_num==N literals scattered across this file.
+# Value is a (factory, spawn_dx, spawn_y) tuple - factory takes (x, y) and
+# returns the boss instance. Orc Warlord/Necromancer/Shadow King all share
+# the exact same Boss class (Stage B4's "one rig, several bosses"), just
+# with a different boss_id selecting stats/name/palette from
+# game/stats.py's BOSS_ARCHETYPES - only CacodemonBoss is its own class.
 BOSS_REGISTRY = {
-    "shadow_king": (Boss, 48, 80),
+    "orc_warlord": (lambda x, y: Boss(x, y, boss_id="orc_warlord"), 48, 80),
+    "necromancer": (lambda x, y: Boss(x, y, boss_id="necromancer"), 48, 80),
+    "shadow_king": (lambda x, y: Boss(x, y, boss_id="shadow_king"), 48, 80),
     "cacodemon": (CacodemonBoss, 40, 100),
 }
 
@@ -337,8 +344,8 @@ class GameplayState:
         self.heart_spawn_timer = random.uniform(8.0, 14.0)
         boss_key = self.level.data.get("boss")
         if boss_key:
-            BossClass, spawn_dx, spawn_y = BOSS_REGISTRY[boss_key]
-            self.boss = BossClass(SW//2 - spawn_dx, spawn_y)
+            boss_factory, spawn_dx, spawn_y = BOSS_REGISTRY[boss_key]
+            self.boss = boss_factory(SW//2 - spawn_dx, spawn_y)
 
         self.paused = False
         self.next_state = None
@@ -883,7 +890,7 @@ class GameStateManager:
         return save.character_from_state(self.save_state, 0, 0, self.audio)
 
     def _continue_level(self):
-        return min(self.save_state["progression"].get("highest_level_cleared", 0) + 1, 4)
+        return min(self.save_state["progression"].get("highest_level_cleared", 0) + 1, 12)
 
     def _is_fullscreen(self):
         if hasattr(pygame.display, "is_fullscreen"):
@@ -983,7 +990,7 @@ class GameStateManager:
             # otherwise leaving this level would sync a throwaway level-1
             # character back over the real save (see save_state sync in update()).
             self.player = self._player_from_save()
-            self.state = TransitionState(self.screen, 5, self.player)
+            self.state = TransitionState(self.screen, 13, self.player)
             self.play_time = 0.0
         elif result == "secret_victory":
             self.audio.play("victory")
