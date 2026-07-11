@@ -1,0 +1,112 @@
+"""
+Debuffs applied to the player by enemy attacks (Stage: RPG systems expansion,
+see .claude/plans/cozy-wiggling-pumpkin.md). Same registry-dict pattern as
+game/stats.py's ENEMY_ARCHETYPES - a new debuff is one line in STATUS_EFFECTS,
+no new class or branching logic.
+
+StatusEffectCarrier is a small standalone component (not hardcoded onto
+Player) so it can be attached to Enemy/Boss later too - e.g. the RPG
+redesign plan's Frost Nova spell slows enemies, which is the same "speed_mult
+while active" shape as the player's own Slow debuff.
+"""
+from collections import namedtuple
+
+StatusEffectDef = namedtuple("StatusEffectDef", [
+    "duration",           # float seconds until auto-expiry
+    "tick_interval",      # float | None - None means "pure stat multiplier, no damage"
+    "tick_damage",        # float | None
+    "max_ticks",          # int | None - caps ticks even if duration would allow more (Fogo: exactly 3)
+    "speed_mult",         # float, default 1.0
+    "damage_taken_mult",  # float, default 1.0
+    "cureable_by",        # frozenset[str] item ids; empty = no cure exists
+])
+
+STATUS_EFFECTS = {
+    # Veneno: 3 dmg/5s, resolves in ~12s on its own, Antidoto cures early.
+    "poison":   StatusEffectDef(12.0, 5.0, 3, None, 1.0, 1.0, frozenset({"antidote"})),
+    # Lentidao: -45% velocidade de movimento, ~12s, Antidoto cures early.
+    "slow":     StatusEffectDef(12.0, None, None, None, 0.55, 1.0, frozenset({"antidote"})),
+    # Fraqueza: +30% dano recebido, ~12s, Antidoto cures early.
+    "weakness": StatusEffectDef(12.0, None, None, None, 1.0, 1.3, frozenset({"antidote"})),
+    # Fogo: 2 dmg/2s for exactly 3 ticks (6s), no cure yet.
+    "burn":     StatusEffectDef(6.0, 2.0, 2, 3, 1.0, 1.0, frozenset()),
+}
+
+
+class ActiveEffect:
+    def __init__(self, effect_id):
+        self.effect_id = effect_id
+        self.defn = STATUS_EFFECTS[effect_id]
+        self.remaining = self.defn.duration
+        self.tick_timer = self.defn.tick_interval
+        self.ticks_done = 0
+
+    def update(self, dt):
+        """Returns the tick damage dealt this frame (0 most frames)."""
+        self.remaining -= dt
+        if self.defn.tick_interval is None:
+            return 0.0
+        self.tick_timer -= dt
+        if self.tick_timer > 0:
+            return 0.0
+        self.tick_timer += self.defn.tick_interval
+        if self.defn.max_ticks is not None and self.ticks_done >= self.defn.max_ticks:
+            return 0.0
+        self.ticks_done += 1
+        return self.defn.tick_damage
+
+    @property
+    def expired(self):
+        if self.defn.max_ticks is not None and self.ticks_done >= self.defn.max_ticks:
+            return True
+        return self.remaining <= 0
+
+
+class StatusEffectCarrier:
+    def __init__(self):
+        self.active = {}
+
+    def apply(self, effect_id):
+        """Refreshes the effect rather than stacking it - reapplying Poison
+        while already poisoned just resets its clock, doesn't double the tick."""
+        self.active[effect_id] = ActiveEffect(effect_id)
+
+    def cure(self, cures):
+        self.active = {k: v for k, v in self.active.items() if k not in cures}
+
+    def has(self, effect_id):
+        return effect_id in self.active
+
+    def update(self, dt):
+        """Ages/expires active effects, returns total tick damage this frame."""
+        total = 0.0
+        for effect_id in list(self.active):
+            effect = self.active[effect_id]
+            total += effect.update(dt)
+            if effect.expired:
+                del self.active[effect_id]
+        return total
+
+    @property
+    def speed_multiplier(self):
+        mult = 1.0
+        for effect in self.active.values():
+            mult *= effect.defn.speed_mult
+        return mult
+
+    @property
+    def damage_taken_multiplier(self):
+        mult = 1.0
+        for effect in self.active.values():
+            mult *= effect.defn.damage_taken_mult
+        return mult
+
+
+# Display-only metadata for the HUD debuff chips - kept separate from the
+# balance numbers above so tweaking a color doesn't touch gameplay data.
+STATUS_DISPLAY = {
+    "poison":   ("VEN", (140, 220, 90)),
+    "slow":     ("LEN", (120, 170, 230)),
+    "weakness": ("FRA", (200, 120, 200)),
+    "burn":     ("FOG", (255, 130, 40)),
+}
