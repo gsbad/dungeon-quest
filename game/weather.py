@@ -22,6 +22,13 @@ WEATHER_TYPES = {
               "speed_mult": 1.0, "visibility_mult": 1.0},
     "storm": {"kind": "particles", "color": (150, 180, 220), "count": 90,
               "speed_mult": 1.0, "visibility_mult": 1.0, "lightning": True},
+    # Difficulty tier's "Penumbra" affix (Stage B5, game/difficulty.py) -
+    # deliberately darker than plain fog, not just relabeled, so the tier's
+    # visibility hit is actually visible. visibility_mult<1.0 is still a
+    # placeholder for a later gameplay pass (see module docstring) - today
+    # it only informs how heavy the overlay itself looks.
+    "dimming_fog": {"kind": "overlay", "color": (25, 25, 35), "alpha": 130,
+                     "speed_mult": 1.0, "visibility_mult": 0.6},
 }
 
 

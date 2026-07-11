@@ -150,6 +150,40 @@ Implementação: `InputManager` (`game/input_system.py`) ganhou `Action.MENU_LEF
 
 - **Pontos de atributo por level-up: 3 → 4.** O usuário especificou 4 desde o início; a implementação inicial usou 3 sem confirmação. Corrigido nesta sessão, com migração de save (ver `save-schema.md`).
 
+## Dificuldade (Stage B5)
+
+5 tiers (`game/difficulty.py`): Normal, Dificil, Muito Dificil, Pesadelo, Inferno. Cada um é a mesma campanha de 12 fases jogada de novo — não multiplicadores simples de dano/vida (pedido explícito do usuário), e sim os mesmos mecanismos que os Stages B1/B3/B4 já construíram, com o dial girado:
+
+| Mecanismo | O que faz | Reusa |
+|---|---|---|
+| `ml_bonus` | soma ao `monster_level` de toda fase de combate do tier | `MONSTER_GROWTH_VECTOR`/`xp_for_kill`/`gold_for_kill` (Stage B1) — monstro mais forte E vale mais, uma única curva |
+| `champion_chance` | chance por spawn de virar Campeão (ver abaixo) | `AFFIXES` (Stage B3) |
+| `level_affixes` | efeitos de fase inteira (ver abaixo) | mesmo dict `AFFIXES`, entradas `scope="level"` |
+| `boss_enrage_frac` | limiar de HP em que o boss entra na fase 2 (enrage) | `Boss.take_damage()` (Stage B4) — estrutural, não um número maior |
+
+Tabela de tiers:
+
+| Tier | ml_bonus | Campeão | Afixos de fase | Enrage do boss |
+|---|---|---|---|---|
+| Normal | +0 | 0% | — | 50% HP |
+| Dificil | +6 | 8% | Chao Amaldicoado | 55% HP |
+| Muito Dificil | +14 | 14% | + Penumbra | 60% HP |
+| Pesadelo | +24 | 20% | + Horda Apressada | 65% HP |
+| Inferno | +36 | 28% | (mesmos 3) | 70% HP |
+
+**Campeões** (`game/affixes.py`'s `make_champion()`): irmã mais branda de `make_paragon()` — mesma ideia (crescer pela curva de ML, sortear um afixo `scope="monster"`), mas +1 ML (não +2) e bônus de afixo mais fracos, x2 recompensa (não x4) — porque Campeão é comum em dificuldade alta, Paragon continua raro em qualquer tier (`PARAGON_CHANCE` não sobe com dificuldade, de propósito: são eixos diferentes). Aura prateada + rótulo "CAMPEAO" (vs. dourado "PARAGON") em `Enemy.draw()`.
+
+**Afixos de fase** (`scope="level"` no mesmo dict `AFFIXES`, não um registro paralelo):
+- **Chao Amaldicoado:** Veneno periódico (8s) enquanto o jogador está numa fase de combate daquele tier, independente de combate — pune demora, não é dano de golpe.
+- **Penumbra:** força o clima `dimming_fog` (novo tipo em `game/weather.py`, overlay mais escuro que a neblina comum) nas fases de combate — visual por enquanto (`visibility_mult=0.6` ainda é gancho pra uma passada futura de IA, mesma ressalva que `game/weather.py` já documentava desde a Stage RPG-expansion).
+- **Horda Apressada:** `Level` ganha um `extra_speed_mult` (multiplica em cima do `speed_multiplier` que a própria fase já podia ter) — `Level` continua sem saber que dificuldade existe, só recebe um número, mesma separação de responsabilidade que Paragon/clima já usavam.
+
+Nenhum dos 3 afixos de fase se aplica em salas de boss (arena de boss já é teste de combate suficiente por si só).
+
+**Seleção de dificuldade:** `DifficultySelectState` (tela de seleção de mapa/tier), acessível pelo menu principal (opção "DIFICULDADE", ao lado de "CONTINUAR"). Tiers destravam sequencialmente — só é possível jogar um tier depois de vencer o anterior (chegar ao resultado `"victory"` na fase 12) pelo menos uma vez (`is_unlocked()`). `progression.highest_level_cleared` guarda progresso por tier (não um int global) — jogar Dificil não reseta nem é resetado pelo progresso em Normal.
+
+**Fase secreta (13, Cacodemon):** desbloqueada só depois de vencer Inferno pelo menos uma vez (`"inferno" in cleared_difficulties`) — antes disso o botão aparece na tela de vitória mas não faz nada, visível como incentivo, não escondido.
+
 ## Campanha em 3 atos e bosses generalizados (Stage B4)
 
 O que era 1 boss único (Rei das Sombras) + 1 fase secreta virou 3 atos, cada um com 3 fases de combate + 1 boss próprio — sem duplicar a classe `Boss`. `game/boss.py`'s `Boss.__init__(x, y, boss_id=...)` agora lê um bloco de atributos de `BOSS_ARCHETYPES` (`game/stats.py`) em vez de ter valores fixos no corpo da classe — mesma jogada de "um rig, várias skins" que `ENEMY_ARCHETYPES`/Paragon já usam. `create_boss_sprite()` (`game/assets.py`) ganhou parâmetros opcionais `body_colors`/`eye_colors` (`None` reproduz a paleta original do Rei das Sombras, byte a byte). O boost de velocidade da fase 2 (enrage) passou de um valor fixo (`130`) para proporcional (`stats.speed * 1.625`), preservando o número exato do Rei das Sombras enquanto funciona para qualquer arquétipo.

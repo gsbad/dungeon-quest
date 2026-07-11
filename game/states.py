@@ -15,6 +15,8 @@ from game.input_system import Action, FullscreenButton
 from game.audio import SoundButton
 from game.stats import POINTS_PER_LEVEL
 from game.spells import SPELLS, ORDER as SPELL_ORDER
+from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER, next_difficulty, is_unlocked
+from game.affixes import AFFIXES
 from game.theme import (
     SW, SH, font, BG_MENU, BG_GAME_OVER, BG_VICTORY, TITLE_MENU, TITLE_PAUSE,
     ACCENT_GOLD, SELECTED, UNSELECTED, SUBTEXT, PANEL_FILL, PANEL_BORDER,
@@ -29,11 +31,15 @@ from game.ui import draw_text, TextButton, Panel
 # the exact same Boss class (Stage B4's "one rig, several bosses"), just
 # with a different boss_id selecting stats/name/palette from
 # game/stats.py's BOSS_ARCHETYPES - only CacodemonBoss is its own class.
+# Factories take (x, y, enrage_frac) so difficulty tiers (Stage B5) can
+# move Boss's phase-2 threshold without either Boss subclass needing a
+# special case - CacodemonBoss has no phase concept, so its factory just
+# ignores the argument.
 BOSS_REGISTRY = {
-    "orc_warlord": (lambda x, y: Boss(x, y, boss_id="orc_warlord"), 48, 80),
-    "necromancer": (lambda x, y: Boss(x, y, boss_id="necromancer"), 48, 80),
-    "shadow_king": (lambda x, y: Boss(x, y, boss_id="shadow_king"), 48, 80),
-    "cacodemon": (CacodemonBoss, 40, 100),
+    "orc_warlord": (lambda x, y, ef=0.5: Boss(x, y, boss_id="orc_warlord", enrage_frac=ef), 48, 80),
+    "necromancer": (lambda x, y, ef=0.5: Boss(x, y, boss_id="necromancer", enrage_frac=ef), 48, 80),
+    "shadow_king": (lambda x, y, ef=0.5: Boss(x, y, boss_id="shadow_king", enrage_frac=ef), 48, 80),
+    "cacodemon": (lambda x, y, ef=0.5: CacodemonBoss(x, y), 40, 100),
 }
 
 
@@ -88,9 +94,12 @@ class MenuState:
         self.stars = [Star() for _ in range(80)]
         self.t = 0
         self.selected = 0
-        self.options = (["CONTINUAR"] if has_save else []) + ["NOVO JOGO", "SAIR"]
+        self.options = (["CONTINUAR", "DIFICULDADE"] if has_save else []) + ["NOVO JOGO", "SAIR"]
+        # 4 options (has_save) need tighter spacing to clear the controls
+        # panel above (bottom edge ~y380) and stay on-screen (SH=600).
+        base_y, step = (385, 46) if len(self.options) >= 4 else (410, 55)
         self.option_buttons = [
-            TextButton(opt, SW//2, 410 + i*55, pad_x=30, pad_y=15)
+            TextButton(opt, SW//2, base_y + i*step, pad_x=30, pad_y=15)
             for i, opt in enumerate(self.options)
         ]
         self.controls_panel = Panel(320, 160, PANEL_FILL, PANEL_BORDER)
@@ -167,6 +176,86 @@ class MenuState:
         f_tiny = font(12)
         v = f_tiny.render("Linguagem de Programacao Aplicada - UNINTER 2026", True, (80,80,100))
         self.screen.blit(v, (SW//2 - v.get_width()//2, SH - 24))
+
+
+# ─── Difficulty Select ─────────────────────────────────────────────────────────
+class DifficultySelectState:
+    """Map-select screen (Stage B5): pick which of the 5 tiers to play.
+    Locked tiers (per game.difficulty.is_unlocked) show but can't be
+    selected - unlocking is sequential, cleared by reaching level 12's
+    "victory" at the tier below."""
+
+    def __init__(self, screen, input_mgr, audio_mgr, cleared_difficulties):
+        self.screen = screen
+        self.input = input_mgr
+        self.audio = audio_mgr
+        self.cleared = cleared_difficulties
+        self.selected = 0
+        self.t = 0
+        self.stars = [Star() for _ in range(60)]
+        self.option_buttons = [
+            TextButton(DIFFICULTIES[d]["name"], SW // 2, 220 + i * 56, pad_x=30, pad_y=13)
+            for i, d in enumerate(DIFFICULTY_ORDER)
+        ]
+        self.back_button = TextButton("[ ESC ] - Voltar", SW // 2, 220 + len(DIFFICULTY_ORDER) * 56 + 20)
+
+    def _unlocked(self, i):
+        return is_unlocked(DIFFICULTY_ORDER[i], self.cleared)
+
+    def handle_event(self, event):
+        if self.input.consume_action(Action.MENU_UP):
+            self.selected = (self.selected - 1) % len(DIFFICULTY_ORDER)
+            self.audio.play("menu_move")
+        if self.input.consume_action(Action.MENU_DOWN):
+            self.selected = (self.selected + 1) % len(DIFFICULTY_ORDER)
+            self.audio.play("menu_move")
+        if self.input.consume_action(Action.CONFIRM):
+            if self._unlocked(self.selected):
+                self.audio.play("menu_select")
+                return f"difficulty:{DIFFICULTY_ORDER[self.selected]}"
+            return None
+        if self.input.consume_action(Action.PAUSE):
+            return "menu"
+        for i, btn in enumerate(self.option_buttons):
+            if self.input.tapped_rect(btn.rect):
+                if self._unlocked(i):
+                    self.audio.play("menu_select")
+                    return f"difficulty:{DIFFICULTY_ORDER[i]}"
+                return None
+        if self.input.tapped_rect(self.back_button.rect):
+            self.audio.play("menu_select")
+            return "menu"
+        return None
+
+    def update(self, dt):
+        self.t += dt
+        for star in self.stars:
+            star.update(dt)
+
+    def draw(self):
+        self.screen.fill(BG_MENU)
+        for star in self.stars:
+            star.draw(self.screen)
+
+        f_title = font(38, bold=True)
+        draw_text(self.screen, "SELECIONAR DIFICULDADE", f_title, TITLE_MENU, SW // 2, 90)
+        f_hint = font(15)
+        draw_text(self.screen, "ESC - Voltar", f_hint, SUBTEXT, SW // 2, 150)
+
+        f_opt = font(24, bold=True)
+        for i, d in enumerate(DIFFICULTY_ORDER):
+            unlocked = self._unlocked(i)
+            if not unlocked:
+                color = (90, 90, 100)
+                label = f"{DIFFICULTIES[d]['name']} (bloqueado)"
+            else:
+                color = SELECTED if i == self.selected else UNSELECTED
+                label = DIFFICULTIES[d]["name"]
+            prefix = "> " if (i == self.selected and unlocked) else "  "
+            self.option_buttons[i].label = prefix + label
+            self.option_buttons[i].draw(self.screen, f_opt, color)
+
+        self.back_button.draw(self.screen, font(17), SUBTEXT)
 
 
 # ─── Name Entry ───────────────────────────────────────────────────────────────
@@ -316,7 +405,17 @@ class GameplayState:
         self.audio = audio_mgr
         self.save_state = save_state
         self.level_num = level_num
-        self.level = Level(level_num)
+
+        # Difficulty tier (Stage B5) - drives the monster-level bonus, extra
+        # enemy speed, level affixes, boss enrage threshold, and champion
+        # spawn chance below. Falls back to normal if constructed without a
+        # save (shouldn't happen - GameStateManager always passes one - but
+        # keeps this class constructible standalone, e.g. for tests).
+        self.difficulty_id = save_state["progression"]["current_difficulty"] if save_state else "normal"
+        self.difficulty = DIFFICULTIES[self.difficulty_id]
+        hastened_mult = 1.25 if "hastened" in self.difficulty["level_affixes"] else 1.0
+
+        self.level = Level(level_num, extra_speed_mult=hastened_mult, ml_bonus=self.difficulty["ml_bonus"])
         self.camera = Camera(SW, SH, self.level.width, self.level.height)
 
         if player is None:
@@ -333,9 +432,12 @@ class GameplayState:
         self.camera.y = self.player.y - SH//2
 
         # Paragon rolls (Stage B3) - upgrades some already-spawned enemies
-        # in place; Level itself stays unaware Paragon exists at all.
-        from game.affixes import apply_paragon_rolls
+        # in place; Level itself stays unaware Paragon exists at all. Then
+        # Champion rolls (Stage B5) do the same for whichever enemies
+        # Paragon didn't already claim, at a rate set by the difficulty tier.
+        from game.affixes import apply_paragon_rolls, apply_champion_rolls
         apply_paragon_rolls(self.level.enemies, self.player)
+        apply_champion_rolls(self.level.enemies, self.difficulty["champion_chance"])
 
         # Boss, driven by the level's metadata (LEVEL_MAPS[level_num]["boss"])
         self.boss = None
@@ -345,7 +447,7 @@ class GameplayState:
         boss_key = self.level.data.get("boss")
         if boss_key:
             boss_factory, spawn_dx, spawn_y = BOSS_REGISTRY[boss_key]
-            self.boss = boss_factory(SW//2 - spawn_dx, spawn_y)
+            self.boss = boss_factory(SW//2 - spawn_dx, spawn_y, self.difficulty["boss_enrage_frac"])
 
         self.paused = False
         self.next_state = None
@@ -355,7 +457,8 @@ class GameplayState:
 
         # Level-entry message
         self.msg_timer = 2.5
-        self.msg_text = f"Nivel {level_num}: {self.level.data['title']}"
+        diff_suffix = f" [{self.difficulty['name']}]" if self.difficulty_id != "normal" else ""
+        self.msg_text = f"Nivel {level_num}: {self.level.data['title']}{diff_suffix}"
 
         # Screen shake
         self.shake = 0
@@ -366,7 +469,23 @@ class GameplayState:
         self.paperdoll_open = False
         self.items = ItemsOverlay()
         self.items_open = False
-        self.weather = WeatherSystem(self.level.data.get("weather"))
+
+        # "Penumbra" level affix (Stage B5) forces a darker fog than the
+        # level's own weather flavor, combat levels only - boss arenas are
+        # already an intense enough test on their own.
+        weather_id = self.level.data.get("weather")
+        if "dimming" in self.difficulty["level_affixes"] and self.level.data["type"] == "combat":
+            weather_id = "dimming_fog"
+        self.weather = WeatherSystem(weather_id)
+
+        # "Chao Amaldicoado" level affix (Stage B5) - periodic Poison while
+        # exploring a combat level, independent of taking any hit. None
+        # disables it entirely (cheaper than checking membership every tick).
+        self._cursed_ground_timer = (
+            8.0 if "cursed_ground" in self.difficulty["level_affixes"]
+            and self.level.data["type"] == "combat" else None
+        )
+
         # Fireball projectiles - a separate list from Enemy's/Boss's own
         # projectiles since these belong to the player and can hit either
         # regular enemies or a boss depending on which fight this level is.
@@ -479,6 +598,12 @@ class GameplayState:
 
         if self.msg_timer > 0:
             self.msg_timer -= dt
+
+        if self._cursed_ground_timer is not None:
+            self._cursed_ground_timer -= dt
+            if self._cursed_ground_timer <= 0:
+                self._cursed_ground_timer = 8.0
+                self.player.status.apply("poison")
 
         hp_before = self.player.hp
         self.player.update(dt, self.level.walls, self.input.movement_vector())
@@ -613,6 +738,17 @@ class GameplayState:
         self.player.draw_hud(self.screen)
         self.level.draw_hud_info(self.screen)
 
+        # Difficulty tag + active level affixes (Stage B5) - just above the
+        # "Fase N: Titulo" line level.draw_hud_info() already draws.
+        if self.difficulty_id != "normal":
+            f_diff = font(14, bold=True)
+            label = self.difficulty["name"].upper()
+            if self.level.data["type"] == "combat" and self.difficulty["level_affixes"]:
+                names = ", ".join(AFFIXES[a]["name"] for a in self.difficulty["level_affixes"])
+                label += f" - {names}"
+            diff_txt = f_diff.render(label, True, (255, 120, 120))
+            self.screen.blit(diff_txt, (SW // 2 - diff_txt.get_width() // 2, SH - 50))
+
         if self.boss and self.boss.alive:
             self.boss.draw_hud(self.screen, SW)
 
@@ -737,7 +873,8 @@ class GameOverState:
 
 # ─── Victory ──────────────────────────────────────────────────────────────────
 class VictoryState:
-    def __init__(self, screen, input_mgr, audio_mgr, elapsed_seconds=0.0):
+    def __init__(self, screen, input_mgr, audio_mgr, elapsed_seconds=0.0,
+                 secret_unlocked=False, unlocked_next=None):
         self.screen = screen
         self.input = input_mgr
         self.audio = audio_mgr
@@ -745,19 +882,27 @@ class VictoryState:
         self.particles = []
         self._spawn_timer = 0
         self.elapsed = float(elapsed_seconds)
+        # Stage B5: the secret level is gated behind clearing Inferno -
+        # locked, the button still shows (so it's discoverable) but does
+        # nothing. unlocked_next names a difficulty tier this exact clear
+        # just unlocked (first clear of this tier only, not on replays).
+        self.secret_unlocked = secret_unlocked
+        self.unlocked_next = unlocked_next
         self.menu_button = TextButton("[ ENTER ] - Menu Principal", SW//2, 420)
-        self.secret_button = TextButton("[ ESPACO ] - Nivel Secreto", SW//2, 500, pad_y=10)
+        secret_label = "[ ESPACO ] - Nivel Secreto" if secret_unlocked else "Nivel Secreto - vença o Inferno para desbloquear"
+        self.secret_button = TextButton(secret_label, SW//2, 500, pad_y=10)
 
     def handle_event(self, event):
-        if self.input.consume_action(Action.SECRET):
-            self.audio.play("menu_select")
-            return "secret"
+        if self.secret_unlocked:
+            if self.input.consume_action(Action.SECRET):
+                self.audio.play("menu_select")
+                return "secret"
+            if self.input.tapped_rect(self.secret_button.rect):
+                self.audio.play("menu_select")
+                return "secret"
         if self.input.consume_action(Action.CONFIRM):
             self.audio.play("menu_select")
             return "menu"
-        if self.input.tapped_rect(self.secret_button.rect):
-            self.audio.play("menu_select")
-            return "secret"
         if self.input.tapped_rect(self.menu_button.rect):
             self.audio.play("menu_select")
             return "menu"
@@ -805,9 +950,15 @@ class VictoryState:
         ftime = font(18)
         draw_text(self.screen, time_str, ftime, (180,220,180), SW//2, 460)
 
+        if self.unlocked_next:
+            f_unlock = font(17, bold=True)
+            draw_text(self.screen, f"Dificuldade desbloqueada: {self.unlocked_next}!",
+                      f_unlock, ACCENT_GOLD, SW//2, 485)
+
         # Instructions
         f_ins = font(16)
-        self.secret_button.draw(self.screen, f_ins, (180,200,180))
+        secret_color = (180,200,180) if self.secret_unlocked else (110,100,100)
+        self.secret_button.draw(self.screen, f_ins, secret_color)
 
         f5 = font(14)
         draw_text(self.screen, "Linguagem de Programacao Aplicada - UNINTER 2026",
@@ -897,6 +1048,10 @@ class GameStateManager:
         self.state = MenuState(screen, input_mgr, audio_mgr, has_save=self._has_progress())
         self.player = None
         self.play_time = 0.0
+        # Set right before a "victory" transition if that clear was the
+        # *first* clear of the active tier (Stage B5) - lets VictoryState
+        # show "dificuldade desbloqueada" only once, not on every replay.
+        self._just_cleared_difficulty = None
 
     def _persist(self):
         import game.save as save
@@ -907,7 +1062,9 @@ class GameStateManager:
         return save.character_from_state(self.save_state, 0, 0, self.audio)
 
     def _continue_level(self):
-        return min(self.save_state["progression"].get("highest_level_cleared", 0) + 1, 12)
+        diff_id = self.save_state["progression"]["current_difficulty"]
+        highest = self.save_state["progression"]["highest_level_cleared"].get(diff_id, 0)
+        return min(highest + 1, 12)
 
     def _is_fullscreen(self):
         if hasattr(pygame.display, "is_fullscreen"):
@@ -946,11 +1103,18 @@ class GameStateManager:
                 import game.save as save
                 if ns == "game_over":
                     self.save_state["counters"]["deaths"] = self.save_state["counters"].get("deaths", 0) + 1
+                    self._just_cleared_difficulty = None
                 else:
                     prog = self.save_state["progression"]
-                    prog["highest_level_cleared"] = max(
-                        prog.get("highest_level_cleared", 0), self.state.level_num
+                    diff_id = self.state.difficulty_id
+                    prog["highest_level_cleared"][diff_id] = max(
+                        prog["highest_level_cleared"].get(diff_id, 0), self.state.level_num
                     )
+                    if ns == "victory" and diff_id not in prog["cleared_difficulties"]:
+                        prog["cleared_difficulties"].append(diff_id)
+                        self._just_cleared_difficulty = diff_id
+                    else:
+                        self._just_cleared_difficulty = None
                 save.sync_character(self.save_state, self.player)
                 save.sync_counters(self.save_state, self.player)
                 save.sync_economy(self.save_state, self.player)
@@ -969,7 +1133,8 @@ class GameStateManager:
         self.fullscreen_button.draw(self.screen, self._is_fullscreen())
 
     def _has_progress(self):
-        return (self.save_state["progression"].get("highest_level_cleared", 0) > 0
+        highest = self.save_state["progression"]["highest_level_cleared"]
+        return (any(v > 0 for v in highest.values())
                 or self.save_state["character"]["level"] > 1)
 
     def _transition(self, result):
@@ -990,9 +1155,24 @@ class GameStateManager:
         elif result == "menu":
             self.player = None
             self.state = MenuState(self.screen, self.input, self.audio, has_save=self._has_progress())
+        elif result == "DIFICULDADE":
+            self.state = DifficultySelectState(
+                self.screen, self.input, self.audio,
+                self.save_state["progression"]["cleared_difficulties"],
+            )
+        elif result and result.startswith("difficulty:"):
+            diff_id = result.split(":", 1)[1]
+            self.save_state["progression"]["current_difficulty"] = diff_id
+            self.player = self._player_from_save()
+            highest = self.save_state["progression"]["highest_level_cleared"].get(diff_id, 0)
+            start_level = min(highest + 1, 12)
+            self._persist()
+            self.state = TransitionState(self.screen, start_level, self.player)
+            self.play_time = 0.0
         elif result in ("CONTINUAR", "restart"):
             # Both resume the persisted character at its furthest cleared
-            # level - dying keeps your level/xp (this isn't a roguelite).
+            # level (within the currently active difficulty tier) - dying
+            # keeps your level/xp (this isn't a roguelite).
             self.player = self._player_from_save()
             self.state = TransitionState(self.screen, self._continue_level(), self.player)
             self.play_time = 0.0
@@ -1001,7 +1181,15 @@ class GameStateManager:
             self.state = GameOverState(self.screen, self.input, self.audio)
         elif result == "victory":
             self.audio.play("victory")
-            self.state = VictoryState(self.screen, self.input, self.audio, elapsed_seconds=self.play_time)
+            prog = self.save_state["progression"]
+            secret_unlocked = "inferno" in prog["cleared_difficulties"]
+            unlocked_next = None
+            if self._just_cleared_difficulty:
+                nd = next_difficulty(self._just_cleared_difficulty)
+                if nd:
+                    unlocked_next = DIFFICULTIES[nd]["name"]
+            self.state = VictoryState(self.screen, self.input, self.audio, elapsed_seconds=self.play_time,
+                                       secret_unlocked=secret_unlocked, unlocked_next=unlocked_next)
         elif result == "secret":
             # Carries the real character over (not a fresh L1 player) -
             # otherwise leaving this level would sync a throwaway level-1

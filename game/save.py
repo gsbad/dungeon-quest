@@ -19,7 +19,7 @@ import json
 from game.player import Player
 from game.professions import determine_profession
 
-SAVE_VERSION = 3
+SAVE_VERSION = 4
 _KEY = "dungeon_quest_save"
 _NATIVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_save.json")
 
@@ -31,7 +31,11 @@ def new_game_state():
             "name": "", "level": 1, "xp": 0, "unspent_points": 0,
             "attributes": {"str": 10, "dex": 10, "int": 10, "wis": 10, "vig": 10},
         },
-        "progression": {"highest_level_cleared": 0},
+        "progression": {
+            "current_difficulty": "normal",
+            "highest_level_cleared": {"normal": 0},
+            "cleared_difficulties": [],
+        },
         "counters": {"kills": {}, "boss_kills": {}, "deaths": 0, "playtime_s": 0.0},
         "settings": {"muted": False},
         "gold": 0,
@@ -73,6 +77,23 @@ def _migrate(data):
         level = data["character"]["level"]
         data["character"]["unspent_points"] += (level - 1)
         data["version"] = 3
+    if data["version"] < 4:
+        # Difficulty tiers (Stage B5) turn "highest_level_cleared" from one
+        # global int into a per-tier dict. Stage B4 also renumbered the
+        # campaign in this same window (old level 4 = Shadow King is now
+        # level 12) without its own migration - only levels 1-3 kept
+        # identical content across that renumbering, so a stale int beyond
+        # that can't be trusted to mean the same level anymore. Clamping to
+        # 3 here is the correction that renumbering should have shipped
+        # with.
+        old_highest = data["progression"].get("highest_level_cleared", 0)
+        safe_highest = min(old_highest, 3) if isinstance(old_highest, int) else 0
+        data["progression"] = {
+            "current_difficulty": "normal",
+            "highest_level_cleared": {"normal": safe_highest},
+            "cleared_difficulties": [],
+        }
+        data["version"] = 4
     return data
 
 

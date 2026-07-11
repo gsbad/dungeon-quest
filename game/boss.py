@@ -57,11 +57,15 @@ class Boss:
     name, and palette differ per boss_id (game/stats.py's BOSS_ARCHETYPES) -
     same "one rig, palette-swapped" idea already used for Paragon."""
 
-    def __init__(self, x, y, boss_id="shadow_king"):
+    def __init__(self, x, y, boss_id="shadow_king", enrage_frac=0.5):
         from game.stats import BOSS_ARCHETYPES
         archetype = BOSS_ARCHETYPES[boss_id]
         self.boss_id = boss_id
         self.name = archetype["name"]
+        # Difficulty-tier boss remix (Stage B5): higher tiers move phase 2
+        # earlier instead of just padding hp/damage numbers - a structural
+        # change to how the fight plays, not a bigger stat.
+        self.enrage_frac = enrage_frac
 
         self.x = float(x)
         self.y = float(y)
@@ -136,7 +140,7 @@ class Boss:
             self.alive = False
             for _ in range(40):
                 self.particles.append(Particle(self.x+48, self.y+48, (255,200,0)))
-        elif self.hp <= self.max_hp // 2 and self.phase == 1:
+        elif self.hp <= self.max_hp * self.enrage_frac and self.phase == 1:
             self.phase = 2
             self.attack_interval = 1.2
             self.speed = self.stats.speed * 1.625  # same enrage ratio as the original 80->130

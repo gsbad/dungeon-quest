@@ -15,18 +15,35 @@ import random
 import pygame
 from game.stats import StatBlock, ENEMY_ARCHETYPES, scale_archetype
 
-PARAGON_CHANCE = 0.03  # Normal tier; Stage B5 adds +2%/difficulty on top
+PARAGON_CHANCE = 0.03  # Normal tier; difficulty tiers don't raise this - see CHAMPION_* below instead
 PARAGON_PITY_SPAWNS = 20  # ~ one 3-level "act" worth of monsters (see B4)
 PARAGON_REWARD_MULT = 4  # xp and gold alike, per the RPG redesign plan
 
+CHAMPION_REWARD_MULT = 2  # milder than Paragon's x4 - Champions are common at high difficulty, not rare
+
+# scope="monster" entries are rolled onto individual enemies (Paragon and,
+# at higher difficulty tiers, Champions). scope="level" entries are
+# environment-wide effects for a whole level, picked by game/difficulty.py's
+# DIFFICULTIES[...]["level_affixes"] - one registry, two consumers, per the
+# RPG redesign plan (see this file's original docstring).
 AFFIXES = {
-    "frenzied": {"name": "Frenetico", "color": (255, 120, 40)},
-    "colossal": {"name": "Colossal", "color": (200, 160, 60)},
-    "volatile": {"name": "Volatil", "color": (220, 60, 200)},
-    "swift": {"name": "Veloz", "color": (100, 220, 255)},
-    "warded": {"name": "Protegido", "color": (140, 200, 140)},
-    "vampiric": {"name": "Vampirico", "color": (200, 30, 60)},
+    "frenzied": {"name": "Frenetico", "color": (255, 120, 40), "scope": "monster"},
+    "colossal": {"name": "Colossal", "color": (200, 160, 60), "scope": "monster"},
+    "volatile": {"name": "Volatil", "color": (220, 60, 200), "scope": "monster"},
+    "swift": {"name": "Veloz", "color": (100, 220, 255), "scope": "monster"},
+    "warded": {"name": "Protegido", "color": (140, 200, 140), "scope": "monster"},
+    "vampiric": {"name": "Vampirico", "color": (200, 30, 60), "scope": "monster"},
+    "cursed_ground": {"name": "Chao Amaldicoado", "scope": "level",
+                       "desc": "Veneno periodico enquanto a fase nao e concluida"},
+    "dimming": {"name": "Penumbra", "scope": "level",
+                "desc": "Nevoa densa, visibilidade reduzida"},
+    "hastened": {"name": "Horda Apressada", "scope": "level",
+                 "desc": "Inimigos comuns com velocidade de movimento maior"},
 }
+
+
+def _affixes_of_scope(scope):
+    return [key for key, defn in AFFIXES.items() if defn["scope"] == scope]
 
 
 def roll_paragon(player):
@@ -45,18 +62,35 @@ def apply_paragon_rolls(enemies, player):
             make_paragon(enemy)
 
 
-def make_paragon(enemy):
-    """+2 monster levels, one random affix, x4 xp/gold, golden aura +
-    floating name (game/enemy.py's Enemy.draw() checks is_paragon)."""
-    enemy.is_paragon = True
-    enemy.ml += 2
+def apply_champion_rolls(enemies, champion_chance):
+    """Difficulty-tier elevated common enemies (Stage B5) - independent
+    per-spawn roll, no pity counter (Champions are meant to be a regular
+    occurrence at high tiers, not a rare treat like Paragon)."""
+    if champion_chance <= 0:
+        return
+    for enemy in enemies:
+        if enemy.is_paragon:
+            continue  # already the rarer, stronger upgrade - don't stack
+        if random.random() < champion_chance:
+            make_champion(enemy)
+
+
+def _regrow_stats(enemy):
     enemy.stats = StatBlock(**scale_archetype(ENEMY_ARCHETYPES[enemy.etype], enemy.ml))
     enemy.max_hp = enemy.stats.max_hp
     enemy.hp = enemy.max_hp
     enemy.damage = enemy.stats.physical_damage
     enemy.speed = enemy.stats.speed * enemy._speed_mult
 
-    enemy.affix = random.choice(list(AFFIXES))
+
+def make_paragon(enemy):
+    """+2 monster levels, one random affix, x4 xp/gold, golden aura +
+    floating name (game/enemy.py's Enemy.draw() checks is_paragon)."""
+    enemy.is_paragon = True
+    enemy.ml += 2
+    _regrow_stats(enemy)
+
+    enemy.affix = random.choice(_affixes_of_scope("monster"))
     if enemy.affix == "frenzied":
         enemy.attack_cd_max /= 1.4
     elif enemy.affix == "colossal":
@@ -72,3 +106,28 @@ def make_paragon(enemy):
     # "volatile" (death explosion), "warded" (block chance), and "vampiric"
     # (lifesteal) are pure combat-side hooks with no spawn-time stat change -
     # see game/level.py's kill/attack sites for where they actually apply.
+
+
+def make_champion(enemy):
+    """Milder sibling of make_paragon() - same shape (grow through the ML
+    curve, roll one monster-scoped affix), but +1 ML instead of +2 and
+    gentler affix bumps, since Champions are common at high difficulty
+    tiers rather than a rare Paragon-grade find. Silver aura + "CAMPEAO"
+    label distinguishes them from Paragon's gold (see Enemy.draw())."""
+    enemy.is_champion = True
+    enemy.ml += 1
+    _regrow_stats(enemy)
+
+    enemy.affix = random.choice(_affixes_of_scope("monster"))
+    if enemy.affix == "frenzied":
+        enemy.attack_cd_max /= 1.25
+    elif enemy.affix == "colossal":
+        enemy.max_hp = round(enemy.max_hp * 1.5)
+        enemy.hp = enemy.max_hp
+        enemy.width = round(enemy.width * 1.1)
+        enemy.height = round(enemy.height * 1.1)
+        enemy.sprite = pygame.transform.scale(
+            enemy.sprite, (enemy.sprite.get_width() * 110 // 100, enemy.sprite.get_height() * 110 // 100)
+        )
+    elif enemy.affix == "swift":
+        enemy.speed *= 1.2

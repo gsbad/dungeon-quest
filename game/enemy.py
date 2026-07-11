@@ -211,6 +211,9 @@ class Enemy:
         # Set by game/affixes.py's make_paragon() - a rare upgraded monster
         # with x4 xp/gold and one random affix (Stage B3).
         self.is_paragon = False
+        # Set by game/affixes.py's make_champion() - a difficulty-tier
+        # (Stage B5) common upgrade, milder than Paragon, no pity counter.
+        self.is_champion = False
         self.affix = None
 
         self.hit_flash = 0
@@ -402,6 +405,18 @@ class Enemy:
             label = f"PARAGON - {AFFIXES[self.affix]['name']}"
             txt = f_name.render(label, True, GOLD)
             surface.blit(txt, (sx + self.width // 2 - txt.get_width() // 2, sy - 26))
+        elif self.is_champion:
+            import time
+            from game.theme import font
+            t = time.time()
+            radius = int(22 + 5 * math.sin(t * 4))
+            aura = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(aura, (210, 215, 230, 90), (radius, radius), radius)
+            surface.blit(aura, (sx + self.width // 2 - radius, sy + self.height // 2 - radius))
+            f_name = font(12, bold=True)
+            label = f"CAMPEAO - {AFFIXES[self.affix]['name']}"
+            txt = f_name.render(label, True, (220, 225, 235))
+            surface.blit(txt, (sx + self.width // 2 - txt.get_width() // 2, sy - 24))
 
         surface.blit(sprite, (sx - 8, sy - 10))
 

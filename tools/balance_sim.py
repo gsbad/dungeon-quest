@@ -17,6 +17,7 @@ from game.stats import (
     xp_to_next, scale_archetype, xp_for_kill, gold_for_kill,
 )
 from game.status_effects import STATUS_EFFECTS
+from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER
 
 ATTR_ORDER = ["strength", "dexterity", "intelligence", "wisdom", "vigor"]
 
@@ -126,6 +127,25 @@ def print_status_effect_dps():
     print()
 
 
+def print_difficulty_bands():
+    print("=== Dificuldade (Stage B5): ML efetivo por fase, cada tier ===")
+    # Representative levels: one per act (fase1 of Act1/Act2/Act3).
+    base_mls = {"Fase 1 (Floresta)": 1, "Fase 5 (Pantano)": 12, "Fase 9 (Salao)": 24}
+    header = f"{'Dificuldade':>14} " + " ".join(f"{name:>18}" for name in base_mls)
+    print(header)
+    for diff_id in DIFFICULTY_ORDER:
+        d = DIFFICULTIES[diff_id]
+        row = f"{d['name']:>14} "
+        row += " ".join(f"ML{base + d['ml_bonus']:>16}" for base in base_mls.values())
+        print(row)
+    print()
+    print(f"{'Dificuldade':>14} {'Champion %':>11} {'Boss enrage':>12}")
+    for diff_id in DIFFICULTY_ORDER:
+        d = DIFFICULTIES[diff_id]
+        print(f"{d['name']:>14} {d['champion_chance']*100:>10.0f}% {d['boss_enrage_frac']*100:>11.0f}%")
+    print()
+
+
 if __name__ == "__main__":
     print_xp_curve()
     print_player_progression()
@@ -133,3 +153,4 @@ if __name__ == "__main__":
     print_ttk_matrix()
     print_kill_rewards()
     print_status_effect_dps()
+    print_difficulty_bands()

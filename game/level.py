@@ -4,7 +4,7 @@ import math
 from game.assets import create_tile
 from game.enemy import Enemy, BASE_XP, GOLD_DROPS, GoldDrop
 from game.stats import xp_for_kill, gold_for_kill
-from game.affixes import PARAGON_REWARD_MULT
+from game.affixes import PARAGON_REWARD_MULT, CHAMPION_REWARD_MULT
 from game.theme import font, ACCENT_GOLD
 
 TILE = 48
@@ -433,7 +433,7 @@ LEVEL_MAPS = {
 
 
 class Level:
-    def __init__(self, level_num):
+    def __init__(self, level_num, extra_speed_mult=1.0, ml_bonus=0):
         self.level_num = level_num
         self.data = LEVEL_MAPS[level_num]
         self.layout = self.data["layout"]
@@ -452,6 +452,12 @@ class Level:
         self._enemy_spawn_min_dist = 3
         self.puddles = []
         self.gold_drops = []
+
+        # Difficulty-tier hooks (Stage B5) - Level itself stays unaware
+        # difficulty exists, same separation already used for Paragon/
+        # weather; GameplayState just hands in two numbers.
+        self.extra_speed_mult = extra_speed_mult
+        self.ml_bonus = ml_bonus
 
         self._tile_cache = {}
         self._build()
@@ -495,8 +501,8 @@ class Level:
         enemy_types = self.data["enemies"]
         ei = 0
 
-        speed_mul = self.data.get("speed_multiplier", 1.0)
-        monster_level = self.data.get("monster_level", 1)
+        speed_mul = self.data.get("speed_multiplier", 1.0) * self.extra_speed_mult
+        monster_level = self.data.get("monster_level", 1) + self.ml_bonus
 
         for row_i, row in enumerate(self.layout):
             for col_i, ch in enumerate(row):
@@ -569,7 +575,12 @@ class Level:
         """XP/gold/kill-tracking for a just-died regular enemy - shared by
         the melee path above and game/states.py's Fireball collision, so a
         kill is rewarded identically no matter which weapon landed it."""
-        reward_mult = PARAGON_REWARD_MULT if enemy.is_paragon else 1
+        if enemy.is_paragon:
+            reward_mult = PARAGON_REWARD_MULT
+        elif enemy.is_champion:
+            reward_mult = CHAMPION_REWARD_MULT
+        else:
+            reward_mult = 1
         player.gain_xp(xp_for_kill(BASE_XP[enemy.etype], enemy.ml, player.level) * reward_mult)
         self.gold_drops.append(GoldDrop(
             enemy.x + enemy.width / 2, enemy.y + enemy.height / 2,
