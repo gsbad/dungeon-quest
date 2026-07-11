@@ -5,26 +5,28 @@ import random
 from game.player import Player
 from game.level import Level
 from game.boss import Boss, CacodemonBoss
+from game.enemy import Particle
 from game.camera import Camera
+from game.paperdoll import Paperdoll
+from game.merchant import ItemsOverlay
+from game.weather import WeatherSystem
 from game.assets import create_heart_sprite, create_logo_sprite, create_victory_hero_sprite
-from game.input_system import Action
+from game.input_system import Action, FullscreenButton
 from game.audio import SoundButton
+from game.stats import POINTS_PER_LEVEL
+from game.theme import (
+    SW, SH, font, BG_MENU, BG_GAME_OVER, BG_VICTORY, TITLE_MENU, TITLE_PAUSE,
+    ACCENT_GOLD, SELECTED, UNSELECTED, SUBTEXT, PANEL_FILL, PANEL_BORDER,
+)
+from game.ui import draw_text, TextButton, Panel
 
-SW, SH = 800, 600
-
-# ─── Fonts ────────────────────────────────────────────────────────────────────
-def font(size, bold=False):
-    f = pygame.font.Font(None, size)
-    f.set_bold(bold)
-    return f
-
-def draw_text(surface, text, f, color, cx, y, shadow=True):
-    if shadow:
-        s = f.render(text, True, (0,0,0))
-        surface.blit(s, (cx - s.get_width()//2 + 2, y+2))
-    r = f.render(text, True, color)
-    surface.blit(r, (cx - r.get_width()//2, y))
-    return r.get_height()
+# Maps a level's "boss" key (LEVEL_MAPS) to (BossClass, spawn_dx_from_center, spawn_y).
+# Data-driven so new levels/bosses only need a registry entry + LEVEL_MAPS metadata,
+# not new level_num==N literals scattered across this file.
+BOSS_REGISTRY = {
+    "shadow_king": (Boss, 48, 80),
+    "cacodemon": (CacodemonBoss, 40, 100),
+}
 
 
 # ─── Particle star for menus ──────────────────────────────────────────────────
@@ -71,15 +73,19 @@ class HeartPickup:
 
 # ─── Menu State ───────────────────────────────────────────────────────────────
 class MenuState:
-    def __init__(self, screen, input_mgr, audio_mgr):
+    def __init__(self, screen, input_mgr, audio_mgr, has_save=False):
         self.screen = screen
         self.input = input_mgr
         self.audio = audio_mgr
         self.stars = [Star() for _ in range(80)]
         self.t = 0
         self.selected = 0
-        self.options = ["JOGAR", "SAIR"]
-        self._option_rects = [None] * len(self.options)
+        self.options = (["CONTINUAR"] if has_save else []) + ["NOVO JOGO", "SAIR"]
+        self.option_buttons = [
+            TextButton(opt, SW//2, 410 + i*55, pad_x=30, pad_y=15)
+            for i, opt in enumerate(self.options)
+        ]
+        self.controls_panel = Panel(320, 160, PANEL_FILL, PANEL_BORDER)
 
     def handle_event(self, event):
         if self.input.consume_action(Action.MENU_UP):
@@ -91,8 +97,8 @@ class MenuState:
         if self.input.consume_action(Action.CONFIRM):
             self.audio.play("menu_select")
             return self.options[self.selected]
-        for i, rect in enumerate(self._option_rects):
-            if rect and self.input.tapped_rect(rect):
+        for i, btn in enumerate(self.option_buttons):
+            if self.input.tapped_rect(btn.rect):
                 self.selected = i
                 self.audio.play("menu_select")
                 return self.options[i]
@@ -104,7 +110,7 @@ class MenuState:
             star.update(dt)
 
     def draw(self):
-        self.screen.fill((5, 5, 20))
+        self.screen.fill(BG_MENU)
         for star in self.stars:
             star.draw(self.screen)
 
@@ -115,16 +121,13 @@ class MenuState:
         self.screen.blit(glow_surf, (150, 80))
 
         f_title = font(64, bold=True)
-        draw_text(self.screen, "DUNGEON QUEST", f_title, (220, 160, 255), SW//2, 90)
+        draw_text(self.screen, "DUNGEON QUEST", f_title, TITLE_MENU, SW//2, 90)
 
         f_sub = font(20)
-        draw_text(self.screen, "Criado por Gustavo Sa - RU 361193", f_sub, (180, 180, 220), SW//2, 175)
+        draw_text(self.screen, "Criado por Gustavo Sa - RU 361193", f_sub, SUBTEXT, SW//2, 175)
 
         # Controls box
-        box = pygame.Surface((320, 160), pygame.SRCALPHA)
-        box.fill((20, 10, 40, 180))
-        pygame.draw.rect(box, (120, 80, 200), (0,0,320,160), 2)
-        self.screen.blit(box, (SW//2-160, 220))
+        self.controls_panel.draw(self.screen, (SW//2-160, 220))
 
         f_ctrl = font(16, bold=True)
         f_ctrlv = font(16)
@@ -139,7 +142,7 @@ class MenuState:
         ]
         for i, (key, desc) in enumerate(controls):
             y = 255 + i * 28
-            k_surf = f_ctrl.render(key, True, (255, 220, 100))
+            k_surf = f_ctrl.render(key, True, ACCENT_GOLD)
             d_surf = f_ctrlv.render(desc, True, (200, 200, 220))
             self.screen.blit(k_surf, (SW//2 - 150, y))
             self.screen.blit(d_surf, (SW//2 - 10, y))
@@ -147,19 +150,121 @@ class MenuState:
         # Menu options
         f_menu = font(32, bold=True)
         for i, opt in enumerate(self.options):
-            pulse = 1.0 + 0.08 * math.sin(self.t * 4) if i == self.selected else 1.0
-            color = (255, 220, 50) if i == self.selected else (160, 140, 200)
+            color = SELECTED if i == self.selected else UNSELECTED
             prefix = "> " if i == self.selected else "  "
-            label = prefix + opt
-            y = 410 + i * 55
-            draw_text(self.screen, label, f_menu, color, SW//2, y)
-            w, h = f_menu.size(label)
-            self._option_rects[i] = pygame.Rect(SW//2 - w//2 - 30, y - 15, w + 60, h + 30)
+            self.option_buttons[i].label = prefix + opt
+            self.option_buttons[i].draw(self.screen, f_menu, color)
 
         # Version
         f_tiny = font(12)
         v = f_tiny.render("Linguagem de Programacao Aplicada - UNINTER 2026", True, (80,80,100))
         self.screen.blit(v, (SW//2 - v.get_width()//2, SH - 24))
+
+
+# ─── Name Entry ───────────────────────────────────────────────────────────────
+class NameEntryState:
+    """Shown once when starting "NOVO JOGO", before the character exists.
+    Same handle_event/update/draw shape as MenuState. PC types on the
+    physical keyboard directly (handle_event already gets the raw pygame
+    event); mobile taps an on-screen keyboard grid via input.tapped_rect() -
+    the same touch mechanism every other menu/overlay in this game already
+    uses, so there's no new browser-API risk (unlike, say, focusing a
+    hidden HTML text input to summon the OS keyboard - deliberately not
+    used here)."""
+
+    MAX_LEN = 12
+    ROWS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"]
+    KEY_W, KEY_H, GAP = 52, 48, 6
+
+    def __init__(self, screen, input_mgr, audio_mgr):
+        self.screen = screen
+        self.input = input_mgr
+        self.audio = audio_mgr
+        self.name = ""
+        self.t = 0
+        self.stars = [Star() for _ in range(60)]
+        self.key_rects = {}
+        start_y = 260
+        for r, row in enumerate(self.ROWS):
+            row_w = len(row) * (self.KEY_W + self.GAP) - self.GAP
+            start_x = SW // 2 - row_w // 2
+            for i, ch in enumerate(row):
+                x = start_x + i * (self.KEY_W + self.GAP)
+                y = start_y + r * (self.KEY_H + self.GAP)
+                self.key_rects[ch] = pygame.Rect(x, y, self.KEY_W, self.KEY_H)
+        action_y = start_y + len(self.ROWS) * (self.KEY_H + self.GAP) + 14
+        self.backspace_rect = pygame.Rect(SW // 2 - 160, action_y, 150, 44)
+        self.confirm_rect = pygame.Rect(SW // 2 + 10, action_y, 150, 44)
+
+    def _is_allowed_char(self, ch):
+        return ch.isalnum() or ch == " "
+
+    def handle_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                self.audio.play("menu_select")
+                return "name_confirmed"
+            elif event.key == pygame.K_BACKSPACE:
+                self.name = self.name[:-1]
+            elif event.unicode and self._is_allowed_char(event.unicode) and len(self.name) < self.MAX_LEN:
+                self.name += event.unicode
+
+        for ch, rect in self.key_rects.items():
+            if self.input.tapped_rect(rect):
+                if len(self.name) < self.MAX_LEN:
+                    self.name += ch
+                self.audio.play("menu_move")
+                return None
+        if self.input.tapped_rect(self.backspace_rect):
+            self.name = self.name[:-1]
+            self.audio.play("menu_move")
+            return None
+        if self.input.tapped_rect(self.confirm_rect):
+            self.audio.play("menu_select")
+            return "name_confirmed"
+        return None
+
+    def update(self, dt):
+        self.t += dt
+        for star in self.stars:
+            star.update(dt)
+
+    def draw(self):
+        self.screen.fill(BG_MENU)
+        for star in self.stars:
+            star.draw(self.screen)
+
+        f_title = font(34, bold=True)
+        draw_text(self.screen, "COMO SE CHAMA O HEROI?", f_title, TITLE_MENU, SW // 2, 80)
+
+        f_sub = font(16)
+        draw_text(self.screen, "Digite no teclado ou toque nas letras", f_sub, SUBTEXT, SW // 2, 130)
+
+        # Name field with a blinking cursor
+        cursor = "|" if int(self.t * 2) % 2 == 0 else ""
+        f_name = font(28, bold=True)
+        draw_text(self.screen, self.name + cursor, f_name, ACCENT_GOLD, SW // 2, 175)
+
+        f_key = font(20, bold=True)
+        for ch, rect in self.key_rects.items():
+            pygame.draw.rect(self.screen, (40, 30, 70), rect, border_radius=8)
+            pygame.draw.rect(self.screen, (160, 140, 210), rect, 1, border_radius=8)
+            draw_text(self.screen, ch, f_key, (225, 225, 235), rect.centerx, rect.y + 12, shadow=False)
+
+        f_action = font(17, bold=True)
+        pygame.draw.rect(self.screen, (110, 30, 30), self.backspace_rect, border_radius=8)
+        pygame.draw.rect(self.screen, (200, 200, 210), self.backspace_rect, 1, border_radius=8)
+        draw_text(self.screen, "APAGAR", f_action, (240, 220, 220), self.backspace_rect.centerx,
+                  self.backspace_rect.y + 13, shadow=False)
+
+        can_confirm = True  # empty name just falls back to "Heroi"
+        pygame.draw.rect(self.screen, (25, 130, 70), self.confirm_rect, border_radius=8)
+        pygame.draw.rect(self.screen, (200, 200, 210), self.confirm_rect, 1, border_radius=8)
+        draw_text(self.screen, "CONFIRMAR", f_action, (225, 245, 230), self.confirm_rect.centerx,
+                  self.confirm_rect.y + 13, shadow=False)
+
+        f_hint = font(14)
+        draw_text(self.screen, "ENTER / toque em Confirmar", f_hint, SUBTEXT, SW // 2, SH - 30)
 
 
 # ─── Transition ───────────────────────────────────────────────────────────────
@@ -184,23 +289,24 @@ class TransitionState:
         progress = self.timer / self.duration
         alpha = int(255 * (1 - abs(progress - 0.5) * 2))
         f = font(36, bold=True)
-        draw_text(self.screen, f"Nivel {self.next_level}", f, (220,180,255), SW//2, SH//2-20)
+        draw_text(self.screen, f"Nivel {self.next_level}", f, TITLE_PAUSE, SW//2, SH//2-20)
         from game.level import LEVEL_MAPS
-        if self.next_level in LEVEL_MAPS:
+        next_data = LEVEL_MAPS.get(self.next_level)
+        if next_data:
             f2 = font(22)
-            title = LEVEL_MAPS[self.next_level]["title"]
-            draw_text(self.screen, title, f2, (180,180,220), SW//2, SH//2+24)
-        if self.next_level == 4:
+            draw_text(self.screen, next_data["title"], f2, SUBTEXT, SW//2, SH//2+24)
+        if next_data and next_data.get("boss"):
             f3 = font(18)
             draw_text(self.screen, "O BOSS FINAL AGUARDA...", f3, (255,100,100), SW//2, SH//2+60)
 
 
 # ─── Gameplay State ────────────────────────────────────────────────────────────
 class GameplayState:
-    def __init__(self, screen, input_mgr, audio_mgr, level_num=1, player=None):
+    def __init__(self, screen, input_mgr, audio_mgr, level_num=1, player=None, save_state=None):
         self.screen = screen
         self.input = input_mgr
         self.audio = audio_mgr
+        self.save_state = save_state
         self.level_num = level_num
         self.level = Level(level_num)
         self.camera = Camera(SW, SH, self.level.width, self.level.height)
@@ -218,19 +324,21 @@ class GameplayState:
         self.camera.x = self.player.x - SW//2
         self.camera.y = self.player.y - SH//2
 
-        # Boss (level 4 and 5)
+        # Boss, driven by the level's metadata (LEVEL_MAPS[level_num]["boss"])
         self.boss = None
         self.hearts = []
         self.heart_sprite = create_heart_sprite(True)
         self.heart_spawn_timer = random.uniform(8.0, 14.0)
-        if level_num == 4:
-            self.boss = Boss(SW//2 - 48, 80)
-        elif level_num == 5:
-            self.boss = CacodemonBoss(SW//2 - 40, 100)
+        boss_key = self.level.data.get("boss")
+        if boss_key:
+            BossClass, spawn_dx, spawn_y = BOSS_REGISTRY[boss_key]
+            self.boss = BossClass(SW//2 - spawn_dx, spawn_y)
 
         self.paused = False
         self.next_state = None
-        self._restart_rect = None
+        self._restart_button = TextButton(
+            "R / toque aqui - Reiniciar", SW//2, SH//2+50, pad_x=20, pad_y=14
+        )
 
         # Level-entry message
         self.msg_timer = 2.5
@@ -239,18 +347,41 @@ class GameplayState:
         # Screen shake
         self.shake = 0
 
+        self.level_up_particles = []
+
+        self.paperdoll = Paperdoll()
+        self.paperdoll_open = False
+        self.items = ItemsOverlay()
+        self.items_open = False
+        self.weather = WeatherSystem(self.level.data.get("weather"))
+
     def handle_event(self, event):
+        if self.input.consume_action(Action.PAPERDOLL):
+            if not self.paused and not self.items_open:
+                self.paperdoll_open = not self.paperdoll_open
+        if self.input.consume_action(Action.ITEMS):
+            if not self.paused and not self.paperdoll_open:
+                self.items_open = not self.items_open
+        if self.paperdoll_open or self.items_open:
+            return
         if self.input.consume_action(Action.PAUSE):
             self.paused = not self.paused
         if self.paused:
             if self.input.consume_action(Action.RESTART):
                 self.next_state = "restart"
-            elif self._restart_rect and self.input.tapped_rect(self._restart_rect):
+            elif self.input.tapped_rect(self._restart_button.rect):
                 self.next_state = "restart"
         elif self.input.consume_action(Action.ATTACK):
             self.player.try_attack()
 
     def update(self, dt):
+        self.weather.update(dt)  # ambient - keeps animating through pause/overlays
+        if self.paperdoll_open:
+            self.paperdoll.handle_tap(self.input, self.player)
+            return
+        if self.items_open:
+            self.items.handle_tap(self.input, self.player, self.save_state)
+            return
         if self.paused:
             return
 
@@ -259,31 +390,82 @@ class GameplayState:
         if self.msg_timer > 0:
             self.msg_timer -= dt
 
+        hp_before = self.player.hp
         self.player.update(dt, self.level.walls, self.input.movement_vector())
 
-        if self.level_num == 4:
+        if self.level.data.get("heart_spawns"):
             self._update_heart_spawns(dt)
             self._check_heart_pickups()
 
         if self.boss:
             if self.player.attacking:
                 atk_rect = self.player.get_attack_rect()
-                self.boss.take_damage(1 if atk_rect.colliderect(self.boss.rect) else 0)
+                hit_boss = atk_rect.colliderect(self.boss.rect)
+                boss_was_alive = self.boss.alive
+                self.boss.take_damage(self.player.attack_damage if hit_boss else 0)
+                if hit_boss:
+                    self.camera.shake(5, 0.12)
+                    self.camera.zoom_pulse(0.05, 0.15)
+                if boss_was_alive and not self.boss.alive:
+                    self.player.gain_xp(self.boss.xp_reward)
+                    # Instant credit, not a walk-over pickup like regular
+                    # enemies - the level ends immediately (victory screen),
+                    # so there's no gameplay window to walk over a dropped
+                    # coin. Particle burst instead, for the visual payoff.
+                    self.player.gold += self.boss.gold_reward
+                    for _ in range(15):
+                        self.level_up_particles.append(
+                            Particle(self.boss.x + self.boss.width/2,
+                                     self.boss.y + self.boss.height/2, ACCENT_GOLD)
+                        )
+                    boss_key = self.level.data.get("boss")
+                    self.player.boss_kills[boss_key] = self.player.boss_kills.get(boss_key, 0) + 1
             self.boss.update(dt, self.player, self.level.walls)
             if not self.boss.alive:
-                self.next_state = "secret_victory" if self.level_num == 5 else "victory"
+                self.next_state = self.level.data["victory"]
         else:
-            self.level.update(dt, self.player)
+            self.level.update(dt, self.player, self.audio)
             if self.level.check_exit(self.player):
-                self.next_state = f"next:{self.level_num+1}"
+                self.next_state = f"next:{self.level.data['next']}"
+
+        # Screen shake feedback when the player takes damage (from boss or
+        # regular enemies alike - both paths run above, so a simple hp diff
+        # catches either source without touching combat logic itself).
+        if self.player.hp < hp_before:
+            self.camera.shake(8, 0.2)
+
+        # Level-up fanfare - reuses the level-entry toast + the same
+        # particle language as boss hits, just gold-colored. No zoom_pulse -
+        # it read as screen shake and got in the way of seeing the particles.
+        if self.player.pending_level_up > 0 and self.save_state is not None:
+            # Persisted immediately (not just at level-exit) so a level
+            # gained mid-run survives a closed tab/browser crash.
+            import game.save as save
+            save.sync_character(self.save_state, self.player)
+            save.sync_economy(self.save_state, self.player)
+            save.save(self.save_state)
+        while self.player.pending_level_up > 0:
+            self.player.pending_level_up -= 1
+            self.msg_timer = 2.5
+            self.msg_text = f"Nivel {self.player.level}! +{POINTS_PER_LEVEL} pontos"
+            self.audio.play("victory")
+            for _ in range(20):
+                self.level_up_particles.append(
+                    Particle(self.player.x + self.player.width/2,
+                             self.player.y + self.player.height/2, ACCENT_GOLD)
+                )
+
+        self.level_up_particles = [p for p in self.level_up_particles if p.life > 0]
+        for p in self.level_up_particles:
+            p.update(dt)
 
         # Check death
         if self.player.hp <= 0:
             self.next_state = "game_over"
 
     def draw(self):
-        cx = int(self.camera.x)
-        cy = int(self.camera.y)
+        cx = int(self.camera.render_x)
+        cy = int(self.camera.render_y)
 
         self.level.draw(self.screen, cx, cy, SW, SH)
 
@@ -294,6 +476,15 @@ class GameplayState:
             self.boss.draw(self.screen, cx, cy)
 
         self.player.draw(self.screen, cx, cy)
+
+        for p in self.level_up_particles:
+            p.draw(self.screen, cx, cy)
+
+        self.camera.apply_zoom(self.screen)
+
+        # Weather - screen-space, drawn after the zoom post-effect so fog/
+        # rain/snow don't visually warp during a zoom_pulse hit effect.
+        self.weather.draw(self.screen)
 
         # HUD
         self.player.draw_hud(self.screen)
@@ -306,7 +497,7 @@ class GameplayState:
         if self.msg_timer > 0:
             alpha = min(255, int(self.msg_timer * 255))
             f = font(28, bold=True)
-            surf = f.render(self.msg_text, True, (255, 220, 100))
+            surf = f.render(self.msg_text, True, ACCENT_GOLD)
             surf.set_alpha(alpha)
             self.screen.blit(surf, (SW//2 - surf.get_width()//2, SH//2 - 20))
 
@@ -316,15 +507,18 @@ class GameplayState:
             overlay.fill((0,0,0,140))
             self.screen.blit(overlay, (0,0))
             f = font(48, bold=True)
-            draw_text(self.screen, "PAUSADO", f, (220,180,255), SW//2, SH//2-40)
+            draw_text(self.screen, "PAUSADO", f, TITLE_PAUSE, SW//2, SH//2-40)
             f2 = font(20)
-            draw_text(self.screen, "ESC / toque no botao - Continuar", f2, (180,180,220), SW//2, SH//2+20)
-            restart_label = "R / toque aqui - Reiniciar"
-            draw_text(self.screen, restart_label, f2, (180,180,220), SW//2, SH//2+50)
-            w, h = f2.size(restart_label)
-            self._restart_rect = pygame.Rect(SW//2 - w//2 - 20, SH//2 + 50 - 14, w + 40, h + 28)
-        else:
-            self._restart_rect = None
+            draw_text(self.screen, "ESC / toque no botao - Continuar", f2, SUBTEXT, SW//2, SH//2+20)
+            self._restart_button.draw(self.screen, f2, SUBTEXT)
+
+        # Paperdoll overlay
+        if self.paperdoll_open:
+            self.paperdoll.draw(self.screen, self.player)
+
+        # Itens overlay
+        if self.items_open:
+            self.items.draw(self.screen, self.player)
 
         if self.input.touch_active:
             self.input.draw(self.screen)
@@ -361,7 +555,10 @@ class GameplayState:
     def _check_heart_pickups(self):
         for heart in self.hearts[:]:
             if self.player.rect.colliderect(heart.rect):
-                self.player.hp = min(self.player.max_hp, self.player.hp + 1)
+                # Same ~1/6-of-max_hp heal as before, rescaled to the bigger
+                # hp range from game/stats.py (Stage A3).
+                heal = round(self.player.max_hp / 6)
+                self.player.hp = min(self.player.max_hp, self.player.hp + heal)
                 self.hearts.remove(heart)
                 self.audio.play("pickup")
 
@@ -374,8 +571,8 @@ class GameOverState:
         self.audio = audio_mgr
         self.t = 0
         self.stars = [Star() for _ in range(60)]
-        self._menu_rect = None
-        self._restart_rect = None
+        self.menu_button = TextButton("[ ENTER ] - Menu Principal", SW//2, 360)
+        self.restart_button = TextButton("[ R ] - Tentar Novamente", SW//2, 395)
 
     def handle_event(self, event):
         if self.input.consume_action(Action.CONFIRM):
@@ -384,10 +581,10 @@ class GameOverState:
         if self.input.consume_action(Action.RESTART):
             self.audio.play("menu_select")
             return "restart"
-        if self._menu_rect and self.input.tapped_rect(self._menu_rect):
+        if self.input.tapped_rect(self.menu_button.rect):
             self.audio.play("menu_select")
             return "menu"
-        if self._restart_rect and self.input.tapped_rect(self._restart_rect):
+        if self.input.tapped_rect(self.restart_button.rect):
             self.audio.play("menu_select")
             return "restart"
         return None
@@ -398,7 +595,7 @@ class GameOverState:
             s.update(dt)
 
     def draw(self):
-        self.screen.fill((20, 0, 0))
+        self.screen.fill(BG_GAME_OVER)
         for s in self.stars:
             s.draw(self.screen)
 
@@ -411,15 +608,8 @@ class GameOverState:
         draw_text(self.screen, "Voce foi derrotado nas trevas...", f2, (200,150,150), SW//2, 280)
 
         f3 = font(20, bold=True)
-        menu_label = "[ ENTER ] - Menu Principal"
-        restart_label = "[ R ] - Tentar Novamente"
-        draw_text(self.screen, menu_label, f3, (220,180,180), SW//2, 360)
-        draw_text(self.screen, restart_label, f3, (220,180,180), SW//2, 395)
-
-        mw, mh = f3.size(menu_label)
-        self._menu_rect = pygame.Rect(SW//2 - mw//2 - 20, 360 - 12, mw + 40, mh + 24)
-        rw, rh = f3.size(restart_label)
-        self._restart_rect = pygame.Rect(SW//2 - rw//2 - 20, 395 - 12, rw + 40, rh + 24)
+        self.menu_button.draw(self.screen, f3, (220,180,180))
+        self.restart_button.draw(self.screen, f3, (220,180,180))
 
 
 # ─── Victory ──────────────────────────────────────────────────────────────────
@@ -432,8 +622,8 @@ class VictoryState:
         self.particles = []
         self._spawn_timer = 0
         self.elapsed = float(elapsed_seconds)
-        self._menu_rect = None
-        self._secret_rect = None
+        self.menu_button = TextButton("[ ENTER ] - Menu Principal", SW//2, 420)
+        self.secret_button = TextButton("[ ESPACO ] - Nivel Secreto", SW//2, 500, pad_y=10)
 
     def handle_event(self, event):
         if self.input.consume_action(Action.SECRET):
@@ -442,10 +632,10 @@ class VictoryState:
         if self.input.consume_action(Action.CONFIRM):
             self.audio.play("menu_select")
             return "menu"
-        if self._secret_rect and self.input.tapped_rect(self._secret_rect):
+        if self.input.tapped_rect(self.secret_button.rect):
             self.audio.play("menu_select")
             return "secret"
-        if self._menu_rect and self.input.tapped_rect(self._menu_rect):
+        if self.input.tapped_rect(self.menu_button.rect):
             self.audio.play("menu_select")
             return "menu"
         return None
@@ -467,7 +657,7 @@ class VictoryState:
             p.update(dt)
 
     def draw(self):
-        self.screen.fill((5, 10, 30))
+        self.screen.fill(BG_VICTORY)
         for p in self.particles:
             p.draw(self.screen, 0, 0)
 
@@ -483,10 +673,7 @@ class VictoryState:
         draw_text(self.screen, "Parabens, heroi!", f3, (180,255,180), SW//2, 330)
 
         f4 = font(20, bold=True)
-        menu_label = "[ ENTER ] - Menu Principal"
-        draw_text(self.screen, menu_label, f4, (200,200,220), SW//2, 420)
-        mw, mh = f4.size(menu_label)
-        self._menu_rect = pygame.Rect(SW//2 - mw//2 - 20, 420 - 12, mw + 40, mh + 24)
+        self.menu_button.draw(self.screen, f4, (200,200,220))
 
         # Show total play time
         mins = int(self.elapsed // 60)
@@ -497,10 +684,7 @@ class VictoryState:
 
         # Instructions
         f_ins = font(16)
-        secret_label = "[ ESPACO ] - Nivel Secreto"
-        draw_text(self.screen, secret_label, f_ins, (180,200,180), SW//2, 500)
-        sw, sh = f_ins.size(secret_label)
-        self._secret_rect = pygame.Rect(SW//2 - sw//2 - 20, 500 - 10, sw + 40, sh + 20)
+        self.secret_button.draw(self.screen, f_ins, (180,200,180))
 
         f5 = font(14)
         draw_text(self.screen, "Linguagem de Programacao Aplicada - UNINTER 2026",
@@ -516,13 +700,13 @@ class SecretVictoryState:
         self.t = 0
         self.particles = []
         self._spawn_timer = 0
-        self._menu_rect = None
+        self.menu_button = TextButton("[ ENTER ] - Menu Principal", SW//2, 340)
 
     def handle_event(self, event):
         if self.input.consume_action(Action.CONFIRM):
             self.audio.play("menu_select")
             return "menu"
-        if self._menu_rect and self.input.tapped_rect(self._menu_rect):
+        if self.input.tapped_rect(self.menu_button.rect):
             self.audio.play("menu_select")
             return "menu"
         return None
@@ -562,10 +746,7 @@ class SecretVictoryState:
         draw_text(self.screen, "Você platinou o game!", f2, (235, 180, 120), SW//2, 240)
 
         f3 = font(20, bold=True)
-        menu_label = "[ ENTER ] - Menu Principal"
-        draw_text(self.screen, menu_label, f3, (255, 220, 180), SW//2, 340)
-        mw, mh = f3.size(menu_label)
-        self._menu_rect = pygame.Rect(SW//2 - mw//2 - 20, 340 - 12, mw + 40, mh + 24)
+        self.menu_button.draw(self.screen, f3, (255, 220, 180))
 
         # Infernal floor pulse
         for i in range(6):
@@ -580,10 +761,35 @@ class GameStateManager:
         self.screen = screen
         self.input = input_mgr
         self.audio = audio_mgr
-        self.sound_button = SoundButton(40, 40)
-        self.state = MenuState(screen, input_mgr, audio_mgr)
+        # Right side, next to the (mobile-only) pause button at SW-40 - keeps
+        # the top-left free for the HP/mana/XP dock.
+        self.sound_button = SoundButton(SW - 148, 40)
+        self.fullscreen_button = FullscreenButton(SW - 94, 40)
+        self._fullscreen_fallback = False  # só usado se pygame.display.is_fullscreen() não existir
+
+        import game.save as save
+        self.save_state = save.load() or save.new_game_state()
+        self.audio.muted = self.save_state["settings"]["muted"]
+
+        self.state = MenuState(screen, input_mgr, audio_mgr, has_save=self._has_progress())
         self.player = None
         self.play_time = 0.0
+
+    def _persist(self):
+        import game.save as save
+        save.save(self.save_state)
+
+    def _player_from_save(self):
+        import game.save as save
+        return save.character_from_state(self.save_state, 0, 0, self.audio)
+
+    def _continue_level(self):
+        return min(self.save_state["progression"].get("highest_level_cleared", 0) + 1, 4)
+
+    def _is_fullscreen(self):
+        if hasattr(pygame.display, "is_fullscreen"):
+            return pygame.display.is_fullscreen()
+        return self._fullscreen_fallback
 
     def handle_event(self, event):
         result = self.state.handle_event(event)
@@ -594,40 +800,78 @@ class GameStateManager:
         if self.input.tapped_rect(self.sound_button.rect):
             self.audio.toggle_mute()
             self.audio.play("menu_select")
+            self.save_state["settings"]["muted"] = self.audio.muted
+            self._persist()
+
+        if self.input.tapped_rect(self.fullscreen_button.rect):
+            try:
+                pygame.display.toggle_fullscreen()
+                self._fullscreen_fallback = not self._fullscreen_fallback
+            except pygame.error:
+                pass
+            self.audio.play("menu_select")
 
         self.state.update(dt)
 
         # Track play time while in gameplay
         if isinstance(self.state, GameplayState):
             self.play_time += dt
+            self.save_state["counters"]["playtime_s"] += dt
             ns = self.state.next_state
             if ns:
                 self.player = self.state.player
+                import game.save as save
+                if ns == "game_over":
+                    self.save_state["counters"]["deaths"] = self.save_state["counters"].get("deaths", 0) + 1
+                else:
+                    prog = self.save_state["progression"]
+                    prog["highest_level_cleared"] = max(
+                        prog.get("highest_level_cleared", 0), self.state.level_num
+                    )
+                save.sync_character(self.save_state, self.player)
+                save.sync_counters(self.save_state, self.player)
+                save.sync_economy(self.save_state, self.player)
+                self._persist()
                 self._transition(ns)
 
         if isinstance(self.state, TransitionState):
             if self.state.done:
                 lvl = self.state.next_level
-                self.state = GameplayState(self.screen, self.input, self.audio, lvl, self.player)
+                self.state = GameplayState(self.screen, self.input, self.audio, lvl, self.player,
+                                            save_state=self.save_state)
 
     def draw(self):
         self.state.draw()
         self.sound_button.draw(self.screen, self.audio.muted)
+        self.fullscreen_button.draw(self.screen, self._is_fullscreen())
+
+    def _has_progress(self):
+        return (self.save_state["progression"].get("highest_level_cleared", 0) > 0
+                or self.save_state["character"]["level"] > 1)
 
     def _transition(self, result):
-        if result == "JOGAR":
-            self.player = None
-            self.state = TransitionState(self.screen, 1, None)
+        if result == "NOVO JOGO":
+            self.state = NameEntryState(self.screen, self.input, self.audio)
+        elif result == "name_confirmed":
+            import game.save as save
+            fresh = save.new_game_state()
+            fresh["settings"]["muted"] = self.save_state["settings"]["muted"]
+            fresh["character"]["name"] = (self.state.name.strip() or "Heroi")[:NameEntryState.MAX_LEN]
+            self.save_state = fresh
+            self.player = save.character_from_state(self.save_state, 0, 0, self.audio)
+            self.state = TransitionState(self.screen, 1, self.player)
             self.play_time = 0.0
         elif result == "SAIR":
             import sys, pygame
             pygame.quit(); sys.exit()
         elif result == "menu":
             self.player = None
-            self.state = MenuState(self.screen, self.input, self.audio)
-        elif result == "restart":
-            self.player = None
-            self.state = TransitionState(self.screen, 1, None)
+            self.state = MenuState(self.screen, self.input, self.audio, has_save=self._has_progress())
+        elif result in ("CONTINUAR", "restart"):
+            # Both resume the persisted character at its furthest cleared
+            # level - dying keeps your level/xp (this isn't a roguelite).
+            self.player = self._player_from_save()
+            self.state = TransitionState(self.screen, self._continue_level(), self.player)
             self.play_time = 0.0
         elif result == "game_over":
             self.audio.play("game_over")
@@ -636,8 +880,11 @@ class GameStateManager:
             self.audio.play("victory")
             self.state = VictoryState(self.screen, self.input, self.audio, elapsed_seconds=self.play_time)
         elif result == "secret":
-            self.player = None
-            self.state = TransitionState(self.screen, 5, None)
+            # Carries the real character over (not a fresh L1 player) -
+            # otherwise leaving this level would sync a throwaway level-1
+            # character back over the real save (see save_state sync in update()).
+            self.player = self._player_from_save()
+            self.state = TransitionState(self.screen, 5, self.player)
             self.play_time = 0.0
         elif result == "secret_victory":
             self.audio.play("victory")

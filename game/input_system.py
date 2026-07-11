@@ -1,6 +1,7 @@
 import math
 import pygame
 from enum import Enum, auto
+from game.theme import font
 
 TAP_MAX_DURATION = 0.35
 TAP_MAX_MOVEMENT = 18
@@ -15,6 +16,8 @@ class Action(Enum):
     MENU_UP = auto()
     MENU_DOWN = auto()
     SECRET = auto()
+    PAPERDOLL = auto()
+    ITEMS = auto()
 
 
 class VirtualJoystick:
@@ -124,9 +127,47 @@ class VirtualButton:
         surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
 
         if self._font is None:
-            self._font = pygame.font.Font(None, 20)
+            self._font = font(20)
         txt = self._font.render(self.label, True, (35, 25, 10))
         surface.blit(txt, (self.cx - txt.get_width() // 2, self.cy - txt.get_height() // 2))
+
+
+class FullscreenButton:
+    """Always-visible fullscreen toggle icon, same tap-target pattern as
+    audio.SoundButton - drawn as corner brackets (expand) or inward arrows
+    (compress) depending on the current fullscreen state."""
+
+    def __init__(self, cx, cy, radius=22):
+        self.cx = cx
+        self.cy = cy
+        self.radius = radius
+
+    @property
+    def rect(self):
+        d = self.radius * 2
+        return pygame.Rect(self.cx - self.radius, self.cy - self.radius, d, d)
+
+    def draw(self, surface, is_fullscreen):
+        d = self.radius * 2
+        buf = pygame.Surface((d, d), pygame.SRCALPHA)
+        pygame.draw.circle(buf, (25, 25, 35, 140), (self.radius, self.radius), self.radius)
+        pygame.draw.circle(buf, (230, 230, 245, 190), (self.radius, self.radius), self.radius, 2)
+
+        color = (235, 235, 245, 230)
+        r = self.radius
+        arm, thick = 6, 2
+        if is_fullscreen:
+            # Arrows pointing inward from each corner (compress).
+            corners = [(r - 8, r - 8, 1, 1), (r + 8, r - 8, -1, 1), (r - 8, r + 8, 1, -1), (r + 8, r + 8, -1, -1)]
+        else:
+            # Brackets pointing outward from center (expand).
+            corners = [(r - 8, r - 8, -1, -1), (r + 8, r - 8, 1, -1), (r - 8, r + 8, -1, 1), (r + 8, r + 8, 1, 1)]
+
+        for x, y, dx, dy in corners:
+            pygame.draw.line(buf, color, (x, y), (x + dx * arm, y), thick)
+            pygame.draw.line(buf, color, (x, y), (x, y + dy * arm), thick)
+
+        surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
 
 
 class InputManager:
@@ -156,6 +197,8 @@ class InputManager:
         self.joystick = VirtualJoystick(100, screen_h - 120, radius=70, knob_radius=32)
         self.attack_button = VirtualButton(screen_w - 90, screen_h - 100, 48, "ATK", Action.ATTACK)
         self.pause_button = VirtualButton(screen_w - 40, 40, 26, "II", Action.PAUSE)
+        self.paperdoll_button = VirtualButton(screen_w // 2, screen_h - 110, 30, "C", Action.PAPERDOLL)
+        self.items_button = VirtualButton(screen_w - 200, screen_h - 110, 28, "I", Action.ITEMS)
 
     # ------------------------------------------------------------------ actions
     def _press_action(self, action):
@@ -211,9 +254,19 @@ class InputManager:
                 self._press_action(Action.PAUSE)
             if event.key == pygame.K_r:
                 self._press_action(Action.RESTART)
+            if event.key == pygame.K_c:
+                self._press_action(Action.PAPERDOLL)
+            if event.key == pygame.K_i:
+                self._press_action(Action.ITEMS)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            self.touch_active = True
+            # Deliberately doesn't set touch_active - a PC mouse click still
+            # needs to register taps (menu buttons, paperdoll +/-), but it
+            # shouldn't make the mobile-only joystick/attack/pause/paperdoll
+            # overlay pop up on desktop. Real touchscreens send FINGERDOWN
+            # separately (see below), so this doesn't affect mobile.
+            self.debug_last_raw = event.pos
+            self.debug_last_scaled = event.pos
             self._pointer_down("mouse", *event.pos)
         elif event.type == pygame.MOUSEMOTION:
             self._pointer_move("mouse", *event.pos)
@@ -243,6 +296,14 @@ class InputManager:
             self.pause_button.press(pid)
             self._press_action(Action.PAUSE)
             claimed = "pause"
+        elif self.paperdoll_button.contains(x, y):
+            self.paperdoll_button.press(pid)
+            self._press_action(Action.PAPERDOLL)
+            claimed = "paperdoll"
+        elif self.items_button.contains(x, y):
+            self.items_button.press(pid)
+            self._press_action(Action.ITEMS)
+            claimed = "items"
 
         self._pointers[pid] = {
             "x": x, "y": y,
@@ -269,6 +330,10 @@ class InputManager:
             self.attack_button.release(pid)
         elif p["claimed"] == "pause":
             self.pause_button.release(pid)
+        elif p["claimed"] == "paperdoll":
+            self.paperdoll_button.release(pid)
+        elif p["claimed"] == "items":
+            self.items_button.release(pid)
         else:
             dist = math.hypot(p["x"] - p["start_x"], p["y"] - p["start_y"])
             duration = self._time - p["start_t"]
@@ -280,6 +345,8 @@ class InputManager:
         self._time += dt
         self.attack_button.update(dt)
         self.pause_button.update(dt)
+        self.paperdoll_button.update(dt)
+        self.items_button.update(dt)
         # Anything not consumed by a state this frame is stale - drop it so it
         # can't leak into a different screen after a state transition.
         self._actions.clear()
@@ -291,3 +358,5 @@ class InputManager:
         self.joystick.draw(surface)
         self.attack_button.draw(surface)
         self.pause_button.draw(surface)
+        self.paperdoll_button.draw(surface)
+        self.items_button.draw(surface)

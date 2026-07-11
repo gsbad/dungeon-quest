@@ -1,11 +1,13 @@
 import pygame
 import math
 import random
-from game.assets import create_enemy_sprite, create_projectile_sprite
+from game.assets import create_enemy_sprite, create_projectile_sprite, create_item_sprite
 from game.player import TILE
+from game.stats import StatBlock, ENEMY_ARCHETYPES
 
 class EnemyProjectile:
-    def __init__(self, x, y, vx, vy, damage=1, color=(160,100,255)):
+    def __init__(self, x, y, vx, vy, damage=1, color=(160,100,255),
+                 status_effect=None, status_chance=0.0):
         self.x = float(x)
         self.y = float(y)
         self.vx = vx
@@ -15,6 +17,9 @@ class EnemyProjectile:
         self.radius = 6
         self.alive = True
         self.age = 0.0
+        # Optional debuff this hit may inflict - see game/status_effects.py.
+        self.status_effect = status_effect
+        self.status_chance = status_chance
 
     @property
     def rect(self):
@@ -124,6 +129,73 @@ class Puddle:
         surface.blit(s, (sx, sy))
 
 
+ENEMY_FLAVOR = {
+    # AI/animation tuning that isn't a combat stat - stays local to enemy.py.
+    "skeleton":    {"atk_cd": 1.0, "color": (230,230,230)},
+    "goblin":      {"atk_cd": 0.8, "color": (80,180,80)},
+    "dark_knight": {"atk_cd": 1.2, "color": (40,40,60)},
+}
+
+# XP awarded per kill. Monster-level scaling (base_xp * (1 + 0.35*(ML-1)))
+# is a Stage B feature; monster levels don't exist yet, so this is the whole
+# formula for now.
+BASE_XP = {
+    "skeleton": 10,
+    "goblin": 8,
+    "dark_knight": 25,
+}
+
+# Gold dropped per kill (as a world pickup, not an instant credit - see
+# GoldDrop below) - same flat-for-now treatment as BASE_XP (no monster-level
+# scaling yet).
+GOLD_DROPS = {
+    "skeleton": 4,
+    "goblin": 3,
+    "dark_knight": 10,
+}
+
+
+class GoldDrop:
+    """A coin pickup left on the ground by a kill. Visible for VISIBLE_S,
+    then blinks for BLINK_S before disappearing if never collected -
+    same "use it or lose it" shape as the heart pickups, just shorter-lived
+    since gold drops on every kill instead of on a timer."""
+
+    VISIBLE_S = 3.0
+    BLINK_S = 2.0
+
+    def __init__(self, x, y, amount):
+        sprite = create_item_sprite("gold")
+        self.x = float(x) - sprite.get_width() / 2
+        self.y = float(y) - sprite.get_height() / 2
+        self.amount = amount
+        self.sprite = sprite
+        self.age = 0.0
+        self.alive = True
+        self._bob = random.uniform(0, math.pi * 2)
+        self.offset = 0.0
+
+    @property
+    def rect(self):
+        return pygame.Rect(int(self.x), int(self.y), self.sprite.get_width(), self.sprite.get_height())
+
+    @property
+    def blinking(self):
+        return self.age >= self.VISIBLE_S
+
+    def update(self, dt):
+        self.age += dt
+        if self.age >= self.VISIBLE_S + self.BLINK_S:
+            self.alive = False
+        self._bob += dt * 3.0
+        self.offset = math.sin(self._bob) * 3
+
+    def draw(self, surface, cam_x, cam_y):
+        if self.blinking and int(self.age * 6) % 2 == 0:
+            return
+        surface.blit(self.sprite, (int(self.x - cam_x), int(self.y - cam_y + self.offset)))
+
+
 class Enemy:
     def __init__(self, x, y, etype="skeleton", speed_multiplier=1.0):
         self.x = float(x)
@@ -132,19 +204,15 @@ class Enemy:
         self.width = 32
         self.height = 36
 
-        stats = {
-            "skeleton":   {"hp": 3,  "speed": 70,  "damage": 1, "atk_cd": 1.0, "color": (230,230,230)},
-            "goblin":     {"hp": 2,  "speed": 110, "damage": 1, "atk_cd": 0.8, "color": (80,180,80)},
-            "dark_knight":{"hp": 6,  "speed": 55,  "damage": 2, "atk_cd": 1.2, "color": (40,40,60)},
-        }
-        s = stats[etype]
-        self.max_hp = s["hp"]
+        self.stats = StatBlock(**ENEMY_ARCHETYPES[etype])
+        flavor = ENEMY_FLAVOR[etype]
+        self.max_hp = self.stats.max_hp
         self.hp = self.max_hp
-        self.speed = s["speed"] * speed_multiplier
-        self.damage = s["damage"]
+        self.speed = self.stats.speed * speed_multiplier
+        self.damage = self.stats.physical_damage
         self.attack_cooldown = 0
-        self.attack_cd_max = s["atk_cd"]
-        self.color = s["color"]
+        self.attack_cd_max = flavor["atk_cd"]
+        self.color = flavor["color"]
 
         self.hit_flash = 0
         self.sprite = create_enemy_sprite(etype)
@@ -186,6 +254,8 @@ class Enemy:
             proj.update(dt, walls)
             if proj.rect.colliderect(player.rect):
                 player.take_damage(proj.damage)
+                if proj.status_effect and random.random() < proj.status_chance:
+                    player.status.apply(proj.status_effect)
                 proj.alive = False
         self.projectiles = [p for p in self.projectiles if p.alive]
 
@@ -263,7 +333,10 @@ class Enemy:
         speed = 220
         vx = (px - cx) / dist * speed
         vy = (py - cy) / dist * speed
-        self.projectiles.append(EnemyProjectile(cx, cy, vx, vy, 1, (180, 100, 255)))
+        self.projectiles.append(EnemyProjectile(
+            cx, cy, vx, vy, self.damage, (180, 100, 255),
+            status_effect="weakness", status_chance=0.15
+        ))
 
     def _resolve_x(self, walls, dx):
         r = self.rect

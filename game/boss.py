@@ -4,9 +4,13 @@ import math
 import random
 from game.assets import create_boss_sprite, create_projectile_sprite
 from game.enemy import Particle
+from game.theme import font, TITLE_PAUSE
+from game.ui import ProgressBar
+from game.stats import StatBlock
 
 class Projectile:
-    def __init__(self, x, y, vx, vy, damage=1, color=(255,100,0)):
+    def __init__(self, x, y, vx, vy, damage=1, color=(255,100,0),
+                 status_effect=None, status_chance=0.0):
         self.x = float(x)
         self.y = float(y)
         self.vx = vx
@@ -16,6 +20,9 @@ class Projectile:
         self.radius = 8
         self.alive = True
         self.age = 0
+        # Optional debuff this hit may inflict - see game/status_effects.py.
+        self.status_effect = status_effect
+        self.status_chance = status_chance
 
     @property
     def rect(self):
@@ -49,8 +56,16 @@ class Boss:
         self.y = float(y)
         self.width = 96
         self.height = 96
-        self.max_hp = 30
+        # vigor=83.33 -> max_hp=270, i.e. same 30-hit TTK as before now that
+        # the player's attack_damage went from a flat 1 to stats-driven 9
+        # (see states.py's boss.take_damage(player.attack_damage) call).
+        self.stats = StatBlock(strength=10, dexterity=0, vigor=83.33, weapon_base=3, base_speed=80)
+        self.max_hp = self.stats.max_hp
         self.hp = self.max_hp
+        self.burst_dmg = self.stats.physical_damage
+        self.aimed_dmg = self.burst_dmg * 2
+        self.xp_reward = 150
+        self.gold_reward = 60
         self._saved_max_hp = None
         self._saved_hp = None
         self.phase = 1
@@ -68,6 +83,9 @@ class Boss:
 
         self.sprite_p1 = create_boss_sprite(1)
         self.sprite_p2 = create_boss_sprite(2)
+
+        self.hp_bar = ProgressBar(self.width, 10, (60,0,0), (220,220,220), border_width=1)
+        self.hud_bar = ProgressBar(400, 16, (40,0,60), (200,200,220), border_width=2, margin=2)
 
         self.enrage_timer = 0  # Phase 2 visual effect
 
@@ -110,14 +128,17 @@ class Boss:
             self.attack_interval = 1.2
             self.speed = 130
 
-    def _shoot_circle(self, cx, cy, count, speed, damage, color):
+    def _shoot_circle(self, cx, cy, count, speed, damage, color,
+                       status_effect=None, status_chance=0.0):
         for i in range(count):
             angle = (2 * math.pi / count) * i
             vx = math.cos(angle) * speed
             vy = math.sin(angle) * speed
-            self.projectiles.append(Projectile(cx, cy, vx, vy, damage, color))
+            self.projectiles.append(Projectile(cx, cy, vx, vy, damage, color,
+                                                status_effect, status_chance))
 
-    def _shoot_at_player(self, player, speed, damage, color):
+    def _shoot_at_player(self, player, speed, damage, color,
+                          status_effect=None, status_chance=0.0):
         cx = self.x + self.width / 2
         cy = self.y + self.height / 2
         px = player.x + player.width / 2
@@ -127,7 +148,8 @@ class Boss:
             return
         vx = (px - cx) / dist * speed
         vy = (py - cy) / dist * speed
-        self.projectiles.append(Projectile(cx, cy, vx, vy, damage, color))
+        self.projectiles.append(Projectile(cx, cy, vx, vy, damage, color,
+                                            status_effect, status_chance))
 
     def update(self, dt, player, walls):
         # Update particles
@@ -140,6 +162,8 @@ class Boss:
             proj.update(dt, walls)
             if proj.rect.colliderect(player.rect):
                 player.take_damage(proj.damage)
+                if proj.status_effect and random.random() < proj.status_chance:
+                    player.status.apply(proj.status_effect)
                 proj.alive = False
         self.projectiles = [p for p in self.projectiles if p.alive]
 
@@ -181,12 +205,14 @@ class Boss:
             pattern = random.choice([0, 1, 2]) if self.phase == 1 else random.choice([0,1,2,3])
 
             if pattern == 0:
-                # Circular burst
+                # Circular burst - dark magic, chance of Lentidao
                 count = 8 if self.phase == 1 else 12
                 color = (180,0,255) if self.phase == 1 else (255,80,0)
-                self._shoot_circle(cx, cy, count, 160, 1, color)
+                self._shoot_circle(cx, cy, count, 160, self.burst_dmg, color,
+                                    status_effect="slow", status_chance=0.10)
             elif pattern == 1:
-                # Triple shot at player
+                # Triple shot at player - kept pure damage, no debuff on
+                # every single attack keeps some variety in what gets inflicted
                 for offset in [-20, 0, 20]:
                     px = player.x + player.width/2 + offset
                     py = player.y + player.height/2
@@ -196,20 +222,23 @@ class Boss:
                         vx = (px-cx)/dist*spd
                         vy = (py-cy)/dist*spd
                         clr = (200,50,255) if self.phase==1 else (255,150,0)
-                        self.projectiles.append(Projectile(cx,cy,vx,vy,1,clr))
+                        self.projectiles.append(Projectile(cx,cy,vx,vy,self.burst_dmg,clr))
             elif pattern == 2:
-                # Spiral
+                # Spiral - dark magic, chance of Lentidao
                 for i in range(16):
                     angle = (math.pi/8)*i + self.enrage_timer
                     spd = 180
                     vx = math.cos(angle)*spd
                     vy = math.sin(angle)*spd
                     clr = (150,0,200) if self.phase==1 else (255,50,50)
-                    self.projectiles.append(Projectile(cx+vx*0.1,cy+vy*0.1,vx,vy,1,clr))
+                    self.projectiles.append(Projectile(cx+vx*0.1,cy+vy*0.1,vx,vy,self.burst_dmg,clr,
+                                                        status_effect="slow", status_chance=0.10))
             elif pattern == 3:
-                # Phase 2 only: double circle + aimed
-                self._shoot_circle(cx, cy, 8, 140, 1, (255,100,0))
-                self._shoot_at_player(player, 280, 2, (255,255,0))
+                # Phase 2 only: double circle + aimed - the aimed shot is the
+                # "big hit," bigger chance of Fraqueza to match
+                self._shoot_circle(cx, cy, 8, 140, self.burst_dmg, (255,100,0))
+                self._shoot_at_player(player, 280, self.aimed_dmg, (255,255,0),
+                                       status_effect="weakness", status_chance=0.25)
 
     def draw(self, surface, cam_x, cam_y):
         for p in self.particles:
@@ -242,27 +271,20 @@ class Boss:
         # HP bar
         bx = int(self.x - cam_x)
         by = int(self.y - cam_y) - 20
-        bar_w = self.width
-        pygame.draw.rect(surface, (60,0,0), (bx, by, bar_w, 10))
         frac = max(0, self.hp / self.max_hp)
         color = (180,0,220) if self.phase==1 else (255,80,0)
-        pygame.draw.rect(surface, color, (bx, by, int(bar_w*frac), 10))
-        pygame.draw.rect(surface, (220,220,220), (bx,by,bar_w,10), 1)
+        self.hp_bar.draw(surface, bx, by, frac, color)
 
     def draw_hud(self, surface, screen_w):
         """Big boss HP bar at top of screen"""
-        font = pygame.font.Font(None, 18)
-        font.set_bold(True)
-        label = font.render("REI DAS SOMBRAS" if self.phase==1 else "⚡ ENRAIVECIDO!", True,
-                            (220,180,255) if self.phase==1 else (255,150,50))
-        bar_w = 400
-        bx = screen_w//2 - bar_w//2
+        f = font(18, bold=True)
+        label = f.render("REI DAS SOMBRAS" if self.phase==1 else "⚡ ENRAIVECIDO!", True,
+                          TITLE_PAUSE if self.phase==1 else (255,150,50))
+        bx = screen_w//2 - self.hud_bar.w//2
         by = 16
-        pygame.draw.rect(surface, (40,0,60), (bx-2, by-2, bar_w+4, 20))
         frac = max(0, self.hp/self.max_hp)
         clr = (160,0,220) if self.phase==1 else (255,80,0)
-        pygame.draw.rect(surface, clr, (bx, by, int(bar_w*frac), 16))
-        pygame.draw.rect(surface, (200,200,220), (bx,by,bar_w,16),2)
+        self.hud_bar.draw(surface, bx, by, frac, clr)
         surface.blit(label, (screen_w//2 - label.get_width()//2, by+20))
 
 
@@ -274,8 +296,14 @@ class CacodemonBoss:
         self.y = float(y)
         self.width = 80
         self.height = 80
-        self.max_hp = 40
+        # vigor=113.33 -> max_hp=360, same 40-hit TTK as before at the
+        # player's new stats-driven attack_damage (see game/stats.py).
+        self.stats = StatBlock(strength=10, dexterity=0, vigor=113.33, weapon_base=3, base_speed=100)
+        self.max_hp = self.stats.max_hp
         self.hp = self.max_hp
+        self.dmg = self.stats.physical_damage
+        self.xp_reward = 300
+        self.gold_reward = 120
         self.alive = True
 
         self.speed = 100
@@ -289,6 +317,9 @@ class CacodemonBoss:
         self.hit_flash = 0
         self.bob_offset = 0  # For hovering animation
         self.bob_timer = 0
+
+        self.hp_bar = ProgressBar(self.width, 10, (60,0,0), (220,100,0), border_width=1)
+        self.hud_bar = ProgressBar(400, 16, (60,0,0), (255,150,0), border_width=2, margin=2)
 
     @property
     def rect(self):
@@ -344,9 +375,17 @@ class CacodemonBoss:
             self.attack_timer = self.attack_interval
             self._shoot_at_player(player)
 
-        # Update projectiles
+        # Update projectiles - and check them against the player. This boss
+        # was missing this check entirely (unlike Boss/Enemy, which both
+        # have it), so it could never actually deal damage; found while
+        # wiring the Fogo debuff onto this attack.
         for proj in self.projectiles:
             proj.update(dt, walls)
+            if proj.rect.colliderect(player.rect):
+                player.take_damage(proj.damage)
+                if proj.status_effect and random.random() < proj.status_chance:
+                    player.status.apply(proj.status_effect)
+                proj.alive = False
         self.projectiles = [p for p in self.projectiles if p.alive]
 
         # Update particles
@@ -373,7 +412,8 @@ class CacodemonBoss:
             vx = math.cos(angle) * 250
             vy = math.sin(angle) * 250
             proj = Projectile(self.x + self.width//2, self.y + self.height//2,
-                            vx, vy, damage=1, color=(255, 100, 0))
+                            vx, vy, damage=self.dmg, color=(255, 100, 0),
+                            status_effect="burn", status_chance=0.15)
             self.projectiles.append(proj)
 
     def draw(self, surface, cam_x, cam_y):
@@ -431,11 +471,8 @@ class CacodemonBoss:
         # HP bar
         bx = sx
         by = sy - 20
-        bar_w = self.width
-        pygame.draw.rect(surface, (60, 0, 0), (bx, by, bar_w, 10))
         frac = max(0, self.hp / self.max_hp)
-        pygame.draw.rect(surface, (255, 50, 0), (bx, by, int(bar_w*frac), 10))
-        pygame.draw.rect(surface, (220, 100, 0), (bx, by, bar_w, 10), 1)
+        self.hp_bar.draw(surface, bx, by, frac, (255, 50, 0))
 
         # Draw projectiles
         for proj in self.projectiles:
@@ -447,14 +484,10 @@ class CacodemonBoss:
 
     def draw_hud(self, surface, screen_w):
         """Big boss HP bar at top of screen"""
-        font = pygame.font.Font(None, 18)
-        font.set_bold(True)
-        label = font.render("CACODEMON INFERNAL", True, (255, 100, 0))
-        bar_w = 400
-        bx = screen_w//2 - bar_w//2
+        f = font(18, bold=True)
+        label = f.render("CACODEMON INFERNAL", True, (255, 100, 0))
+        bx = screen_w//2 - self.hud_bar.w//2
         by = 16
-        pygame.draw.rect(surface, (60, 0, 0), (bx-2, by-2, bar_w+4, 20))
         frac = max(0, self.hp/self.max_hp)
-        pygame.draw.rect(surface, (255, 100, 0), (bx, by, int(bar_w*frac), 16))
-        pygame.draw.rect(surface, (255, 150, 0), (bx, by, bar_w, 16), 2)
+        self.hud_bar.draw(surface, bx, by, frac, (255, 100, 0))
         surface.blit(label, (screen_w//2 - label.get_width()//2, by+20))

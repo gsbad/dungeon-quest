@@ -4,6 +4,7 @@ import sys
 from game.states import GameStateManager
 from game.input_system import InputManager
 from game.audio import AudioManager
+from game.theme import SW, SH
 
 async def main():
     pygame.init()
@@ -12,12 +13,11 @@ async def main():
     except pygame.error:
         pass  # Sem dispositivo de áudio (WSL/headless/navegador) – continua sem som
 
-    SCREEN_W, SCREEN_H = 800, 600
-    screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+    screen = pygame.display.set_mode((SW, SH), pygame.SCALED)
     pygame.display.set_caption("Dungeon Quest")
     clock = pygame.time.Clock()
 
-    input_mgr = InputManager(SCREEN_W, SCREEN_H)
+    input_mgr = InputManager(SW, SH)
     audio_mgr = AudioManager()
     manager = GameStateManager(screen, input_mgr, audio_mgr)
 

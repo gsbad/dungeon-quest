@@ -1,12 +1,19 @@
 import pygame
+import random
 from game.assets import create_tile
-from game.enemy import Enemy
+from game.enemy import Enemy, BASE_XP, GOLD_DROPS, GoldDrop
+from game.theme import font, ACCENT_GOLD
 
 TILE = 48
 
 # Map layouts: '#'=wall, '.'=floor/grass, 'W'=water, 'E'=enemy spawn, 'P'=player, 'X'=exit
 LEVEL_MAPS = {
     1: {
+        "type": "combat",
+        "boss": None,
+        "next": 2,
+        "victory": None,
+        "weather": "fog",
         "tileset": "grass",
         "floor": "grass",
         "bg": (20, 80, 20),
@@ -33,6 +40,13 @@ LEVEL_MAPS = {
         "exit": (17, 13),
     },
     2: {
+        "type": "combat",
+        "boss": None,
+        "next": 3,
+        "victory": None,
+        "speed_multiplier": 1.2,
+        "hazards": {"puddles": True},
+        "weather": "rain",
         "tileset": "sand",
         "floor": "sand",
         "bg": (160, 130, 60),
@@ -59,6 +73,13 @@ LEVEL_MAPS = {
         "exit": (17, 13),
     },
     3: {
+        "type": "combat",
+        "boss": None,
+        "next": 4,
+        "victory": None,
+        "speed_multiplier": 1.2,
+        "hazards": {"puddles": True},
+        "weather": "snow",
         "tileset": "floor",
         "floor": "floor",
         "bg": (30, 20, 50),
@@ -85,6 +106,12 @@ LEVEL_MAPS = {
         "exit": (17, 13),
     },
     4: {  # Boss level
+        "type": "boss",
+        "boss": "shadow_king",
+        "next": None,
+        "victory": "victory",
+        "heart_spawns": True,
+        "weather": "storm",
         "tileset": "boss_floor",
         "floor": "boss_floor",
         "bg": (15, 5, 30),
@@ -111,6 +138,10 @@ LEVEL_MAPS = {
         "exit": None,
     },
     5: {  # Secret Hell level
+        "type": "boss",
+        "boss": "cacodemon",
+        "next": None,
+        "victory": "secret_victory",
         "tileset": "lava",
         "floor": "lava",
         "bg": (120, 40, 10),
@@ -158,6 +189,7 @@ class Level:
         self._used_enemy_tiles = set()
         self._enemy_spawn_min_dist = 3
         self.puddles = []
+        self.gold_drops = []
 
         self._tile_cache = {}
         self._build()
@@ -201,9 +233,7 @@ class Level:
         enemy_types = self.data["enemies"]
         ei = 0
 
-        speed_mul = 1.0
-        if self.level_num in (2, 3):
-            speed_mul = 1.2
+        speed_mul = self.data.get("speed_multiplier", 1.0)
 
         for row_i, row in enumerate(self.layout):
             for col_i, ch in enumerate(row):
@@ -228,9 +258,9 @@ class Level:
         col, row = self.data["player_start"]
         return (col * TILE + 8, row * TILE + 8)
 
-    def update(self, dt, player):
-        # Only enable puddles behavior on levels 2 and 3
-        puddles_arg = self.puddles if self.level_num in (2, 3) else None
+    def update(self, dt, player, audio_mgr=None):
+        # Only enable puddles behavior on levels that declare the hazard
+        puddles_arg = self.puddles if self.data.get("hazards", {}).get("puddles") else None
         for enemy in self.enemies:
             enemy.update(dt, player, self.walls, self.width, self.height, puddles_arg)
 
@@ -239,11 +269,25 @@ class Level:
             p.update(dt)
             if p.rect.colliderect(player.rect):
                 if p.can_damage():
-                    player.take_damage(1)
+                    # Same ~1/6-of-old-max_hp chip as before, rescaled to the
+                    # bigger hp range from game/stats.py (Stage A3).
+                    player.take_damage(round(player.max_hp / 6))
+                    if random.random() < 0.20:
+                        player.status.apply("poison")
+
+        # Update gold drops - expire the unclaimed ones, collect the rest
+        for g in self.gold_drops:
+            g.update(dt)
+            if g.alive and g.rect.colliderect(player.rect):
+                player.gold += g.amount
+                g.alive = False
+                if audio_mgr:
+                    audio_mgr.play("pickup")
+        self.gold_drops = [g for g in self.gold_drops if g.alive]
 
         # Open exit when all enemies are dead
         living = [e for e in self.enemies if e.alive]
-        if not living and self.exit_rect and self.level_num < 4:
+        if not living and self.exit_rect and self.data["type"] == "combat":
             self.exit_open = True
 
         # Check player attack vs enemies
@@ -252,6 +296,13 @@ class Level:
             for enemy in self.enemies:
                 if enemy.alive and atk_rect.colliderect(enemy.rect):
                     enemy.take_damage(player.attack_damage)
+                    if not enemy.alive:
+                        player.gain_xp(BASE_XP[enemy.etype])
+                        self.gold_drops.append(GoldDrop(
+                            enemy.x + enemy.width / 2, enemy.y + enemy.height / 2,
+                            GOLD_DROPS[enemy.etype]
+                        ))
+                        player.kills[enemy.etype] = player.kills.get(enemy.etype, 0) + 1
 
     def check_exit(self, player):
         if self.exit_open and self.exit_rect:
@@ -281,7 +332,7 @@ class Level:
                 else:
                     surface.blit(floor_tile, (x, y))
 
-        if self.level_num == 5:
+        if self.data["floor"] == "lava":
             import math, time
             pulse = int(8 + 5 * math.sin(time.time() * 2.5))
             for wave_id in range(start_row, end_row, 2):
@@ -300,30 +351,33 @@ class Level:
             pygame.draw.ellipse(portal_surf, (0, 100, 255, 150), (2, 2, TILE + 16, TILE + 16))
             pygame.draw.ellipse(portal_surf, (100, 180, 255, 200), (6, 6, TILE + 8, TILE + 8), 4)
             surface.blit(portal_surf, (ex - 10, ey - 10))
-            font = pygame.font.Font(None, 14)
-            font.set_bold(True)
-            txt = font.render("SAIDA", True, (100, 180, 255))
+            f = font(14, bold=True)
+            txt = f.render("SAIDA", True, (100, 180, 255))
             surface.blit(txt, (ex + 6, ey + 10))
 
-        # Draw puddles first (so enemies/players appear above)
+        # Draw puddles/gold first (so enemies/players appear above)
         if hasattr(self, 'puddles'):
             for p in self.puddles:
                 p.draw(surface, cam_x, cam_y)
+
+        for g in self.gold_drops:
+            g.draw(surface, cam_x, cam_y)
 
         for enemy in self.enemies:
             enemy.draw(surface, cam_x, cam_y)
 
     def draw_hud_info(self, surface):
         """Level name and enemy count"""
-        font = pygame.font.Font(None, 16)
-        font.set_bold(True)
-        title = font.render(f"Fase {self.level_num}: {self.data['title']}", True, (255,220,100))
+        f = font(16, bold=True)
+        title = f.render(f"Fase {self.level_num}: {self.data['title']}", True, ACCENT_GOLD)
         surface.blit(title, (surface.get_width()//2 - title.get_width()//2, surface.get_height()-30))
 
+        # Top-center, clear of the HP/mana/XP dock (top-left) and the
+        # sound/fullscreen/pause buttons (top-right).
         living = [e for e in self.enemies if e.alive]
-        if living and self.level_num < 4:
-            txt = font.render(f"Inimigos: {len(living)}", True, (255,100,100))
-            surface.blit(txt, (surface.get_width() - txt.get_width() - 10, 12))
+        if living and self.data["type"] == "combat":
+            txt = f.render(f"Inimigos: {len(living)}", True, (255,100,100))
+            surface.blit(txt, (surface.get_width()//2 - txt.get_width()//2, 12))
         elif self.exit_open:
-            txt = font.render("⬆ Encontre a Saida!", True, (100, 255, 180))
-            surface.blit(txt, (surface.get_width() - txt.get_width() - 10, 12))
+            txt = f.render("⬆ Encontre a Saida!", True, (100, 255, 180))
+            surface.blit(txt, (surface.get_width()//2 - txt.get_width()//2, 12))

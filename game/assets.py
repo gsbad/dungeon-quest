@@ -1,4 +1,9 @@
 import pygame
+from game.theme import (
+    GREEN, DARK_GREEN, BROWN, DARK_BROWN, SAND, STONE, DARK_STONE, GOLD,
+    RED, DARK_RED, BLUE, CYAN, PURPLE, DARK_PURPLE, WHITE, BLACK, ORANGE,
+    PINK, LIGHT_BLUE, GRAY,
+)
 
 def make_surface(w, h, color):
     s = pygame.Surface((w, h), pygame.SRCALPHA)
@@ -9,28 +14,6 @@ def draw_pixel_art(surface, pixels, scale=1):
     """pixels: list of (x, y, color) tuples"""
     for (x, y, color) in pixels:
         pygame.draw.rect(surface, color, (x*scale, y*scale, scale, scale))
-
-# ─── Colors ───────────────────────────────────────────────────────────────────
-GREEN       = (34, 139, 34)
-DARK_GREEN  = (0, 80, 0)
-BROWN       = (101, 67, 33)
-DARK_BROWN  = (60, 30, 10)
-SAND        = (210, 180, 140)
-STONE       = (120, 120, 130)
-DARK_STONE  = (60, 60, 70)
-GOLD        = (255, 215, 0)
-RED         = (200, 40, 40)
-DARK_RED    = (120, 20, 20)
-BLUE        = (50, 100, 200)
-CYAN        = (0, 200, 220)
-PURPLE      = (120, 0, 180)
-DARK_PURPLE = (60, 0, 90)
-WHITE       = (240, 240, 240)
-BLACK       = (10, 10, 10)
-ORANGE      = (220, 120, 30)
-PINK        = (220, 100, 150)
-LIGHT_BLUE  = (100, 180, 255)
-GRAY        = (150, 150, 160)
 
 
 def create_player_sprite(direction="down", attacking=False):
@@ -349,6 +332,10 @@ def create_item_sprite(itype="key"):
         pygame.draw.rect(s, (180,100,200), (5,2,6,2))
         pygame.draw.rect(s, (180,100,200), (4,4,8,9))
         pygame.draw.rect(s, (220,150,255), (5,5,3,5))
+    elif itype == "gold":
+        pygame.draw.circle(s, GOLD, (8, 8), 6)
+        pygame.draw.circle(s, (170, 130, 0), (8, 8), 6, 1)
+        pygame.draw.circle(s, (255, 240, 160), (6, 6), 2)
     return s
 
 
