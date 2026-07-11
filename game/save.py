@@ -15,7 +15,7 @@ import json
 
 from game.player import Player
 
-SAVE_VERSION = 2
+SAVE_VERSION = 3
 _KEY = "dungeon_quest_save"
 _NATIVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_save.json")
 
@@ -63,6 +63,12 @@ def _migrate(data):
         data["gold"] = data.get("gold", 0)
         data["inventory"] = data.get("inventory", {})
         data["version"] = 2
+    if data["version"] < 3:
+        # POINTS_PER_LEVEL went 3->4. A character at level L already received
+        # 3*(L-1) points but was owed 4*(L-1) - the deficit is exactly L-1.
+        level = data["character"]["level"]
+        data["character"]["unspent_points"] += (level - 1)
+        data["version"] = 3
     return data
 
 

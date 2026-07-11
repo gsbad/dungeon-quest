@@ -16,7 +16,7 @@ Stage B), but the player's own level curve caps at 30 by design.
 """
 
 MAX_LEVEL = 30
-POINTS_PER_LEVEL = 3
+POINTS_PER_LEVEL = 4
 
 
 class StatBlock:
