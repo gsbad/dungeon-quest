@@ -4,7 +4,7 @@ import time
 import random
 from game.player import Player
 from game.level import Level
-from game.boss import Boss, CacodemonBoss
+from game.boss import Boss, CacodemonBoss, Projectile
 from game.enemy import Particle
 from game.camera import Camera
 from game.paperdoll import Paperdoll
@@ -14,6 +14,7 @@ from game.assets import create_heart_sprite, create_logo_sprite, create_victory_
 from game.input_system import Action, FullscreenButton
 from game.audio import SoundButton
 from game.stats import POINTS_PER_LEVEL
+from game.spells import SPELLS, ORDER as SPELL_ORDER
 from game.theme import (
     SW, SH, font, BG_MENU, BG_GAME_OVER, BG_VICTORY, TITLE_MENU, TITLE_PAUSE,
     ACCENT_GOLD, SELECTED, UNSELECTED, SUBTEXT, PANEL_FILL, PANEL_BORDER,
@@ -354,6 +355,10 @@ class GameplayState:
         self.items = ItemsOverlay()
         self.items_open = False
         self.weather = WeatherSystem(self.level.data.get("weather"))
+        # Fireball projectiles - a separate list from Enemy's/Boss's own
+        # projectiles since these belong to the player and can hit either
+        # regular enemies or a boss depending on which fight this level is.
+        self.player_projectiles = []
 
     def handle_event(self, event):
         if self.input.consume_action(Action.PAPERDOLL):
@@ -373,6 +378,62 @@ class GameplayState:
                 self.next_state = "restart"
         elif self.input.consume_action(Action.ATTACK):
             self.player.try_attack()
+        elif self.input.consume_action(Action.CAST_1):
+            self._attempt_cast(SPELL_ORDER[0])
+        elif self.input.consume_action(Action.CAST_2):
+            self._attempt_cast(SPELL_ORDER[1])
+        elif self.input.consume_action(Action.CAST_3):
+            self._attempt_cast(SPELL_ORDER[2])
+        elif self.input.consume_action(Action.CAST_SELECTED):
+            self._attempt_cast(self.player.selected_spell)
+
+    def _attempt_cast(self, spell_id):
+        self.player.selected_spell = spell_id
+        if not self.player.try_cast(spell_id):
+            return
+        spell = SPELLS[spell_id]
+        self.audio.play("attack")
+        if spell_id == "fireball":
+            self._cast_fireball(spell)
+        elif spell_id == "frost_nova":
+            self._cast_frost_nova(spell)
+        elif spell_id == "healing_light":
+            self._cast_healing_light(spell)
+
+    def _cast_fireball(self, spell):
+        px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
+        direction = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[self.player.direction]
+        speed = 320
+        dmg = self.player.stats.magic_damage(spell["spell_base"])
+        self.player_projectiles.append(
+            Projectile(px, py, direction[0] * speed, direction[1] * speed, dmg, (255, 120, 20))
+        )
+
+    def _cast_frost_nova(self, spell, radius=110):
+        px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
+        dmg = self.player.stats.magic_damage(spell["spell_base"])
+        targets = list(self.level.enemies)
+        if self.boss:
+            targets.append(self.boss)
+        for target in targets:
+            if not getattr(target, "alive", True):
+                continue
+            tx = target.x + target.width / 2
+            ty = target.y + target.height / 2
+            if math.hypot(tx - px, ty - py) <= radius:
+                target.take_damage(dmg)
+                if hasattr(target, "status"):
+                    target.status.apply("slow")
+        for _ in range(24):
+            self.level_up_particles.append(Particle(px, py, (140, 220, 255)))
+
+    def _cast_healing_light(self, spell):
+        self.player.hp = min(self.player.max_hp, self.player.hp + self.player.max_hp * spell["heal_frac"])
+        for _ in range(16):
+            self.level_up_particles.append(
+                Particle(self.player.x + self.player.width/2,
+                         self.player.y + self.player.height/2, (255, 240, 200))
+            )
 
     def update(self, dt):
         self.weather.update(dt)  # ambient - keeps animating through pause/overlays
@@ -427,6 +488,20 @@ class GameplayState:
             self.level.update(dt, self.player, self.audio)
             if self.level.check_exit(self.player):
                 self.next_state = f"next:{self.level.data['next']}"
+
+        # Fireball projectiles - checked against whichever targets this
+        # level actually has (regular enemies, a boss, or none).
+        cast_targets = list(self.level.enemies) + ([self.boss] if self.boss else [])
+        for proj in self.player_projectiles:
+            proj.update(dt, self.level.walls)
+            if not proj.alive:
+                continue
+            for target in cast_targets:
+                if getattr(target, "alive", True) and proj.rect.colliderect(target.rect):
+                    target.take_damage(proj.damage)
+                    proj.alive = False
+                    break
+        self.player_projectiles = [p for p in self.player_projectiles if p.alive]
 
         # Screen shake feedback when the player takes damage (from boss or
         # regular enemies alike - both paths run above, so a simple hp diff
@@ -485,6 +560,9 @@ class GameplayState:
             self.boss.draw(self.screen, cx, cy)
 
         self.player.draw(self.screen, cx, cy)
+
+        for proj in self.player_projectiles:
+            proj.draw(self.screen, cx, cy)
 
         for p in self.level_up_particles:
             p.draw(self.screen, cx, cy)

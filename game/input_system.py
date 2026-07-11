@@ -18,6 +18,10 @@ class Action(Enum):
     SECRET = auto()
     PAPERDOLL = auto()
     ITEMS = auto()
+    CAST_1 = auto()
+    CAST_2 = auto()
+    CAST_3 = auto()
+    CAST_SELECTED = auto()
 
 
 class VirtualJoystick:
@@ -199,6 +203,10 @@ class InputManager:
         self.pause_button = VirtualButton(screen_w - 40, 40, 26, "II", Action.PAUSE)
         self.paperdoll_button = VirtualButton(screen_w // 2, screen_h - 110, 30, "C", Action.PAPERDOLL)
         self.items_button = VirtualButton(screen_w - 200, screen_h - 110, 28, "I", Action.ITEMS)
+        # Selecting *which* spell happens on the paperdoll's spell tab
+        # (Stage B2) - this button just fires whatever's currently selected,
+        # same split as the plan's "1 botao conjurar" for mobile.
+        self.cast_button = VirtualButton(screen_w - 90, screen_h - 230, 36, "MAG", Action.CAST_SELECTED)
 
     # ------------------------------------------------------------------ actions
     def _press_action(self, action):
@@ -258,6 +266,12 @@ class InputManager:
                 self._press_action(Action.PAPERDOLL)
             if event.key == pygame.K_i:
                 self._press_action(Action.ITEMS)
+            if event.key == pygame.K_1:
+                self._press_action(Action.CAST_1)
+            if event.key == pygame.K_2:
+                self._press_action(Action.CAST_2)
+            if event.key == pygame.K_3:
+                self._press_action(Action.CAST_3)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Deliberately doesn't set touch_active - a PC mouse click still
@@ -304,6 +318,10 @@ class InputManager:
             self.items_button.press(pid)
             self._press_action(Action.ITEMS)
             claimed = "items"
+        elif self.cast_button.contains(x, y):
+            self.cast_button.press(pid)
+            self._press_action(Action.CAST_SELECTED)
+            claimed = "cast"
 
         self._pointers[pid] = {
             "x": x, "y": y,
@@ -334,6 +352,8 @@ class InputManager:
             self.paperdoll_button.release(pid)
         elif p["claimed"] == "items":
             self.items_button.release(pid)
+        elif p["claimed"] == "cast":
+            self.cast_button.release(pid)
         else:
             dist = math.hypot(p["x"] - p["start_x"], p["y"] - p["start_y"])
             duration = self._time - p["start_t"]
@@ -347,6 +367,7 @@ class InputManager:
         self.pause_button.update(dt)
         self.paperdoll_button.update(dt)
         self.items_button.update(dt)
+        self.cast_button.update(dt)
         # Anything not consumed by a state this frame is stale - drop it so it
         # can't leak into a different screen after a state transition.
         self._actions.clear()
@@ -360,3 +381,4 @@ class InputManager:
         self.pause_button.draw(surface)
         self.paperdoll_button.draw(surface)
         self.items_button.draw(surface)
+        self.cast_button.draw(surface)

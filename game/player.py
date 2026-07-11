@@ -4,6 +4,7 @@ from game.assets import create_player_sprite, create_projectile_sprite
 from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL
 from game.status_effects import StatusEffectCarrier
 from game.professions import determine_profession
+from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements
 
 TILE = 48
 
@@ -27,6 +28,8 @@ class Player:
         self.inventory = {}
         self.status = StatusEffectCarrier()
         self.profession = determine_profession(self.stats)
+        self.selected_spell = SPELL_ORDER[0]
+        self.spell_cooldowns = {}
         # Set by refresh_profession() when spending/respec-ing points changes
         # the derived profession; GameplayState reads and clears it each
         # frame to trigger a toast (same pattern as pending_level_up below).
@@ -109,6 +112,25 @@ class Player:
             self.profession = new_profession
             self.pending_profession_change = new_profession
 
+    def can_cast(self, spell_id):
+        spell = SPELLS[spell_id]
+        return (meets_requirements(self.stats, spell_id)
+                and self.spell_cooldowns.get(spell_id, 0) <= 0
+                and self.mana >= spell["mana_cost"])
+
+    def try_cast(self, spell_id):
+        """Deducts mana/sets cooldown and returns True if the cast is valid -
+        same split as try_attack(): Player only manages its own state, the
+        caller (GameplayState) is responsible for the actual effect (fireball
+        projectile / frost nova AoE / heal), same as level.py owns melee hit
+        detection instead of Player."""
+        if not self.can_cast(spell_id):
+            return False
+        spell = SPELLS[spell_id]
+        self.mana -= spell["mana_cost"]
+        self.spell_cooldowns[spell_id] = spell["cooldown"]
+        return True
+
     @property
     def rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
@@ -133,6 +155,9 @@ class Player:
 
     def update(self, dt, walls, movement_vector):
         self.mana = min(self.max_mana, self.mana + self.stats.mana_regen * dt)
+
+        for spell_id in list(self.spell_cooldowns):
+            self.spell_cooldowns[spell_id] = max(0.0, self.spell_cooldowns[spell_id] - dt)
 
         # DoT ticks (Veneno/Fogo) go straight to hp, bypassing take_damage -
         # they shouldn't be blocked by melee-hit invincibility frames, and

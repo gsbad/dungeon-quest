@@ -4,6 +4,7 @@ import random
 from game.assets import create_enemy_sprite, create_projectile_sprite, create_item_sprite
 from game.player import TILE
 from game.stats import StatBlock, ENEMY_ARCHETYPES, BASE_XP, GOLD_DROPS, scale_archetype
+from game.status_effects import StatusEffectCarrier
 
 class EnemyProjectile:
     def __init__(self, x, y, vx, vy, damage=1, color=(160,100,255),
@@ -196,8 +197,13 @@ class Enemy:
         flavor = ENEMY_FLAVOR[etype]
         self.max_hp = self.stats.max_hp
         self.hp = self.max_hp
+        self._speed_mult = speed_multiplier
         self.speed = self.stats.speed * speed_multiplier
         self.damage = self.stats.physical_damage
+        # Reusable debuff carrier (game/status_effects.py) - lets Frost Nova
+        # (Stage B2) slow enemies with the same "slow" effect monster attacks
+        # already apply to the player, instead of a second implementation.
+        self.status = StatusEffectCarrier()
         self.attack_cooldown = 0
         self.attack_cd_max = flavor["atk_cd"]
         self.color = flavor["color"]
@@ -232,6 +238,14 @@ class Enemy:
                 self.particles.append(Particle(self.x + 16, self.y + 18, self.color))
 
     def update(self, dt, player, walls, map_width=None, map_height=None, puddles=None):
+        # Debuffs (e.g. Frost Nova's Lentidao) - unlike Player, Enemy has no
+        # invincibility-frame concept, so DoT ticks can safely go through
+        # take_damage() and get the normal hit-flash/particle feedback.
+        self.speed = self.stats.speed * self._speed_mult * self.status.speed_multiplier
+        tick_dmg = self.status.update(dt)
+        if tick_dmg and self.alive:
+            self.take_damage(tick_dmg)
+
         # Update particles
         self.particles = [p for p in self.particles if p.life > 0]
         for p in self.particles:
