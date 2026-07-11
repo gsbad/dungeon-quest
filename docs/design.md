@@ -20,6 +20,18 @@ Todo personagem (jogador, inimigo, boss) usa `StatBlock` (`game/stats.py`) — m
 
 **Por que DEX não controla velocidade de movimento sem teto:** o jogo é baseado em perseguição — um build DEX puro sem teto ficaria intocável. DEX controla principalmente velocidade de ataque; o componente de movimento é secundário e limitado.
 
+## Profissões
+
+`game/professions.py` — inspirado em Ultima Online. Profissão é **derivada** dos pontos gastos em atributo (`atual - 10`), não armazenada — troca de build (respec gratuito no paperdoll) = troca de profissão, por design, não um caso especial.
+
+Algoritmo:
+1. `total_gasto < 20` → **Aventureiro**.
+2. Senão, ranqueia os 5 atributos por pontos gastos (empate: STR > DEX > INT > WIS > VIG).
+3. Se o segundo colocado gastou menos da metade do primeiro (`spent[p2]/spent[p1] < 0.5`) → profissão **pura** do primeiro.
+4. Senão → profissão **híbrida** do par.
+
+5 puras + 10 híbridas (todos os pares de 5 atributos) + Aventureiro = 16 profissões. Cada uma tem uma cor de tint (`TINTS`) aplicada no retrato do paperdoll (multiplicação de canal sobre a sprite procedural existente) — placeholder visual até o Stage C trazer spritesheets reais por profissão.
+
 ## XP e nível
 
 `xp_to_next(L) = round(20·L^1.4)`. Nível máximo 30. `POINTS_PER_LEVEL = 4` pontos de atributo por level-up (ver seção "Correções de escopo" abaixo — a implementação inicial usou 3 sem confirmação, corrigido nesta sessão).
