@@ -59,9 +59,21 @@ Itens (`game/items.py`):
 
 Cura em *fração* do máximo atual (não valor fixo) — mantém as poções relevantes conforme VIG/INT sobem, mesma convenção já usada pro coração-pickup.
 
+## Magias (Stage B2)
+
+`game/spells.py` — 3 magias iniciais, cada uma reaproveitando um sistema existente (nenhuma renderização nova):
+
+| Magia | Efeito | Custo | CD | Requisito | Reaproveita |
+|---|---|---|---|---|---|
+| Bola de Fogo | Projetil reto, dano mágico | 8 mana | — | INT 15 | `Projectile` (`game/boss.py`) |
+| Nova de Gelo | Dano em área + Lentidão | 12 mana | — | INT 20, SAB 15 | O efeito "slow" já existente |
+| Luz Curativa | Cura 25% da vida máxima | 15 mana | 10s | SAB 25 | Mesma fórmula de fração das poções |
+
+Magia "desbloqueada" = atende aos requisitos de atributo no momento — não é uma flag persistida (mesmo raciocínio de `profession` não estar no save). Conjuração: teclado 1/2/3 conjura direto; celular seleciona a magia na aba "Magias" do paperdoll e dispara com um botão dedicado.
+
 ## Status effects (debuffs)
 
-`game/status_effects.py` — `StatusEffectCarrier` é um componente reutilizável (não hardcoded no `Player`), pra poder ser anexado a `Enemy`/`Boss` depois (ex.: a Frost Nova do jogador vai lentificar inimigos usando o mesmo carrier).
+`game/status_effects.py` — `StatusEffectCarrier` é um componente reutilizável, anexado tanto ao `Player` quanto ao `Enemy` (Stage B2) — a Nova de Gelo lentifica inimigos com o mesmo carrier que os ataques de monstro já usam no jogador, não uma segunda implementação.
 
 | Efeito | Efeito mecânico | Duração | Cura |
 |---|---|---|---|
