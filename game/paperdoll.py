@@ -1,6 +1,8 @@
 import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
 from game.ui import Panel, draw_text
+from game.assets import create_player_sprite
+from game.professions import TINTS
 
 # (StatBlock field name, on-screen label). Order matches the plan's
 # STR/DEX/INT/WIS/VIG convention.
@@ -14,37 +16,60 @@ ATTRS = [
 
 BASE_ATTR = 10  # can't respec below this - it's the unbuilt baseline, not spent points
 
-# Layout, relative to the panel's top (self.py). Six derived-stat lines now
-# (was four) - DEX's speed formula (game/stats.py) buffs movement speed with
-# a small capped bonus but attack speed is DEX's *primary* effect, so both
-# get their own row instead of a single ambiguous "Velocidade".
-_TITLE_Y = 16
-_LEVEL_Y = 50
-_DERIVED_START_Y = 82
+_PANEL_W = 420
+_PORTRAIT_SIZE = 96
+_PORTRAIT_MARGIN = 16
+# Header row: portrait on the left, name/profession/level text to its right.
+_HEADER_H = _PORTRAIT_MARGIN + _PORTRAIT_SIZE + 14
+_TITLE_Y = 20
+_PROFESSION_Y = 52
+_LEVEL_Y = 82
+
+# Six derived-stat lines - DEX's speed formula (game/stats.py) buffs movement
+# speed with a small capped bonus but attack speed is DEX's *primary*
+# effect, so both get their own row instead of a single ambiguous "Velocidade".
+_DERIVED_START_Y = _HEADER_H + 10
 _DERIVED_LINE_H = 22
 _DERIVED_LINES = 6
-_POINTS_Y = _DERIVED_START_Y + _DERIVED_LINE_H * _DERIVED_LINES + 20
-_ATTR_START_Y = _POINTS_Y + 40
+_POINTS_Y = _DERIVED_START_Y + _DERIVED_LINE_H * _DERIVED_LINES + 14
+_ATTR_START_Y = _POINTS_Y + 30
 _ATTR_LINE_H = 36
-_HINT_Y = _ATTR_START_Y + _ATTR_LINE_H * len(ATTRS) + 16
-_PANEL_H = _HINT_Y + 30
+_HINT_Y = _ATTR_START_Y + _ATTR_LINE_H * len(ATTRS) + 12
+_PANEL_H = _HINT_Y + 26
 
 
 class Paperdoll:
-    """Aba 1 do redesign de RPG (Stage A6): retrato/stats, gasto de pontos,
-    respec gratuito. Abas 2 (magias) e 3 (ajuda) chegam no Stage B, junto
-    com os sistemas (spells.py, dificuldades) que dão a elas o que mostrar."""
+    """Aba 1 do redesign de RPG (Stage A7): retrato/profissao/stats, gasto
+    de pontos, respec gratuito. Abas 2 (magias) e 3 (ajuda) chegam no Stage
+    B, junto com os sistemas (spells.py, dificuldades) que dao a elas o
+    que mostrar."""
 
     def __init__(self):
-        self.px = SW // 2 - 180
-        self.py = 55
-        self.panel = Panel(360, _PANEL_H, PANEL_FILL, PANEL_BORDER, border_width=2)
+        self.px = SW // 2 - _PANEL_W // 2
+        self.py = 40
+        self.panel = Panel(_PANEL_W, _PANEL_H, PANEL_FILL, PANEL_BORDER, border_width=2)
         self.plus_buttons = {}
         self.minus_buttons = {}
         for i, (attr, _) in enumerate(ATTRS):
             y = self.py + _ATTR_START_Y + i * _ATTR_LINE_H
             self.minus_buttons[attr] = pygame.Rect(self.px + 260, y - 14, 28, 28)
             self.plus_buttons[attr] = pygame.Rect(self.px + 300, y - 14, 28, 28)
+        # Base sprite is 48x48 (16px canvas at 3x scale) - 2x again to fill
+        # the portrait box. Regular (not smooth) scale keeps the pixel-art
+        # edges crisp instead of blurring them.
+        base_sprite = create_player_sprite("down", False)
+        self._base_portrait = pygame.transform.scale(base_sprite, (_PORTRAIT_SIZE, _PORTRAIT_SIZE))
+        self._portrait_cache = {}
+
+    def _portrait_for(self, profession):
+        if profession not in self._portrait_cache:
+            tint = TINTS.get(profession, (255, 255, 255))
+            tinted = self._base_portrait.copy()
+            overlay = pygame.Surface((_PORTRAIT_SIZE, _PORTRAIT_SIZE), pygame.SRCALPHA)
+            overlay.fill((*tint, 255))
+            tinted.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            self._portrait_cache[profession] = tinted
+        return self._portrait_cache[profession]
 
     def handle_tap(self, input_mgr, player):
         for attr, rect in self.plus_buttons.items():
@@ -52,6 +77,7 @@ class Paperdoll:
                 if player.unspent_points > 0:
                     setattr(player.stats, attr, getattr(player.stats, attr) + 1)
                     player.unspent_points -= 1
+                    player.refresh_profession()
                 return
         for attr, rect in self.minus_buttons.items():
             if input_mgr.tapped_rect(rect):
@@ -59,6 +85,7 @@ class Paperdoll:
                 if current > BASE_ATTR:
                     setattr(player.stats, attr, current - 1)
                     player.unspent_points += 1
+                    player.refresh_profession()
                 return
 
     def draw(self, surface, player):
@@ -67,14 +94,22 @@ class Paperdoll:
         surface.blit(overlay, (0, 0))
 
         self.panel.draw(surface, (self.px, self.py))
-        cx = self.px + 180
+        cx = self.px + _PANEL_W // 2
+        header_cx = self.px + _PORTRAIT_MARGIN + _PORTRAIT_SIZE + (
+            _PANEL_W - _PORTRAIT_MARGIN * 2 - _PORTRAIT_SIZE) // 2
 
-        f_title = font(26, bold=True)
-        draw_text(surface, player.name or "Heroi", f_title, ACCENT_GOLD, cx, self.py + _TITLE_Y)
+        portrait = self._portrait_for(player.profession)
+        surface.blit(portrait, (self.px + _PORTRAIT_MARGIN, self.py + _PORTRAIT_MARGIN))
 
-        f = font(18, bold=True)
+        f_title = font(24, bold=True)
+        draw_text(surface, player.name or "Heroi", f_title, ACCENT_GOLD, header_cx, self.py + _TITLE_Y)
+
+        f_prof = font(17, bold=True)
+        draw_text(surface, player.profession, f_prof, (210, 200, 235), header_cx, self.py + _PROFESSION_Y)
+
+        f = font(16, bold=True)
         draw_text(surface, f"Nivel {player.level}  (XP {player.xp}/{self._xp_next(player)})",
-                  f, (230, 230, 240), cx, self.py + _LEVEL_Y)
+                  f, (230, 230, 240), header_cx, self.py + _LEVEL_Y)
 
         f2 = font(16)
         attack_per_sec = 1.0 / player.stats.attack_cooldown
@@ -101,7 +136,7 @@ class Paperdoll:
             y = self.py + _ATTR_START_Y + i * _ATTR_LINE_H
             value = getattr(player.stats, attr)
             draw_text(surface, f"{label}: {int(value)}", f_row, (225, 225, 235),
-                      self.px + 140, y - 9, shadow=False)
+                      self.px + 150, y - 9, shadow=False)
 
             minus_rect = self.minus_buttons[attr]
             plus_rect = self.plus_buttons[attr]

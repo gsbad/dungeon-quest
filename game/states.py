@@ -459,6 +459,15 @@ class GameplayState:
         for p in self.level_up_particles:
             p.update(dt)
 
+        # Profession-change toast - profession is derived from spent points
+        # (game/professions.py), so this fires whenever the paperdoll's
+        # spend/respec buttons push the build across a threshold.
+        if self.player.pending_profession_change:
+            self.msg_timer = 2.5
+            self.msg_text = f"Profissao alterada: {self.player.pending_profession_change}!"
+            self.audio.play("menu_select")
+            self.player.pending_profession_change = None
+
         # Check death
         if self.player.hp <= 0:
             self.next_state = "game_over"

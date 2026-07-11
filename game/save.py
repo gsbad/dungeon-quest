@@ -5,15 +5,19 @@ mute-flag contract plus everything else that needs to persist).
 
 Versioned from day one (SAVE_VERSION) so a future schema change has
 somewhere to hook a migration in _migrate() instead of breaking old saves.
-Achievements/professions/difficulty-tier fields from the full design aren't
-here yet because those systems don't exist yet (Stage B) - adding empty
-placeholders for them now would just be dead schema to migrate around later.
+Achievements/difficulty-tier fields from the full design aren't here yet
+because those systems don't exist yet (Stage B) - adding empty placeholders
+for them now would just be dead schema to migrate around later. Profession
+is NOT in the schema on purpose - it's derived from spent attribute points
+(game/professions.py), so persisting it would just be a second value that
+could drift out of sync with the attributes that actually define it.
 """
 import sys
 import os
 import json
 
 from game.player import Player
+from game.professions import determine_profession
 
 SAVE_VERSION = 3
 _KEY = "dungeon_quest_save"
@@ -94,6 +98,7 @@ def character_from_state(state, x, y, audio_mgr):
     p.stats.intelligence = attrs["int"]
     p.stats.wisdom = attrs["wis"]
     p.stats.vigor = attrs["vig"]
+    p.profession = determine_profession(p.stats)
     p.name = char.get("name", "")
     p.level = char["level"]
     p.xp = char["xp"]

@@ -3,6 +3,7 @@ import math
 from game.assets import create_player_sprite, create_projectile_sprite
 from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL
 from game.status_effects import StatusEffectCarrier
+from game.professions import determine_profession
 
 TILE = 48
 
@@ -25,6 +26,11 @@ class Player:
         self.gold = 0
         self.inventory = {}
         self.status = StatusEffectCarrier()
+        self.profession = determine_profession(self.stats)
+        # Set by refresh_profession() when spending/respec-ing points changes
+        # the derived profession; GameplayState reads and clears it each
+        # frame to trigger a toast (same pattern as pending_level_up below).
+        self.pending_profession_change = None
         # In-run kill tallies; GameStateManager merges these into the
         # persisted save (game/save.py's sync_counters) and resets them.
         self.kills = {}
@@ -94,6 +100,14 @@ class Player:
     def use_item(self, item_id):
         from game.items import use_item as _use_item
         return _use_item(self, item_id)
+
+    def refresh_profession(self):
+        """Called after spending/respec-ing points (game/paperdoll.py) -
+        profession is derived, not stored, so this just recomputes it."""
+        new_profession = determine_profession(self.stats)
+        if new_profession != self.profession:
+            self.profession = new_profession
+            self.pending_profession_change = new_profession
 
     @property
     def rect(self):
