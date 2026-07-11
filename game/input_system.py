@@ -15,6 +15,9 @@ class Action(Enum):
     RESTART = auto()
     MENU_UP = auto()
     MENU_DOWN = auto()
+    MENU_LEFT = auto()
+    MENU_RIGHT = auto()
+    TAB_NEXT = auto()
     SECRET = auto()
     PAPERDOLL = auto()
     ITEMS = auto()
@@ -22,6 +25,8 @@ class Action(Enum):
     CAST_2 = auto()
     CAST_3 = auto()
     CAST_SELECTED = auto()
+    DEV_NEXT_LEVEL = auto()
+    DEV_PREV_LEVEL = auto()
 
 
 class VirtualJoystick:
@@ -252,6 +257,12 @@ class InputManager:
                 self._press_action(Action.MENU_UP)
             if event.key in (pygame.K_s, pygame.K_DOWN):
                 self._press_action(Action.MENU_DOWN)
+            if event.key in (pygame.K_a, pygame.K_LEFT):
+                self._press_action(Action.MENU_LEFT)
+            if event.key in (pygame.K_d, pygame.K_RIGHT):
+                self._press_action(Action.MENU_RIGHT)
+            if event.key == pygame.K_TAB:
+                self._press_action(Action.TAB_NEXT)
             if event.key == pygame.K_RETURN:
                 self._press_action(Action.CONFIRM)
             if event.key == pygame.K_SPACE:
@@ -272,6 +283,10 @@ class InputManager:
                 self._press_action(Action.CAST_2)
             if event.key == pygame.K_3:
                 self._press_action(Action.CAST_3)
+            if event.key == pygame.K_m:
+                self._press_action(Action.DEV_NEXT_LEVEL)
+            if event.key == pygame.K_n:
+                self._press_action(Action.DEV_PREV_LEVEL)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Deliberately doesn't set touch_active - a PC mouse click still

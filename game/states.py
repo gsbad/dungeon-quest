@@ -3,7 +3,7 @@ import math
 import time
 import random
 from game.player import Player
-from game.level import Level
+from game.level import Level, LEVEL_MAPS
 from game.boss import Boss, CacodemonBoss, Projectile
 from game.enemy import Particle
 from game.camera import Camera
@@ -373,6 +373,16 @@ class GameplayState:
         self.player_projectiles = []
 
     def handle_event(self, event):
+        # Dev/test shortcuts (Stage B4 follow-up): jump forward/back one
+        # level directly, bypassing bosses/exits - lets every one of the 13
+        # layouts be reached and re-checked without playing the whole
+        # campaign each time. Always active, even mid-boss-fight or with an
+        # overlay open - it's a debug tool, not a gameplay control.
+        if self.input.consume_action(Action.DEV_NEXT_LEVEL):
+            self._dev_jump(1)
+        if self.input.consume_action(Action.DEV_PREV_LEVEL):
+            self._dev_jump(-1)
+
         if self.input.consume_action(Action.PAPERDOLL):
             if not self.paused and not self.items_open:
                 self.paperdoll_open = not self.paperdoll_open
@@ -398,6 +408,11 @@ class GameplayState:
             self._attempt_cast(SPELL_ORDER[2])
         elif self.input.consume_action(Action.CAST_SELECTED):
             self._attempt_cast(self.player.selected_spell)
+
+    def _dev_jump(self, delta):
+        target = self.level_num + delta
+        if target in LEVEL_MAPS:
+            self.next_state = f"next:{target}"
 
     def _attempt_cast(self, spell_id):
         self.player.selected_spell = spell_id
@@ -451,9 +466,11 @@ class GameplayState:
         self.weather.update(dt)  # ambient - keeps animating through pause/overlays
         if self.paperdoll_open:
             self.paperdoll.handle_tap(self.input, self.player)
+            self.paperdoll.handle_keys(self.input, self.player)
             return
         if self.items_open:
             self.items.handle_tap(self.input, self.player, self.save_state)
+            self.items.handle_keys(self.input, self.player, self.save_state)
             return
         if self.paused:
             return

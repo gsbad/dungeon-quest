@@ -1,9 +1,11 @@
+import math
 import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
 from game.ui import Panel, draw_text
 from game.assets import create_player_sprite
 from game.professions import TINTS
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
+from game.input_system import Action
 
 # (StatBlock field name, on-screen label). Order matches the plan's
 # STR/DEX/INT/WIS/VIG convention.
@@ -54,6 +56,13 @@ class Paperdoll:
         self.py = 20
         self.active_tab = "stats"
         self.panel = Panel(_PANEL_W, _PANEL_H, PANEL_FILL, PANEL_BORDER, border_width=2)
+
+        # Keyboard-only navigation (mouse clicks are unreliable in the pygbag
+        # browser build - see docs/design.md's known-bugs section) - a
+        # highlighted row cursor per tab, moved with W/S, acted on with
+        # A/D (stats) or Space (spells).
+        self.stats_cursor = 0
+        self.spell_cursor = 0
 
         tab_w, tab_h, gap = 150, 28, 10
         pair_w = tab_w * 2 + gap
@@ -128,6 +137,53 @@ class Paperdoll:
                     player.selected_spell = spell_id
                 return
 
+    def handle_keys(self, input_mgr, player):
+        if input_mgr.consume_action(Action.TAB_NEXT):
+            self.active_tab = "spells" if self.active_tab == "stats" else "stats"
+            return
+        if self.active_tab == "stats":
+            self._handle_keys_stats(input_mgr, player)
+        elif self.active_tab == "spells":
+            self._handle_keys_spells(input_mgr, player)
+
+    def _handle_keys_stats(self, input_mgr, player):
+        if input_mgr.consume_action(Action.MENU_UP):
+            self.stats_cursor = (self.stats_cursor - 1) % len(ATTRS)
+        if input_mgr.consume_action(Action.MENU_DOWN):
+            self.stats_cursor = (self.stats_cursor + 1) % len(ATTRS)
+        attr, _ = ATTRS[self.stats_cursor]
+        if input_mgr.consume_action(Action.MENU_LEFT):
+            current = getattr(player.stats, attr)
+            if current > BASE_ATTR:
+                setattr(player.stats, attr, current - 1)
+                player.unspent_points += 1
+                player.refresh_profession()
+        if input_mgr.consume_action(Action.MENU_RIGHT) or input_mgr.consume_action(Action.CONFIRM):
+            if player.unspent_points > 0:
+                setattr(player.stats, attr, getattr(player.stats, attr) + 1)
+                player.unspent_points -= 1
+                player.refresh_profession()
+
+    def _handle_keys_spells(self, input_mgr, player):
+        if input_mgr.consume_action(Action.MENU_UP):
+            self.spell_cursor = (self.spell_cursor - 1) % len(SPELL_ORDER)
+        if input_mgr.consume_action(Action.MENU_DOWN):
+            self.spell_cursor = (self.spell_cursor + 1) % len(SPELL_ORDER)
+        if input_mgr.consume_action(Action.CONFIRM):
+            spell_id = SPELL_ORDER[self.spell_cursor]
+            if meets_requirements(player.stats, spell_id):
+                player.selected_spell = spell_id
+
+    @staticmethod
+    def _glow_alpha():
+        return int(90 + 60 * abs(math.sin(pygame.time.get_ticks() / 1000.0 * 4)))
+
+    def _draw_glow(self, surface, rect):
+        glow = pygame.Surface(rect.size, pygame.SRCALPHA)
+        glow.fill((255, 215, 80, self._glow_alpha()))
+        surface.blit(glow, rect.topleft)
+        pygame.draw.rect(surface, (255, 225, 120), rect, 2, border_radius=6)
+
     def draw(self, surface, player):
         overlay = pygame.Surface((SW, SH), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
@@ -195,6 +251,8 @@ class Paperdoll:
         f_row = font(16)
         for i, (attr, label) in enumerate(ATTRS):
             y = top + _ATTR_START_Y + i * _ATTR_LINE_H
+            if i == self.stats_cursor:
+                self._draw_glow(surface, pygame.Rect(self.px + 12, y - 16, _PANEL_W - 24, 32))
             value = getattr(player.stats, attr)
             draw_text(surface, f"{label}: {int(value)}", f_row, (225, 225, 235),
                       self.px + 150, y - 9, shadow=False)
@@ -216,7 +274,7 @@ class Paperdoll:
                       plus_rect.centerx, plus_rect.y + 3, shadow=False)
 
         f_hint = font(14)
-        draw_text(surface, "C / toque no botao - Fechar", f_hint, SUBTEXT,
+        draw_text(surface, "TAB troca aba | W/S seleciona | A/D distribui | C - Fechar", f_hint, SUBTEXT,
                   cx, top + _HINT_Y)
 
     def _draw_spells(self, surface, player, top):
@@ -229,6 +287,8 @@ class Paperdoll:
         for i, spell_id in enumerate(SPELL_ORDER):
             spell = SPELLS[spell_id]
             y = top + _SPELL_START_Y + i * _SPELL_BLOCK_H
+            if i == self.spell_cursor:
+                self._draw_glow(surface, pygame.Rect(self.px + 12, y - 8, _PANEL_W - 24, _SPELL_BLOCK_H - 8))
             unlocked = meets_requirements(player.stats, spell_id)
             is_selected = player.selected_spell == spell_id
             status_color = (110, 230, 140) if unlocked else (220, 90, 90)
@@ -260,7 +320,7 @@ class Paperdoll:
             draw_text(surface, label, f_btn, (240, 240, 245), rect.centerx, rect.y + 6, shadow=False)
 
         f_hint = font(14)
-        draw_text(surface, "1/2/3 conjura direto - C / toque no botao - Fechar", f_hint, SUBTEXT,
+        draw_text(surface, "TAB troca aba | W/S seleciona | ESPACO seleciona magia | C - Fechar", f_hint, SUBTEXT,
                   self.px + _PANEL_W // 2, top + _SPELL_START_Y + len(SPELL_ORDER) * _SPELL_BLOCK_H + 10)
 
     @staticmethod

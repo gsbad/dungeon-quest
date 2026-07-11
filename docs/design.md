@@ -133,6 +133,19 @@ Atribuído por nível via `LEVEL_MAPS[n]["weather"]` — Floresta Encantada (fog
 - **`CacodemonBoss.update()` nunca checava colisão de projétil com o jogador** — o boss da fase secreta não causava dano nenhum desde antes desta rodada de features. Corrigido ao ligar o gancho de debuff de Fogo nesse boss.
 - **Clique de mouse desalinhado no build pygbag/navegador** (som/tela cheia/comprar não respondem onde desenhados) — 6 tentativas de fix falharam (ver memória do projeto). Toque real e teclado não são afetados. Deixado de lado por decisão do usuário; não re-tentar sem um diagnóstico novo (console JS do navegador, nunca verificado até agora).
 
+## Navegação por teclado no Paperdoll e no menu de Itens
+
+Como o bug de clique acima bloqueia especificamente os botões desses dois overlays no navegador, ambos ganharam um caminho 100% por teclado, paralelo ao clique de mouse (que continua funcionando normalmente fora do pygbag/navegador) — nenhum botão existente foi removido, só ganhou um segundo jeito de ser acionado:
+
+- **Paperdoll (`C`):** `TAB` alterna entre as abas Status/Magias. Dentro de cada aba, `W`/`S` movem um cursor com destaque luminoso (pulsante, `Paperdoll._draw_glow`) entre as linhas selecionáveis. Na aba Status, `A`/`D` gastam/devolvem um ponto no atributo selecionado (mesma função que os botões -/+ já chamavam). Na aba Magias, `ESPAÇO` seleciona a magia destacada (equivalente ao botão "Selecionar").
+- **Itens (`I`):** `W`/`S` percorrem uma lista única (primeiro as linhas "Usar", depois as linhas "Comprar", na mesma ordem em que aparecem na tela). `ESPAÇO` age de acordo com a seção da linha destacada — usa o item ou compra, sem precisar de uma tecla separada para cada ação.
+
+Implementação: `InputManager` (`game/input_system.py`) ganhou `Action.MENU_LEFT`/`MENU_RIGHT` (A/D, mesmo padrão dual-uso de MENU_UP/DOWN com W/S) e `Action.TAB_NEXT` (tecla Tab). `Paperdoll.handle_keys()`/`ItemsOverlay.handle_keys()` são chamados em `GameplayState.update()` ao lado dos `handle_tap()` já existentes — mouse e teclado convivem, não são exclusivos.
+
+## Atalhos de teste (dev-only)
+
+`M`/`N` (`Action.DEV_NEXT_LEVEL`/`DEV_PREV_LEVEL`) avançam/voltam um nível da campanha (`GameplayState._dev_jump`), ignorando boss vivo ou saída bloqueada — deixa qualquer uma das 13 fases alcançável pra teste sem precisar jogar a campanha inteira a cada verificação. Reusa o mesmo caminho de transição (`next_state = "next:N"`) que a saída normal de fase já usa, então nenhum estado novo foi criado. Efeito colateral aceito: como qualquer transição de nível, atualiza `highest_level_cleared` mesmo sem a fase ter sido de fato cumprida — é uma ferramenta de debug, não uma mecânica de jogo, então isso não é tratado como bug.
+
 ## Correções de escopo aplicadas depois da primeira implementação
 
 - **Pontos de atributo por level-up: 3 → 4.** O usuário especificou 4 desde o início; a implementação inicial usou 3 sem confirmação. Corrigido nesta sessão, com migração de save (ver `save-schema.md`).
