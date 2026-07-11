@@ -5,9 +5,10 @@ from game.assets import create_player_sprite, create_projectile_sprite
 TILE = 48
 
 class Player:
-    def __init__(self, x, y):
+    def __init__(self, x, y, audio_mgr):
         self.x = float(x)
         self.y = float(y)
+        self.audio = audio_mgr
         self.speed = 200
         self.max_hp = 6
         self.hp = self.max_hp
@@ -60,6 +61,7 @@ class Player:
         self.hp -= amount
         self.invincible = True
         self.invincible_timer = self.invincible_duration
+        self.audio.play("hurt")
 
     def update(self, dt, walls, movement_vector):
         dx, dy = movement_vector
@@ -104,6 +106,7 @@ class Player:
             self.attacking = True
             self.attack_timer = self.attack_duration
             self.attack_cooldown = 0.4
+            self.audio.play("attack")
             return True
         return False
 

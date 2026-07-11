@@ -3,11 +3,12 @@ import pygame
 import sys
 from game.states import GameStateManager
 from game.input_system import InputManager
+from game.audio import AudioManager
 
 async def main():
     pygame.init()
     try:
-        pygame.mixer.init()
+        pygame.mixer.init(frequency=44100, size=-16, channels=2)
     except pygame.error:
         pass  # Sem dispositivo de áudio (WSL/headless/navegador) – continua sem som
 
@@ -17,7 +18,8 @@ async def main():
     clock = pygame.time.Clock()
 
     input_mgr = InputManager(SCREEN_W, SCREEN_H)
-    manager = GameStateManager(screen, input_mgr)
+    audio_mgr = AudioManager()
+    manager = GameStateManager(screen, input_mgr, audio_mgr)
 
     while True:
         dt = clock.tick(60) / 1000.0

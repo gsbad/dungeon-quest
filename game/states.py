@@ -8,6 +8,7 @@ from game.boss import Boss, CacodemonBoss
 from game.camera import Camera
 from game.assets import create_heart_sprite, create_logo_sprite, create_victory_hero_sprite
 from game.input_system import Action
+from game.audio import SoundButton
 
 SW, SH = 800, 600
 
@@ -70,9 +71,10 @@ class HeartPickup:
 
 # ─── Menu State ───────────────────────────────────────────────────────────────
 class MenuState:
-    def __init__(self, screen, input_mgr):
+    def __init__(self, screen, input_mgr, audio_mgr):
         self.screen = screen
         self.input = input_mgr
+        self.audio = audio_mgr
         self.stars = [Star() for _ in range(80)]
         self.t = 0
         self.selected = 0
@@ -82,13 +84,17 @@ class MenuState:
     def handle_event(self, event):
         if self.input.consume_action(Action.MENU_UP):
             self.selected = (self.selected - 1) % len(self.options)
+            self.audio.play("menu_move")
         if self.input.consume_action(Action.MENU_DOWN):
             self.selected = (self.selected + 1) % len(self.options)
+            self.audio.play("menu_move")
         if self.input.consume_action(Action.CONFIRM):
+            self.audio.play("menu_select")
             return self.options[self.selected]
         for i, rect in enumerate(self._option_rects):
             if rect and self.input.tapped_rect(rect):
                 self.selected = i
+                self.audio.play("menu_select")
                 return self.options[i]
         return None
 
@@ -191,16 +197,17 @@ class TransitionState:
 
 # ─── Gameplay State ────────────────────────────────────────────────────────────
 class GameplayState:
-    def __init__(self, screen, input_mgr, level_num=1, player=None):
+    def __init__(self, screen, input_mgr, audio_mgr, level_num=1, player=None):
         self.screen = screen
         self.input = input_mgr
+        self.audio = audio_mgr
         self.level_num = level_num
         self.level = Level(level_num)
         self.camera = Camera(SW, SH, self.level.width, self.level.height)
 
         if player is None:
             sx, sy = self.level.get_player_start()
-            self.player = Player(sx, sy)
+            self.player = Player(sx, sy, audio_mgr)
         else:
             sx, sy = self.level.get_player_start()
             self.player = player
@@ -356,13 +363,15 @@ class GameplayState:
             if self.player.rect.colliderect(heart.rect):
                 self.player.hp = min(self.player.max_hp, self.player.hp + 1)
                 self.hearts.remove(heart)
+                self.audio.play("pickup")
 
 
 # ─── Game Over ────────────────────────────────────────────────────────────────
 class GameOverState:
-    def __init__(self, screen, input_mgr):
+    def __init__(self, screen, input_mgr, audio_mgr):
         self.screen = screen
         self.input = input_mgr
+        self.audio = audio_mgr
         self.t = 0
         self.stars = [Star() for _ in range(60)]
         self._menu_rect = None
@@ -370,12 +379,16 @@ class GameOverState:
 
     def handle_event(self, event):
         if self.input.consume_action(Action.CONFIRM):
+            self.audio.play("menu_select")
             return "menu"
         if self.input.consume_action(Action.RESTART):
+            self.audio.play("menu_select")
             return "restart"
         if self._menu_rect and self.input.tapped_rect(self._menu_rect):
+            self.audio.play("menu_select")
             return "menu"
         if self._restart_rect and self.input.tapped_rect(self._restart_rect):
+            self.audio.play("menu_select")
             return "restart"
         return None
 
@@ -411,9 +424,10 @@ class GameOverState:
 
 # ─── Victory ──────────────────────────────────────────────────────────────────
 class VictoryState:
-    def __init__(self, screen, input_mgr, elapsed_seconds=0.0):
+    def __init__(self, screen, input_mgr, audio_mgr, elapsed_seconds=0.0):
         self.screen = screen
         self.input = input_mgr
+        self.audio = audio_mgr
         self.t = 0
         self.particles = []
         self._spawn_timer = 0
@@ -423,12 +437,16 @@ class VictoryState:
 
     def handle_event(self, event):
         if self.input.consume_action(Action.SECRET):
+            self.audio.play("menu_select")
             return "secret"
         if self.input.consume_action(Action.CONFIRM):
+            self.audio.play("menu_select")
             return "menu"
         if self._secret_rect and self.input.tapped_rect(self._secret_rect):
+            self.audio.play("menu_select")
             return "secret"
         if self._menu_rect and self.input.tapped_rect(self._menu_rect):
+            self.audio.play("menu_select")
             return "menu"
         return None
 
@@ -491,9 +509,10 @@ class VictoryState:
 
 # ─── Secret Level (Mock) ───────────────────────────────────────────────────────
 class SecretVictoryState:
-    def __init__(self, screen, input_mgr):
+    def __init__(self, screen, input_mgr, audio_mgr):
         self.screen = screen
         self.input = input_mgr
+        self.audio = audio_mgr
         self.t = 0
         self.particles = []
         self._spawn_timer = 0
@@ -501,8 +520,10 @@ class SecretVictoryState:
 
     def handle_event(self, event):
         if self.input.consume_action(Action.CONFIRM):
+            self.audio.play("menu_select")
             return "menu"
         if self._menu_rect and self.input.tapped_rect(self._menu_rect):
+            self.audio.play("menu_select")
             return "menu"
         return None
 
@@ -555,10 +576,12 @@ class SecretVictoryState:
 
 # ─── State Manager ────────────────────────────────────────────────────────────
 class GameStateManager:
-    def __init__(self, screen, input_mgr):
+    def __init__(self, screen, input_mgr, audio_mgr):
         self.screen = screen
         self.input = input_mgr
-        self.state = MenuState(screen, input_mgr)
+        self.audio = audio_mgr
+        self.sound_button = SoundButton(40, 40)
+        self.state = MenuState(screen, input_mgr, audio_mgr)
         self.player = None
         self.play_time = 0.0
 
@@ -568,6 +591,10 @@ class GameStateManager:
             self._transition(result)
 
     def update(self, dt):
+        if self.input.tapped_rect(self.sound_button.rect):
+            self.audio.toggle_mute()
+            self.audio.play("menu_select")
+
         self.state.update(dt)
 
         # Track play time while in gameplay
@@ -581,10 +608,11 @@ class GameStateManager:
         if isinstance(self.state, TransitionState):
             if self.state.done:
                 lvl = self.state.next_level
-                self.state = GameplayState(self.screen, self.input, lvl, self.player)
+                self.state = GameplayState(self.screen, self.input, self.audio, lvl, self.player)
 
     def draw(self):
         self.state.draw()
+        self.sound_button.draw(self.screen, self.audio.muted)
 
     def _transition(self, result):
         if result == "JOGAR":
@@ -596,21 +624,24 @@ class GameStateManager:
             pygame.quit(); sys.exit()
         elif result == "menu":
             self.player = None
-            self.state = MenuState(self.screen, self.input)
+            self.state = MenuState(self.screen, self.input, self.audio)
         elif result == "restart":
             self.player = None
             self.state = TransitionState(self.screen, 1, None)
             self.play_time = 0.0
         elif result == "game_over":
-            self.state = GameOverState(self.screen, self.input)
+            self.audio.play("game_over")
+            self.state = GameOverState(self.screen, self.input, self.audio)
         elif result == "victory":
-            self.state = VictoryState(self.screen, self.input, elapsed_seconds=self.play_time)
+            self.audio.play("victory")
+            self.state = VictoryState(self.screen, self.input, self.audio, elapsed_seconds=self.play_time)
         elif result == "secret":
             self.player = None
             self.state = TransitionState(self.screen, 5, None)
             self.play_time = 0.0
         elif result == "secret_victory":
-            self.state = SecretVictoryState(self.screen, self.input)
+            self.audio.play("victory")
+            self.state = SecretVictoryState(self.screen, self.input, self.audio)
         elif result and result.startswith("next:"):
             next_lvl = int(result.split(":")[1])
             self.state = TransitionState(self.screen, next_lvl, self.player)

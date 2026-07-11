@@ -56,13 +56,16 @@ pip install pygbag
 python -m pygbag --bind localhost --port 8000 main.py
 
 # Terminal 2 - para abrir no celular (rode em paralelo, IP diferente, porta diferente)
-python -m pygbag --bind <IP-do-PC-na-rede> --port 8001 main.py
+python -m pygbag --bind <IP-do-PC-na-rede> --port 8080 main.py
 ```
 
 - No **PC**, abra `http://localhost:8000`.
 - No **celular**, conecte-o na mesma rede Wi-Fi do PC e abra
-  `http://<IP-do-PC-na-rede>:8001` (descubra o IP com `ipconfig` no Windows ou
-  `ip addr` no Linux/WSL).
+  `http://<IP-do-PC-na-rede>:8080` (descubra o IP com `ipconfig` no Windows ou
+  `ip addr` no Linux/WSL). Note que a porta é **8080**, diferente da porta
+  8000 do PC — é fácil confundir/digitar errado por serem parecidas
+  (aconteceu durante o desenvolvimento), por isso a porta do celular é bem
+  diferente visualmente.
 - **Por que dois processos em portas diferentes, e não um só?** O servidor de
   desenvolvimento do Pygbag copia literalmente o valor de `--bind` para dentro
   da página (para montar a URL do runtime/CDN), então só existe UM endereço
