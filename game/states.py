@@ -9,6 +9,7 @@ from game.enemy import Particle
 from game.camera import Camera
 from game.paperdoll import Paperdoll
 from game.merchant import ItemsOverlay
+from game.debug_panel import DebugPanel
 from game.weather import WeatherSystem
 from game.assets import create_heart_sprite, create_logo_sprite, create_victory_hero_sprite
 from game.input_system import Action, FullscreenButton
@@ -469,6 +470,8 @@ class GameplayState:
         self.paperdoll_open = False
         self.items = ItemsOverlay()
         self.items_open = False
+        self.debug_panel = DebugPanel()
+        self.debug_panel_open = False
 
         # "Penumbra" level affix (Stage B5) forces a darker fog than the
         # level's own weather flavor, combat levels only - boss arenas are
@@ -503,12 +506,17 @@ class GameplayState:
             self._dev_jump(-1)
 
         if self.input.consume_action(Action.PAPERDOLL):
-            if not self.paused and not self.items_open:
+            if not self.paused and not self.items_open and not self.debug_panel_open:
                 self.paperdoll_open = not self.paperdoll_open
         if self.input.consume_action(Action.ITEMS):
-            if not self.paused and not self.paperdoll_open:
+            if not self.paused and not self.paperdoll_open and not self.debug_panel_open:
                 self.items_open = not self.items_open
-        if self.paperdoll_open or self.items_open:
+        if self.input.consume_action(Action.DEBUG_PANEL):
+            if not self.paused and not self.paperdoll_open and not self.items_open:
+                self.debug_panel_open = not self.debug_panel_open
+                if not self.debug_panel_open and self.debug_panel.consume_difficulty_dirty():
+                    self._dev_jump(0)
+        if self.paperdoll_open or self.items_open or self.debug_panel_open:
             return
         if self.input.consume_action(Action.PAUSE):
             self.paused = not self.paused
@@ -590,6 +598,9 @@ class GameplayState:
         if self.items_open:
             self.items.handle_tap(self.input, self.player, self.save_state)
             self.items.handle_keys(self.input, self.player, self.save_state)
+            return
+        if self.debug_panel_open:
+            self.debug_panel.handle_keys(self.input, self)
             return
         if self.paused:
             return
@@ -778,6 +789,10 @@ class GameplayState:
         # Itens overlay
         if self.items_open:
             self.items.draw(self.screen, self.player)
+
+        # Debug panel overlay (Stage B5 follow-up - F1, PC only)
+        if self.debug_panel_open:
+            self.debug_panel.draw(self.screen, self)
 
         if self.input.touch_active:
             self.input.draw(self.screen)

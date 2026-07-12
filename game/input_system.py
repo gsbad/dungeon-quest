@@ -27,6 +27,7 @@ class Action(Enum):
     CAST_SELECTED = auto()
     DEV_NEXT_LEVEL = auto()
     DEV_PREV_LEVEL = auto()
+    DEBUG_PANEL = auto()
 
 
 class VirtualJoystick:
@@ -287,6 +288,8 @@ class InputManager:
                 self._press_action(Action.DEV_NEXT_LEVEL)
             if event.key == pygame.K_n:
                 self._press_action(Action.DEV_PREV_LEVEL)
+            if event.key == pygame.K_F1:
+                self._press_action(Action.DEBUG_PANEL)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Deliberately doesn't set touch_active - a PC mouse click still

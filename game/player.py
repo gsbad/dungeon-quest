@@ -56,6 +56,11 @@ class Player:
         self.invincible_timer = 0
         self.invincible_duration = 1.0
         self.flash_timer = 0
+        # Debug-only persistent invincibility (game/debug_panel.py's "Modo
+        # Deus" row) - deliberately separate from `invincible` above, which
+        # is a short i-frame window after a hit, not a toggle. Never
+        # persisted (game/save.py) - always False on a fresh/loaded Player.
+        self.debug_invincible = False
 
         self.direction = "down"  # up/down/left/right
 
@@ -149,7 +154,7 @@ class Player:
             return pygame.Rect(self.x, self.y - self.attack_range, self.width, self.attack_range)
 
     def take_damage(self, amount):
-        if self.invincible:
+        if self.invincible or self.debug_invincible:
             return
         self.hp -= amount * self.status.damage_taken_multiplier
         self.invincible = True
@@ -166,7 +171,7 @@ class Player:
         # they shouldn't be blocked by melee-hit invincibility frames, and
         # shouldn't themselves grant any.
         tick_dmg = self.status.update(dt)
-        if tick_dmg:
+        if tick_dmg and not self.debug_invincible:
             self.hp -= tick_dmg
 
         dx, dy = movement_vector

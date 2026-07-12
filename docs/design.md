@@ -184,6 +184,23 @@ Nenhum dos 3 afixos de fase se aplica em salas de boss (arena de boss já é tes
 
 **Fase secreta (13, Cacodemon):** desbloqueada só depois de vencer Inferno pelo menos uma vez (`"inferno" in cleared_difficulties`) — antes disso o botão aparece na tela de vitória mas não faz nada, visível como incentivo, não escondido.
 
+## Painel de debug (`game/debug_panel.py`)
+
+Overlay de desenvolvedor, tecla `F1` (livre, confirmado por grep completo do teclado antes de escolher) — só teclado, só PC, sem botão mobile, mesmo precedente das teclas `M`/`N` de salto de fase (ferramenta de teste, não feature de jogador). Reusa exatamente o idioma de navegação do Paperdoll/Itens: W/S move um cursor com brilho pulsante, A/D ajusta uma linha, ESPAÇO aciona um "trigger". Entra no mesmo grupo de exclusão mútua que Paperdoll/Itens (C/I) — no máximo um overlay aberto por vez.
+
+19 linhas, 2 tipos:
+- **Ajuste** (atributos ±5, nível ±1, pontos livres ±1, ouro ±50, os 3 itens ±1, dificuldade atual — circula livre pelas 5, ignorando o desbloqueio sequencial, que é o próprio propósito da ferramenta).
+- **Trigger** (adicionar 500 XP via `gain_xp` — caminho real de nivelamento, não um set cru; desbloquear todas as dificuldades; forçar Paragon/Campeão num inimigo comum aleatório da fase; matar todos os inimigos da fase; Modo Deus; one-hit no chefe atual).
+
+**Achados que mudaram o design (auditoria antes de implementar):**
+- `player.level` não afeta nenhuma fórmula de combate (só XP-pra-próximo/regra anti-farm/rótulo do HUD) — o rótulo da linha deixa isso explícito, pra não parecer bugado.
+- Mudar um atributo pra baixo pode deixar `hp`/`mana` acima do novo máximo (nada no `Player` clampa isso pra baixo) — a linha de atributo cura o personagem por completo depois de cada ajuste, em vez de tentar clampar manualmente.
+- `CacodemonBoss` (fase secreta) não tem `enable_one_hit()`/`restore_hp()` como `Boss` tem — a linha de one-hit usa `hasattr()` e mostra aviso em vez de quebrar.
+- O tick de dano (Veneno/Chão Amaldiçoado) escreve direto em `player.hp` dentro de `Player.update()`, sem passar por `take_damage()` — "Modo Deus" (`player.debug_invincible`, novo, nunca persistido) guarda os dois pontos, senão o personagem ainda morre de veneno com o modo "ligado".
+- Trocar a dificuldade atual não tem efeito visível imediato: `GameplayState.difficulty`/`difficulty_id` são fixados na construção, não lidos a cada frame. Em vez de recarregar a fase a cada ajuste (o que recarregaria 4x só pra passar de Normal a Inferno), o painel marca uma flag "dirty" e só recarrega a fase atual (reusando `_dev_jump(0)`, zero lógica nova) quando o painel *fecha*, se a dificuldade foi mesmo tocada.
+
+**Persistência:** atributos/nível/pontos/ouro/itens/dificuldade/desbloqueio escrevem no save imediatamente (`save.sync_character`/`sync_economy` + `save.save()`, mesmo padrão que `merchant.py` já usa nas compras) — é ferramenta de teste, o valor setado precisa sobreviver a um refresh. Modo Deus/one-hit/forçar Paragon-Campeão/matar todos tocam objetos efêmeros (nunca existiram no save) e ficam só em memória — `debug_invincible` mora na instância de `Player`, sobrevive entre fases na mesma sessão, mas zera ao carregar um save novo, por design.
+
 ## Campanha em 3 atos e bosses generalizados (Stage B4)
 
 O que era 1 boss único (Rei das Sombras) + 1 fase secreta virou 3 atos, cada um com 3 fases de combate + 1 boss próprio — sem duplicar a classe `Boss`. `game/boss.py`'s `Boss.__init__(x, y, boss_id=...)` agora lê um bloco de atributos de `BOSS_ARCHETYPES` (`game/stats.py`) em vez de ter valores fixos no corpo da classe — mesma jogada de "um rig, várias skins" que `ENEMY_ARCHETYPES`/Paragon já usam. `create_boss_sprite()` (`game/assets.py`) ganhou parâmetros opcionais `body_colors`/`eye_colors` (`None` reproduz a paleta original do Rei das Sombras, byte a byte). O boost de velocidade da fase 2 (enrage) passou de um valor fixo (`130`) para proporcional (`stats.speed * 1.625`), preservando o número exato do Rei das Sombras enquanto funciona para qualquer arquétipo.
