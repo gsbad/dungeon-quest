@@ -69,84 +69,107 @@ def create_player_sprite(direction="down", attacking=False):
     return s
 
 
+# Per-etype palette + which of the 3 hand-drawn rigs to paint it with
+# (Stage D6) - same "one rig, several palette-swapped encounters" idea as
+# create_boss_sprite's body_colors/eye_colors, applied to common enemies.
+# A new mob's look is one entry here, never new drawing code.
+ENEMY_SPRITES = {
+    "skeleton":     {"rig": "skeleton",    "body": (230, 230, 230), "eye": (200, 0, 0)},
+    "goblin":       {"rig": "goblin",      "body": (80, 180, 80),   "eye": (255, 200, 0)},
+    "dark_knight":  {"rig": "dark_knight", "body": (40, 40, 60),    "accent": (160, 0, 0)},
+    "swamp_troll":  {"rig": "goblin",      "body": (90, 110, 60),   "eye": (180, 220, 90)},
+    "cursed_mage":  {"rig": "skeleton",    "body": (70, 50, 110),   "eye": (140, 120, 255)},
+    "crypt_wraith": {"rig": "skeleton",    "body": (180, 200, 220), "eye": (120, 220, 255)},
+    "ash_fiend":    {"rig": "goblin",      "body": (120, 50, 40),   "eye": (255, 150, 40)},
+    "royal_guard":  {"rig": "dark_knight", "body": (90, 75, 30),    "accent": (255, 215, 0)},
+}
+
+
+def _shade(color, factor):
+    """A lighter (factor>1) or darker (factor<1) variant of `color` - used
+    for a rig's secondary details (goblin legs, dark_knight shoulder pads)
+    so recoloring one archetype recolors its whole sprite consistently
+    instead of leaving those bits stuck on the original hardcoded shade."""
+    return tuple(max(0, min(255, round(c * factor))) for c in color)
+
+
+def _paint_skeleton(s, SC, body, eye):
+    body_pixels = [(5,6),(6,6),(7,6),(8,6),(9,6),(10,6),
+            (4,7),(5,7),(10,7),(11,7),
+            (4,8),(5,8),(7,8),(8,8),(10,8),(11,8),
+            (4,9),(5,9),(10,9),(11,9),
+            (5,10),(6,10),(7,10),(8,10),(9,10),(10,10)]
+    for (x,y) in body_pixels:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    head = [(5,2),(6,2),(7,2),(8,2),(9,2),(10,2),
+            (4,3),(11,3),(4,4),(11,4),(4,5),(11,5),
+            (5,5),(6,5),(7,5),(8,5),(9,5),(10,5)]
+    for (x,y) in head:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    pygame.draw.rect(s, eye, (6*SC,3*SC,SC,SC))
+    pygame.draw.rect(s, eye, (9*SC,3*SC,SC,SC))
+    for x in [5,7,9]:
+        pygame.draw.rect(s, WHITE, (x*SC,5*SC,SC,SC))
+    for (x,y) in [(5,11),(6,11),(9,11),(10,11),(5,12),(9,12),(5,13),(9,13)]:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+
+
+def _paint_goblin(s, SC, body, eye):
+    for (x,y) in [(5,6),(6,6),(7,6),(8,6),(9,6),(10,6),
+                  (4,7),(5,7),(6,7),(7,7),(8,7),(9,7),(10,7),(11,7),
+                  (4,8),(11,8),(4,9),(11,9),
+                  (5,10),(6,10),(7,10),(8,10),(9,10),(10,10)]:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    for (x,y) in [(4,2),(5,2),(6,2),(7,2),(8,2),(9,2),(10,2),(11,2),
+                  (3,3),(12,3),(3,4),(12,4),(3,5),(12,5),
+                  (4,5),(5,5),(6,5),(7,5),(8,5),(9,5),(10,5),(11,5)]:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    pygame.draw.rect(s, eye, (5*SC,3*SC,SC*2,SC))
+    pygame.draw.rect(s, eye, (9*SC,3*SC,SC*2,SC))
+    pygame.draw.rect(s, BLACK, (6*SC,3*SC,SC,SC))
+    pygame.draw.rect(s, BLACK, (10*SC,3*SC,SC,SC))
+    pygame.draw.rect(s, body, (2*SC,2*SC,SC,SC*2))
+    pygame.draw.rect(s, body, (13*SC,2*SC,SC,SC*2))
+    darker = _shade(body, 0.75)
+    for (x,y) in [(5,11),(6,11),(9,11),(10,11),(5,12),(9,12),(5,13),(9,13)]:
+        pygame.draw.rect(s, darker, (x*SC,y*SC,SC,SC))
+
+
+def _paint_dark_knight(s, SC, body, accent):
+    for (x,y) in [(4,6),(5,6),(6,6),(7,6),(8,6),(9,6),(10,6),(11,6),
+                  (3,7),(12,7),(3,8),(12,8),(3,9),(12,9),
+                  (4,10),(5,10),(6,10),(7,10),(8,10),(9,10),(10,10),(11,10)]:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    for (x,y) in [(4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),(11,1),
+                  (3,2),(12,2),(3,3),(12,3),(3,4),(12,4),(3,5),(12,5),
+                  (4,5),(5,5),(6,5),(7,5),(8,5),(9,5),(10,5),(11,5)]:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    pygame.draw.rect(s, accent, (5*SC,3*SC,SC*6,SC))
+    lighter = _shade(body, 1.75)
+    for y in [6,7]:
+        pygame.draw.rect(s, lighter, (2*SC,y*SC,SC*2,SC))
+        pygame.draw.rect(s, lighter, (12*SC,y*SC,SC*2,SC))
+    for (x,y) in [(4,11),(5,11),(10,11),(11,11),(4,12),(5,12),(10,12),(11,12),
+                  (4,13),(5,13),(10,13),(11,13)]:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+
+
+_RIG_PAINTERS = {
+    "skeleton": _paint_skeleton,
+    "goblin": _paint_goblin,
+    "dark_knight": _paint_dark_knight,
+}
+
+
 def create_enemy_sprite(etype="skeleton"):
     SC = 3
     s = pygame.Surface((16*SC, 16*SC), pygame.SRCALPHA)
-    if etype == "skeleton":
-        color = (230,230,230)
-        eye_color = (200,0,0)
-        # Body
-        body = [(5,6),(6,6),(7,6),(8,6),(9,6),(10,6),
-                (4,7),(5,7),(10,7),(11,7),
-                (4,8),(5,8),(7,8),(8,8),(10,8),(11,8),
-                (4,9),(5,9),(10,9),(11,9),
-                (5,10),(6,10),(7,10),(8,10),(9,10),(10,10)]
-        for (x,y) in body:
-            pygame.draw.rect(s, color, (x*SC,y*SC,SC,SC))
-        # Head
-        head = [(5,2),(6,2),(7,2),(8,2),(9,2),(10,2),
-                (4,3),(11,3),(4,4),(11,4),(4,5),(11,5),
-                (5,5),(6,5),(7,5),(8,5),(9,5),(10,5)]
-        for (x,y) in head:
-            pygame.draw.rect(s, color, (x*SC,y*SC,SC,SC))
-        # Eyes
-        pygame.draw.rect(s, eye_color, (6*SC,3*SC,SC,SC))
-        pygame.draw.rect(s, eye_color, (9*SC,3*SC,SC,SC))
-        # Teeth
-        for x in [5,7,9]:
-            pygame.draw.rect(s, WHITE, (x*SC,5*SC,SC,SC))
-        # Legs
-        for (x,y) in [(5,11),(6,11),(9,11),(10,11),(5,12),(9,12),(5,13),(9,13)]:
-            pygame.draw.rect(s, color, (x*SC,y*SC,SC,SC))
-
-    elif etype == "goblin":
-        color = (80,180,80)
-        # Body
-        for (x,y) in [(5,6),(6,6),(7,6),(8,6),(9,6),(10,6),
-                      (4,7),(5,7),(6,7),(7,7),(8,7),(9,7),(10,7),(11,7),
-                      (4,8),(11,8),(4,9),(11,9),
-                      (5,10),(6,10),(7,10),(8,10),(9,10),(10,10)]:
-            pygame.draw.rect(s, color, (x*SC,y*SC,SC,SC))
-        # Head
-        for (x,y) in [(4,2),(5,2),(6,2),(7,2),(8,2),(9,2),(10,2),(11,2),
-                      (3,3),(12,3),(3,4),(12,4),(3,5),(12,5),
-                      (4,5),(5,5),(6,5),(7,5),(8,5),(9,5),(10,5),(11,5)]:
-            pygame.draw.rect(s, color, (x*SC,y*SC,SC,SC))
-        # Eyes (yellow)
-        pygame.draw.rect(s, (255,200,0), (5*SC,3*SC,SC*2,SC))
-        pygame.draw.rect(s, (255,200,0), (9*SC,3*SC,SC*2,SC))
-        pygame.draw.rect(s, BLACK, (6*SC,3*SC,SC,SC))
-        pygame.draw.rect(s, BLACK, (10*SC,3*SC,SC,SC))
-        # Ears
-        pygame.draw.rect(s, color, (2*SC,2*SC,SC,SC*2))
-        pygame.draw.rect(s, color, (13*SC,2*SC,SC,SC*2))
-        # Legs
-        for (x,y) in [(5,11),(6,11),(9,11),(10,11),(5,12),(9,12),(5,13),(9,13)]:
-            pygame.draw.rect(s, (60,140,60), (x*SC,y*SC,SC,SC))
-
-    elif etype == "dark_knight":
-        color = (40,40,60)
-        accent = (160,0,0)
-        for (x,y) in [(4,6),(5,6),(6,6),(7,6),(8,6),(9,6),(10,6),(11,6),
-                      (3,7),(12,7),(3,8),(12,8),(3,9),(12,9),
-                      (4,10),(5,10),(6,10),(7,10),(8,10),(9,10),(10,10),(11,10)]:
-            pygame.draw.rect(s, color, (x*SC,y*SC,SC,SC))
-        # Helmet
-        for (x,y) in [(4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),(11,1),
-                      (3,2),(12,2),(3,3),(12,3),(3,4),(12,4),(3,5),(12,5),
-                      (4,5),(5,5),(6,5),(7,5),(8,5),(9,5),(10,5),(11,5)]:
-            pygame.draw.rect(s, color, (x*SC,y*SC,SC,SC))
-        # Visor glow
-        pygame.draw.rect(s, accent, (5*SC,3*SC,SC*6,SC))
-        # Shoulder pads
-        for y in [6,7]:
-            pygame.draw.rect(s, (70,70,90), (2*SC,y*SC,SC*2,SC))
-            pygame.draw.rect(s, (70,70,90), (12*SC,y*SC,SC*2,SC))
-        # Legs
-        for (x,y) in [(4,11),(5,11),(10,11),(11,11),(4,12),(5,12),(10,12),(11,12),
-                      (4,13),(5,13),(10,13),(11,13)]:
-            pygame.draw.rect(s, color, (x*SC,y*SC,SC,SC))
-
+    defn = ENEMY_SPRITES[etype]
+    body = defn["body"]
+    # "eye" (skeleton/goblin) and "accent" (dark_knight) are the same slot -
+    # whichever secondary color the rig's paint function expects.
+    secondary = defn.get("eye") or defn.get("accent")
+    _RIG_PAINTERS[defn["rig"]](s, SC, body, secondary)
     return s
 
 

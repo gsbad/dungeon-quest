@@ -51,7 +51,7 @@ LEVEL_MAPS = {
         "speed_multiplier": 1.2,
         "hazards": {"puddles": True},
         "monster_level": 4,
-        "weather": "rain",
+        "weather": "sandstorm",
         "tileset": "sand",
         "floor": "sand",
         "bg": (160, 130, 60),
@@ -85,7 +85,9 @@ LEVEL_MAPS = {
         "speed_multiplier": 1.2,
         "hazards": {"puddles": True},
         "monster_level": 8,
-        "weather": "snow",
+        # No weather key - an indoor dungeon has no sky; snow made no sense
+        # here (Stage D5 biome-fit pass). get("weather") returns None,
+        # which WeatherSystem already treats as a no-op.
         "tileset": "floor",
         "floor": "floor",
         "bg": (30, 20, 50),
@@ -149,12 +151,12 @@ LEVEL_MAPS = {
         "next": 6,
         "victory": None,
         "monster_level": 12,
-        "weather": "fog",
+        "weather": "rain",
         "tileset": "swamp",
         "floor": "swamp",
         "bg": (25, 40, 25),
         "title": "Pantano Sombrio",
-        "enemies": ["goblin", "skeleton", "goblin", "skeleton"],
+        "enemies": ["swamp_troll", "goblin", "swamp_troll", "skeleton"],
         "layout": [
             "####################",
             "#..................#",
@@ -186,7 +188,7 @@ LEVEL_MAPS = {
         "floor": "floor",
         "bg": (25, 15, 40),
         "title": "Torre Amaldicoada",
-        "enemies": ["skeleton", "dark_knight", "skeleton", "goblin"],
+        "enemies": ["cursed_mage", "skeleton", "cursed_mage", "dark_knight"],
         "layout": [
             "####################",
             "#..................#",
@@ -213,12 +215,12 @@ LEVEL_MAPS = {
         "next": 8,
         "victory": None,
         "monster_level": 20,
-        "weather": "snow",
+        "weather": "gloom",
         "tileset": "floor",
         "floor": "floor",
         "bg": (20, 20, 30),
         "title": "Cripta Perdida",
-        "enemies": ["dark_knight", "skeleton", "dark_knight", "skeleton", "goblin"],
+        "enemies": ["crypt_wraith", "skeleton", "crypt_wraith", "cursed_mage", "skeleton"],
         "layout": [
             "####################",
             "#..................#",
@@ -245,7 +247,7 @@ LEVEL_MAPS = {
         "next": 9,
         "victory": None,
         "heart_spawns": True,
-        "weather": "fog",
+        "weather": "gloom",
         "tileset": "boss_floor",
         "floor": "boss_floor",
         "bg": (10, 30, 20),
@@ -282,7 +284,7 @@ LEVEL_MAPS = {
         "floor": "floor",
         "bg": (30, 30, 45),
         "title": "Salao dos Ecos",
-        "enemies": ["dark_knight", "dark_knight", "skeleton", "skeleton", "goblin"],
+        "enemies": ["crypt_wraith", "cursed_mage", "skeleton", "crypt_wraith", "dark_knight"],
         "layout": [
             "####################",
             "#..................#",
@@ -309,12 +311,12 @@ LEVEL_MAPS = {
         "next": 11,
         "victory": None,
         "monster_level": 28,
-        "weather": "storm",
+        "weather": "ashfall",
         "tileset": "lava",
         "floor": "lava",
         "bg": (90, 35, 15),
         "title": "Abismo de Cinzas",
-        "enemies": ["dark_knight", "dark_knight", "skeleton", "dark_knight", "goblin"],
+        "enemies": ["ash_fiend", "dark_knight", "ash_fiend", "skeleton", "ash_fiend"],
         "layout": [
             "####################",
             "#..................#",
@@ -346,7 +348,7 @@ LEVEL_MAPS = {
         "floor": "boss_floor",
         "bg": (20, 10, 25),
         "title": "Corredor Final",
-        "enemies": ["dark_knight", "dark_knight", "dark_knight", "skeleton", "skeleton"],
+        "enemies": ["royal_guard", "dark_knight", "royal_guard", "cursed_mage", "royal_guard"],
         "layout": [
             "####################",
             "#..................#",
@@ -404,6 +406,7 @@ LEVEL_MAPS = {
         "boss": "cacodemon",
         "next": None,
         "victory": "secret_victory",
+        "weather": "ashfall",
         "tileset": "lava",
         "floor": "lava",
         "bg": (120, 40, 10),
@@ -539,8 +542,10 @@ class Level:
             if p.rect.colliderect(player.rect):
                 if p.can_damage():
                     # Same ~1/6-of-old-max_hp chip as before, rescaled to the
-                    # bigger hp range from game/stats.py (Stage A3).
-                    player.take_damage(round(player.max_hp / 6))
+                    # bigger hp range from game/stats.py (Stage A3). Typed
+                    # magic, not physical - it's the goblin's poison spell
+                    # effect landing on the floor, not a contact hit.
+                    player.take_damage(round(player.max_hp / 6), dtype="magic")
                     if random.random() < 0.20:
                         player.status.apply("poison")
 
@@ -567,7 +572,8 @@ class Level:
                     continue
                 if enemy.affix == "warded" and random.random() < 0.25:
                     continue  # blocked - Paragon affix
-                enemy.take_damage(player.attack_damage)
+                dmg, is_crit = player.stats.roll_physical()
+                enemy.take_damage(dmg, dtype="physical", crit=is_crit)
                 if not enemy.alive:
                     self.credit_kill(player, enemy)
 
@@ -591,7 +597,7 @@ class Level:
             ex, ey = enemy.x + enemy.width / 2, enemy.y + enemy.height / 2
             px, py = player.x + player.width / 2, player.y + player.height / 2
             if math.hypot(px - ex, py - ey) <= 70:
-                player.take_damage(15)
+                player.take_damage(15, dtype="magic")
 
     def check_exit(self, player):
         if self.exit_open and self.exit_rect:

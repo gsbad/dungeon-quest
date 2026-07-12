@@ -14,6 +14,10 @@ add a new one.
 """
 
 BASE_ATTR = 10
+# Sorte (luck) is deliberately excluded from _PRIORITY/PURE/HYBRID - there's
+# no "Gambler" profession, points spent on luck just don't factor into
+# profession derivation. Adding it here would need a 6th PURE entry and a
+# HYBRID pair for every other attribute, or this KeyErrors.
 _PRIORITY = ["strength", "dexterity", "intelligence", "wisdom", "vigor"]
 
 ADVENTURER = "Aventureiro"

@@ -14,12 +14,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from game.stats import (
     StatBlock, ENEMY_ARCHETYPES, MAX_LEVEL, POINTS_PER_LEVEL,
-    xp_to_next, scale_archetype, xp_for_kill, gold_for_kill,
+    xp_to_next, scale_archetype, xp_for_kill, gold_for_kill, mitigate, MITIGATION_K,
 )
 from game.status_effects import STATUS_EFFECTS
 from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER
 
-ATTR_ORDER = ["strength", "dexterity", "intelligence", "wisdom", "vigor"]
+ATTR_ORDER = ["strength", "dexterity", "intelligence", "wisdom", "vigor", "luck"]
 
 
 def balanced_player_stats(level):
@@ -27,9 +27,13 @@ def balanced_player_stats(level):
     builds are the whole point of the attribute system), just a reference
     baseline so TTK numbers below don't require picking a specific build."""
     points = POINTS_PER_LEVEL * (level - 1)
-    per_attr, remainder = divmod(points, 5)
+    per_attr, remainder = divmod(points, len(ATTR_ORDER))
     attrs = {name: 10 + per_attr + (1 if i < remainder else 0) for i, name in enumerate(ATTR_ORDER)}
     return StatBlock(weapon_base=4, base_speed=190, **attrs)
+
+
+def mitig_pct(defense):
+    return defense / (defense + MITIGATION_K) * 100
 
 
 def monster_stats(etype, ml):
@@ -54,11 +58,15 @@ def print_xp_curve():
 
 def print_player_progression():
     print("=== Jogador (build balanceado) por nivel ===")
-    print(f"{'Nivel':>6} {'HP':>5} {'Dano':>5} {'Mana':>5} {'Vel.mov':>8} {'Atq/s':>6}")
+    print(f"{'Nivel':>6} {'HP':>5} {'Dano':>5} {'Mana':>5} {'Vel.mov':>8} {'Atq/s':>6} "
+          f"{'DefFis':>7} {'Mit%':>5} {'DefMag':>7} {'Mit%':>5} {'Crit%':>6}")
     for level in [1, 5, 10, 15, 20, 25, 30]:
         s = balanced_player_stats(level)
         print(f"{level:>6} {s.max_hp:>5} {s.physical_damage:>5} {s.max_mana:>5} "
-              f"{s.speed:>8.0f} {1/s.attack_cooldown:>6.2f}")
+              f"{s.speed:>8.0f} {1/s.attack_cooldown:>6.2f} "
+              f"{s.physical_defense:>7.1f} {mitig_pct(s.physical_defense):>4.0f}% "
+              f"{s.magic_defense:>7.1f} {mitig_pct(s.magic_defense):>4.0f}% "
+              f"{s.crit_chance*100:>5.1f}%")
     print()
 
 
@@ -66,15 +74,17 @@ def print_monster_progression():
     print("=== Monstros por nivel (ML) ===")
     for etype in ENEMY_ARCHETYPES:
         print(f"-- {etype} --")
-        print(f"{'ML':>4} {'HP':>5} {'Dano':>5} {'Vel':>6}")
+        print(f"{'ML':>4} {'HP':>5} {'Dano':>5} {'Vel':>6} {'DefFis':>7} {'Mit%':>5} {'DefMag':>7} {'Mit%':>5}")
         for ml in [1, 4, 8, 12, 16, 20]:
             s = monster_stats(etype, ml)
-            print(f"{ml:>4} {s.max_hp:>5} {s.physical_damage:>5} {s.speed:>6.0f}")
+            print(f"{ml:>4} {s.max_hp:>5} {s.physical_damage:>5} {s.speed:>6.0f} "
+                  f"{s.physical_defense:>7.1f} {mitig_pct(s.physical_defense):>4.0f}% "
+                  f"{s.magic_defense:>7.1f} {mitig_pct(s.magic_defense):>4.0f}%")
     print()
 
 
 def print_ttk_matrix():
-    print("=== Time-to-kill: jogador (nivel correspondente) vs monstro (ML) ===")
+    print("=== Time-to-kill (dano mitigado): jogador (nivel correspondente) vs monstro (ML) ===")
     # Pairings match the actual campaign (fase1=ML1, fase2=ML4, fase3=ML8)
     # plus a look-ahead into where the difficulty tiers will sit (Stage B5).
     pairings = [(1, 1), (5, 4), (10, 8), (15, 12), (20, 16)]
@@ -83,8 +93,10 @@ def print_ttk_matrix():
         player = balanced_player_stats(player_level)
         for etype in ENEMY_ARCHETYPES:
             monster = monster_stats(etype, ml)
-            hits_to_kill = ttk(player.physical_damage, monster.max_hp)
-            hits_to_die = ttk(monster.physical_damage, player.max_hp)
+            player_dmg = mitigate(player.physical_damage, monster.physical_defense)
+            monster_dmg = mitigate(monster.physical_damage, player.physical_defense)
+            hits_to_kill = ttk(player_dmg, monster.max_hp)
+            hits_to_die = ttk(monster_dmg, player.max_hp)
             label = f"L{player_level}/ML{ml}"
             print(f"{label:>10} {etype:>12} {hits_to_kill:>16} {hits_to_die:>17}")
     print()

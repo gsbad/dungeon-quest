@@ -6,11 +6,11 @@ from game.assets import create_boss_sprite, create_projectile_sprite
 from game.enemy import Particle
 from game.theme import font, TITLE_PAUSE
 from game.ui import ProgressBar
-from game.stats import StatBlock
+from game.stats import StatBlock, mitigate
 
 class Projectile:
     def __init__(self, x, y, vx, vy, damage=1, color=(255,100,0),
-                 status_effect=None, status_chance=0.0):
+                 status_effect=None, status_chance=0.0, dtype="magic"):
         self.x = float(x)
         self.y = float(y)
         self.vx = vx
@@ -23,6 +23,11 @@ class Projectile:
         # Optional debuff this hit may inflict - see game/status_effects.py.
         self.status_effect = status_effect
         self.status_chance = status_chance
+        # Every projectile in the game today is a spell-shaped ranged
+        # attack (player Fireball, boss bolts, dark_knight's laser) - never
+        # contact - so "magic" is the type for anything not thrown via a
+        # melee hit; see game/stats.py's physical/magic defense split.
+        self.dtype = dtype
 
     @property
     def rect(self):
@@ -50,6 +55,19 @@ class Projectile:
         pygame.draw.circle(surface, (255,255,200), (sx, sy), self.radius//2)
 
 
+# Per-boss, per-phase attack pattern pool (Stage D6) - AI/behavior tuning,
+# same "stays local, not in game/stats.py's numbers-only archetypes" spirit
+# as game/enemy.py's ENEMY_FLAVOR. shadow_king keeps its exact pre-D6 set
+# unchanged; orc_warlord (Act 1) and necromancer (Act 2) get a distinct
+# specialty pattern (charge / summon+curse) instead of sharing 100% of
+# Boss's attack list the way all 3 did before.
+BOSS_PATTERNS = {
+    "orc_warlord": {1: ["charge", "triple"], 2: ["charge", "charge", "circle"]},
+    "necromancer": {1: ["summon", "circle", "curse"], 2: ["summon", "spiral", "curse"]},
+    "shadow_king": {1: ["circle", "triple", "spiral"], 2: ["circle", "triple", "spiral", "circle_aimed"]},
+}
+
+
 class Boss:
     """One rig, several bosses (Stage B4) - the campaign's 3 acts each end
     in their own boss (Orc Warlord, Necromancer, Shadow King), but they
@@ -75,7 +93,8 @@ class Boss:
         # as before now that the player's attack_damage went from a flat 1
         # to stats-driven 9 (see states.py's boss.take_damage(...) call).
         self.stats = StatBlock(strength=archetype["strength"], dexterity=archetype["dexterity"],
-                                vigor=archetype["vigor"], weapon_base=archetype["weapon_base"],
+                                vigor=archetype["vigor"], luck=archetype["luck"],
+                                weapon_base=archetype["weapon_base"],
                                 base_speed=archetype["base_speed"])
         self.max_hp = self.stats.max_hp
         self.hp = self.max_hp
@@ -91,6 +110,20 @@ class Boss:
         self.speed = self.stats.speed
         self.projectiles = []
         self.particles = []
+
+        # Charge attack state (orc_warlord's "charge" pattern, Stage D6) -
+        # None outside a charge; windup->dashing while it plays out, taking
+        # over update() from the normal movement/attack-roll flow. The one
+        # boss attack that's contact/physical instead of a Projectile.
+        self.charge_state = None
+        self.charge_timer = 0.0
+        self.charge_dir = (0.0, 0.0)
+        self.charge_hit = False
+
+        # Spawn requests from necromancer's "summon" pattern (Stage D6) -
+        # (x, y) tuples GameplayState drains into real Enemy instances each
+        # frame (Boss itself doesn't touch game/level.py's enemy list).
+        self.pending_summons = []
 
         self.attack_timer = 0
         self.attack_interval = 2.0
@@ -128,14 +161,18 @@ class Boss:
     def rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
-    def take_damage(self, amount):
+    def take_damage(self, amount, dtype="physical", crit=False):
         if self.hit_flash > 0.05:
             return
-        self.hp -= amount
+        defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
+        self.hp -= mitigate(amount, defense)
         self.hit_flash = 0.12
         for _ in range(10):
             color = (200,50,200) if self.phase == 1 else (255,100,0)
             self.particles.append(Particle(self.x+48, self.y+48, color))
+        if crit:
+            for _ in range(8):
+                self.particles.append(Particle(self.x+48, self.y+48, (255, 215, 0)))
         if self.hp <= 0:
             self.alive = False
             for _ in range(40):
@@ -168,6 +205,97 @@ class Boss:
         self.projectiles.append(Projectile(cx, cy, vx, vy, damage, color,
                                             status_effect, status_chance))
 
+    # Circle/triple/spiral/circle_aimed are shadow_king's exact original
+    # (pre-Stage D6) attack set, now named methods so BOSS_PATTERNS can
+    # mix-and-match them per boss_id instead of every boss sharing one
+    # hardcoded pattern list.
+    def _pattern_circle(self):
+        cx, cy = self.x + self.width/2, self.y + self.height/2
+        count = 8 if self.phase == 1 else 12
+        color = (180,0,255) if self.phase == 1 else (255,80,0)
+        self._shoot_circle(cx, cy, count, 160, self.burst_dmg, color,
+                            status_effect="slow", status_chance=0.10)
+
+    def _pattern_triple(self, player):
+        cx, cy = self.x + self.width/2, self.y + self.height/2
+        for offset in [-20, 0, 20]:
+            px = player.x + player.width/2 + offset
+            py = player.y + player.height/2
+            dist = math.hypot(px-cx, py-cy)
+            if dist > 0:
+                spd = 220
+                vx = (px-cx)/dist*spd
+                vy = (py-cy)/dist*spd
+                clr = (200,50,255) if self.phase==1 else (255,150,0)
+                self.projectiles.append(Projectile(cx,cy,vx,vy,self.burst_dmg,clr))
+
+    def _pattern_spiral(self):
+        cx, cy = self.x + self.width/2, self.y + self.height/2
+        for i in range(16):
+            angle = (math.pi/8)*i + self.enrage_timer
+            spd = 180
+            vx = math.cos(angle)*spd
+            vy = math.sin(angle)*spd
+            clr = (150,0,200) if self.phase==1 else (255,50,50)
+            self.projectiles.append(Projectile(cx+vx*0.1,cy+vy*0.1,vx,vy,self.burst_dmg,clr,
+                                                status_effect="slow", status_chance=0.10))
+
+    def _pattern_circle_aimed(self, player):
+        cx, cy = self.x + self.width/2, self.y + self.height/2
+        self._shoot_circle(cx, cy, 8, 140, self.burst_dmg, (255,100,0))
+        self._shoot_at_player(player, 280, self.aimed_dmg, (255,255,0),
+                               status_effect="weakness", status_chance=0.25)
+
+    # orc_warlord's specialty (Act 1, the physical brawler) - the only boss
+    # attack that's contact/physical instead of a Projectile, so the
+    # player's physical defense (not spell defense) is what matters here.
+    def _start_charge(self, player):
+        self.charge_state = "windup"
+        self.charge_timer = 0.6
+
+    def _update_charge(self, dt, player):
+        if self.charge_state == "windup":
+            self.charge_timer -= dt
+            if self.charge_timer <= 0:
+                cx, cy = self.x + self.width/2, self.y + self.height/2
+                px, py = player.x + player.width/2, player.y + player.height/2
+                dist = math.hypot(px-cx, py-cy) or 1.0
+                self.charge_dir = ((px-cx)/dist, (py-cy)/dist)
+                self.charge_state = "dashing"
+                self.charge_timer = 0.7
+                self.charge_hit = False
+        elif self.charge_state == "dashing":
+            self.charge_timer -= dt
+            dash_speed = self.stats.speed * 4
+            self.x += self.charge_dir[0] * dash_speed * dt
+            self.y += self.charge_dir[1] * dash_speed * dt
+            self.x = max(100, min(self.x, 700))
+            self.y = max(100, min(self.y, 400))
+            if not self.charge_hit and self.rect.colliderect(player.rect):
+                player.take_damage(round(self.stats.physical_damage * 2), dtype="physical")
+                self.charge_hit = True
+            if self.charge_timer <= 0:
+                self.charge_state = None
+
+    # necromancer's specialty (Act 2, the magic summoner).
+    def _pattern_summon(self):
+        cx, cy = self.x + self.width/2, self.y + self.height/2
+        for dx in (-70, 70):
+            self.pending_summons.append((cx + dx, cy))
+
+    def _pattern_curse(self, player):
+        cx, cy = self.x + self.width/2, self.y + self.height/2
+        for offset in (-15, 0, 15):
+            px = player.x + player.width/2 + offset
+            py = player.y + player.height/2
+            dist = math.hypot(px-cx, py-cy)
+            if dist > 0:
+                spd = 200
+                vx = (px-cx)/dist*spd
+                vy = (py-cy)/dist*spd
+                self.projectiles.append(Projectile(cx, cy, vx, vy, self.burst_dmg, (90,255,140),
+                                                     status_effect="weakness", status_chance=0.30))
+
     def update(self, dt, player, walls):
         # Update particles
         self.particles = [p for p in self.particles if p.life > 0]
@@ -178,7 +306,7 @@ class Boss:
         for proj in self.projectiles:
             proj.update(dt, walls)
             if proj.rect.colliderect(player.rect):
-                player.take_damage(proj.damage)
+                player.take_damage(proj.damage, dtype=proj.dtype)
                 if proj.status_effect and random.random() < proj.status_chance:
                     player.status.apply(proj.status_effect)
                 proj.alive = False
@@ -192,6 +320,13 @@ class Boss:
 
         if self.phase == 2:
             self.enrage_timer += dt
+
+        if self.charge_state:
+            # Charging suppresses normal movement/attack rolls entirely
+            # until the dash finishes - it's a windup+commit, not just
+            # another projectile pattern layered on top of everything else.
+            self._update_charge(dt, player)
+            return
 
         # Movement - circle/chase
         self.move_timer -= dt
@@ -212,50 +347,27 @@ class Boss:
             if r.colliderect(wall):
                 self.move_dir = (-self.move_dir[0], -self.move_dir[1])
 
-        # Attack patterns
+        # Attack patterns - which ones are in the pool at all is per boss_id
+        # (BOSS_PATTERNS below), so each Act's boss plays differently
+        # instead of every boss sharing shadow_king's exact original set.
         self.attack_timer -= dt
         if self.attack_timer <= 0:
             self.attack_timer = self.attack_interval
-            cx = self.x + self.width / 2
-            cy = self.y + self.height / 2
-
-            pattern = random.choice([0, 1, 2]) if self.phase == 1 else random.choice([0,1,2,3])
-
-            if pattern == 0:
-                # Circular burst - dark magic, chance of Lentidao
-                count = 8 if self.phase == 1 else 12
-                color = (180,0,255) if self.phase == 1 else (255,80,0)
-                self._shoot_circle(cx, cy, count, 160, self.burst_dmg, color,
-                                    status_effect="slow", status_chance=0.10)
-            elif pattern == 1:
-                # Triple shot at player - kept pure damage, no debuff on
-                # every single attack keeps some variety in what gets inflicted
-                for offset in [-20, 0, 20]:
-                    px = player.x + player.width/2 + offset
-                    py = player.y + player.height/2
-                    dist = math.hypot(px-cx, py-cy)
-                    if dist > 0:
-                        spd = 220
-                        vx = (px-cx)/dist*spd
-                        vy = (py-cy)/dist*spd
-                        clr = (200,50,255) if self.phase==1 else (255,150,0)
-                        self.projectiles.append(Projectile(cx,cy,vx,vy,self.burst_dmg,clr))
-            elif pattern == 2:
-                # Spiral - dark magic, chance of Lentidao
-                for i in range(16):
-                    angle = (math.pi/8)*i + self.enrage_timer
-                    spd = 180
-                    vx = math.cos(angle)*spd
-                    vy = math.sin(angle)*spd
-                    clr = (150,0,200) if self.phase==1 else (255,50,50)
-                    self.projectiles.append(Projectile(cx+vx*0.1,cy+vy*0.1,vx,vy,self.burst_dmg,clr,
-                                                        status_effect="slow", status_chance=0.10))
-            elif pattern == 3:
-                # Phase 2 only: double circle + aimed - the aimed shot is the
-                # "big hit," bigger chance of Fraqueza to match
-                self._shoot_circle(cx, cy, 8, 140, self.burst_dmg, (255,100,0))
-                self._shoot_at_player(player, 280, self.aimed_dmg, (255,255,0),
-                                       status_effect="weakness", status_chance=0.25)
+            pattern = random.choice(BOSS_PATTERNS[self.boss_id][self.phase])
+            if pattern == "circle":
+                self._pattern_circle()
+            elif pattern == "triple":
+                self._pattern_triple(player)
+            elif pattern == "spiral":
+                self._pattern_spiral()
+            elif pattern == "circle_aimed":
+                self._pattern_circle_aimed(player)
+            elif pattern == "charge":
+                self._start_charge(player)
+            elif pattern == "summon":
+                self._pattern_summon()
+            elif pattern == "curse":
+                self._pattern_curse(player)
 
     def draw(self, surface, cam_x, cam_y):
         for p in self.particles:
@@ -274,6 +386,14 @@ class Boss:
             white.fill((255, 255, 255, 200))
             sprite = sprite.copy()
             sprite.blit(white, (0,0), special_flags=pygame.BLEND_RGBA_ADD)
+
+        # Charge windup tell (orc_warlord) - a red pulse during the 0.6s
+        # wind-up gives the player a fair warning before the dash commits.
+        if self.charge_state == "windup":
+            red = pygame.Surface(sprite.get_size(), pygame.SRCALPHA)
+            red.fill((255, 40, 40, 130))
+            sprite = sprite.copy()
+            sprite.blit(red, (0,0), special_flags=pygame.BLEND_RGBA_ADD)
 
         # Phase 2 pulsing aura
         if self.phase == 2:
@@ -315,7 +435,7 @@ class CacodemonBoss:
         self.height = 80
         # vigor=113.33 -> max_hp=360, same 40-hit TTK as before at the
         # player's new stats-driven attack_damage (see game/stats.py).
-        self.stats = StatBlock(strength=10, dexterity=0, vigor=113.33, weapon_base=3, base_speed=100)
+        self.stats = StatBlock(strength=10, dexterity=0, vigor=113.33, luck=0, weapon_base=3, base_speed=100)
         self.max_hp = self.stats.max_hp
         self.hp = self.max_hp
         self.dmg = self.stats.physical_damage
@@ -326,6 +446,9 @@ class CacodemonBoss:
         self.speed = 100
         self.projectiles = []
         self.particles = []
+        # No summon pattern of its own, but GameplayState's boss branch
+        # (Stage D6) checks every boss for pending_summons unconditionally.
+        self.pending_summons = []
 
         self.attack_timer = 0
         self.attack_interval = 1.5
@@ -342,12 +465,14 @@ class CacodemonBoss:
     def rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
-    def take_damage(self, amount):
+    def take_damage(self, amount, dtype="physical", crit=False):
         if self.hit_flash > 0.05:
             return
-        self.hp -= amount
+        defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
+        self.hp -= mitigate(amount, defense)
         self.hit_flash = 0.12
         # Create damage particles
+        particle_color = (255, 215, 0) if crit else (255, 100, 0)
         for _ in range(4):
             angle = random.uniform(0, 2*math.pi)
             speed = random.uniform(150, 250)
@@ -355,7 +480,7 @@ class CacodemonBoss:
             vy = math.sin(angle) * speed
             self.particles.append(
                 Particle(self.x + self.width//2, self.y + self.height//2,
-                        (255, 100, 0))
+                        particle_color)
             )
 
     def update(self, dt, player, walls):
@@ -399,7 +524,7 @@ class CacodemonBoss:
         for proj in self.projectiles:
             proj.update(dt, walls)
             if proj.rect.colliderect(player.rect):
-                player.take_damage(proj.damage)
+                player.take_damage(proj.damage, dtype=proj.dtype)
                 if proj.status_effect and random.random() < proj.status_chance:
                     player.status.apply(proj.status_effect)
                 proj.alive = False

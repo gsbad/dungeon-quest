@@ -21,12 +21,13 @@ POINTS_PER_LEVEL = 4
 
 class StatBlock:
     def __init__(self, strength=10, dexterity=10, intelligence=10, wisdom=10,
-                 vigor=10, weapon_base=4, base_speed=190, level=1):
+                 vigor=10, luck=10, weapon_base=4, base_speed=190, level=1):
         self.strength = strength
         self.dexterity = dexterity
         self.intelligence = intelligence
         self.wisdom = wisdom
         self.vigor = vigor
+        self.luck = luck
         self.weapon_base = weapon_base
         self.base_speed = base_speed
         self.level = level
@@ -36,27 +37,90 @@ class StatBlock:
         return round(20 + 3 * self.vigor)
 
     @property
+    def hp_regen(self):
+        return 0.05 + 0.025 * self.vigor
+
+    @property
     def physical_damage(self):
         return round(self.weapon_base + 0.5 * self.strength)
 
+    # Mana/mana regen are Wisdom's resource (Sabedoria governs magic
+    # sustain/defense/healing); Intelligence instead drives magic_damage
+    # below - the two attributes used to be reversed from this.
     @property
     def max_mana(self):
-        return round(5 + 2 * self.intelligence)
+        return round(5 + 2 * self.wisdom)
 
     @property
     def mana_regen(self):
-        return 1.0 + 0.05 * self.intelligence
+        return 1.0 + 0.05 * self.wisdom
 
     def magic_damage(self, spell_base):
-        return round(spell_base * (1 + 0.04 * self.wisdom))
+        return round(spell_base * (1 + 0.04 * self.intelligence))
+
+    @property
+    def healing_power(self):
+        return 1 + 0.01 * self.intelligence + 0.02 * self.wisdom
 
     @property
     def speed(self):
         return min(self.base_speed + 60, self.base_speed + 1.2 * self.dexterity)
 
     @property
+    def haste(self):
+        return min(0.35, 0.003 * self.dexterity)
+
+    @property
     def attack_cooldown(self):
-        return 0.45 * (1 - min(0.35, 0.003 * self.dexterity))
+        return 0.45 * (1 - self.haste)
+
+    # Each defense sums to 1.0 total weight across its 3 contributing
+    # attributes, so no single attribute can trivialize it - see mitigate()
+    # below for how the raw value turns into a % damage reduction.
+    @property
+    def physical_defense(self):
+        return 0.4 * self.vigor + 0.4 * self.strength + 0.2 * self.dexterity
+
+    @property
+    def magic_defense(self):
+        return 0.4 * self.vigor + 0.4 * self.wisdom + 0.2 * self.dexterity
+
+    @property
+    def crit_chance(self):
+        return min(0.60, 0.005 * self.luck)
+
+    @property
+    def crit_damage_mult(self):
+        return 1.5 + 0.005 * self.luck
+
+    def roll_physical(self):
+        """(damage, is_crit) for a physical (contact) hit - crit only ever
+        applies to physical damage, never magic. Shared by player and
+        monster melee alike; monster archetypes default luck=0 so this is
+        inert for them until an archetype opts in."""
+        import random
+        is_crit = random.random() < self.crit_chance
+        dmg = self.physical_damage
+        if is_crit:
+            dmg = round(dmg * self.crit_damage_mult)
+        return dmg, is_crit
+
+
+# Diminishing-returns "armor ratio" mitigation (K = the defense value at
+# which damage is halved) - defense can never reach 100% reduction and
+# needs no separate cap/floor bookkeeping, unlike a flat %-per-point scheme.
+# 120 (not the more obvious round 100) was picked by checking
+# tools/balance_sim.py's TTK matrix at the campaign's hardest reachable
+# fight (Inferno-tier L11, ML68 dark_knight) - defense now legitimately
+# lengthens that fight vs. pre-defense numbers, which reads as "Inferno is
+# the hardest tier" rather than a bug, but K=90 stretched it further than
+# that; 120 keeps early/mid-game mitigation (ML1-20) nearly identical while
+# reining in the endgame tail.
+MITIGATION_K = 120
+
+
+def mitigate(amount, defense):
+    return amount * MITIGATION_K / (MITIGATION_K + defense)
 
 
 def xp_to_next(level):
@@ -69,9 +133,20 @@ def xp_to_next(level):
 # monster movement speed still comes straight from base_speed (Stage B tunes
 # monster DEX deliberately, once balance_sim.py exists to check the fallout).
 ENEMY_ARCHETYPES = {
-    "goblin":      dict(strength=3,  dexterity=0, vigor=0, weapon_base=5.5, base_speed=110),
-    "skeleton":    dict(strength=10, dexterity=0, vigor=2, weapon_base=3,   base_speed=70),
-    "dark_knight": dict(strength=12, dexterity=0, vigor=8, weapon_base=10,  base_speed=55),
+    "goblin":      dict(strength=3,  dexterity=0, vigor=0, luck=0, weapon_base=5.5, base_speed=110),
+    "skeleton":    dict(strength=10, dexterity=0, vigor=2, luck=0, weapon_base=3,   base_speed=70),
+    "dark_knight": dict(strength=12, dexterity=0, vigor=8, luck=0, weapon_base=10,  base_speed=55),
+    # Stage D6 - one new archetype per new stage, each landing between
+    # goblin/dark_knight's ML1 numbers (verify via tools/balance_sim.py).
+    # Sprite/attack flavor lives in game/assets.py's ENEMY_SPRITES and
+    # game/enemy.py's ENEMY_FLAVOR, not here - this is combat stats only.
+    "swamp_troll":  dict(strength=8,  dexterity=0,  vigor=6,  luck=0,  weapon_base=4, base_speed=60),
+    "cursed_mage":  dict(strength=2,  dexterity=0,  vigor=1,  luck=0,  weapon_base=6, base_speed=65),
+    "crypt_wraith": dict(strength=6,  dexterity=10, vigor=3,  luck=0,  weapon_base=5, base_speed=95),
+    "ash_fiend":    dict(strength=5,  dexterity=4,  vigor=2,  luck=0,  weapon_base=6, base_speed=80),
+    # First common archetype with luck>0 - a rare crit telegraphs "this is
+    # the endgame" without needing a whole new mechanic to introduce it.
+    "royal_guard":  dict(strength=14, dexterity=6,  vigor=10, luck=20, weapon_base=9, base_speed=55),
 }
 
 # Base XP/gold per kill at monster level (ML) 1 - see scale_by_ml() below for
@@ -82,11 +157,21 @@ BASE_XP = {
     "skeleton": 10,
     "goblin": 8,
     "dark_knight": 25,
+    "swamp_troll": 18,
+    "cursed_mage": 22,
+    "crypt_wraith": 20,
+    "ash_fiend": 22,
+    "royal_guard": 30,
 }
 GOLD_DROPS = {
     "skeleton": 4,
     "goblin": 3,
     "dark_knight": 10,
+    "swamp_troll": 7,
+    "cursed_mage": 9,
+    "crypt_wraith": 8,
+    "ash_fiend": 9,
+    "royal_guard": 12,
 }
 
 # Boss identities (Stage B4) - the campaign now has 3 acts, each ending in
@@ -99,17 +184,17 @@ GOLD_DROPS = {
 # boss (Act 3) rather than its only one.
 BOSS_ARCHETYPES = {
     "orc_warlord": dict(
-        name="Senhor da Guerra Orc", strength=10, dexterity=0, vigor=46.67,
+        name="Senhor da Guerra Orc", strength=10, dexterity=0, vigor=46.67, luck=0,
         weapon_base=2, base_speed=90, xp_reward=100, gold_reward=40,
         body_colors=((90, 60, 10), (150, 40, 10)), eye_colors=((255, 180, 40), (255, 90, 30)),
     ),
     "necromancer": dict(
-        name="Necromante", strength=10, dexterity=0, vigor=63.33,
+        name="Necromante", strength=10, dexterity=0, vigor=63.33, luck=0,
         weapon_base=2.5, base_speed=70, xp_reward=200, gold_reward=80,
         body_colors=((20, 70, 40), (10, 100, 60)), eye_colors=((120, 255, 140), (180, 255, 120)),
     ),
     "shadow_king": dict(
-        name="Rei das Sombras", strength=10, dexterity=0, vigor=83.33,
+        name="Rei das Sombras", strength=10, dexterity=0, vigor=83.33, luck=0,
         weapon_base=3, base_speed=80, xp_reward=300, gold_reward=120,
         body_colors=None, eye_colors=None,  # keeps create_boss_sprite's original palette
     ),

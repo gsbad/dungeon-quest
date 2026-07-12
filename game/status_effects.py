@@ -30,6 +30,15 @@ STATUS_EFFECTS = {
     "weakness": StatusEffectDef(12.0, None, None, None, 1.0, 1.3, frozenset({"antidote"})),
     # Fogo: 2 dmg/2s for exactly 3 ticks (6s), no cure yet.
     "burn":     StatusEffectDef(6.0, 2.0, 2, 3, 1.0, 1.0, frozenset()),
+    # Frio: ambient cold (neve/gelo weather) - milder than Lentidao, no
+    # damage, just a persistent chill while exposed. Antidoto cures early.
+    "chill":    StatusEffectDef(6.0, None, None, None, 0.85, 1.0, frozenset({"antidote"})),
+    # Calor: sandstorm/ashfall weather - light DoT + a small speed penalty.
+    # No cure yet, same as Fogo.
+    "heat":     StatusEffectDef(8.0, 4.0, 1, 2, 0.90, 1.0, frozenset()),
+    # Choque: storm lightning strike - +15% dano recebido, short. Antidoto
+    # cures early (same "dispellable debuff" family as Fraqueza).
+    "shock":    StatusEffectDef(5.0, None, None, None, 1.0, 1.15, frozenset({"antidote"})),
 }
 
 
@@ -109,4 +118,7 @@ STATUS_DISPLAY = {
     "slow":     ("LEN", (120, 170, 230)),
     "weakness": ("FRA", (200, 120, 200)),
     "burn":     ("FOG", (255, 130, 40)),
+    "chill":    ("FRI", (150, 200, 255)),
+    "heat":     ("CAL", (255, 180, 80)),
+    "shock":    ("CHO", (255, 255, 120)),
 }

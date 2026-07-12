@@ -1,12 +1,45 @@
 import pygame
 import math
 from game.assets import create_player_sprite, create_projectile_sprite
-from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL
+from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL, mitigate
 from game.status_effects import StatusEffectCarrier
 from game.professions import determine_profession, TINTS
-from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements
+from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
 
 TILE = 48
+
+# Stage E2/E3 hotbar - 3 spell slots (keys 1/2/3, already cast this way)
+# plus 3 item slots (keys 4/5/6, new). Flat-color + abbreviation icons,
+# consistent with this game's existing minimalist pixel-art style rather
+# than adding new detailed sprite art for 6 more small icons.
+_HOTBAR_SLOT = 36
+_HOTBAR_GAP = 6
+# Below the top-center "Inimigos: N" / exit-hint text (game/level.py draws
+# it at y=12) - the hotbar used to sit right on top of it.
+_HOTBAR_Y = 34
+_HOTBAR_KEYS = ["1", "2", "3", "4", "5", "6"]
+_SPELL_ABBR = {"fireball": "BF", "frost_nova": "NG", "healing_light": "LC"}
+_SPELL_COLOR = {"fireball": (255, 120, 20), "frost_nova": (90, 180, 255), "healing_light": (255, 235, 190)}
+_ITEM_ABBR = {"health_potion": "VID", "mana_potion": "MAN", "antidote": "ANT"}
+_ITEM_COLOR = {"health_potion": (200, 60, 60), "mana_potion": (60, 100, 210), "antidote": (70, 180, 90)}
+
+
+def hotbar_slots():
+    """[(kind, id, rect), ...] for the 6 hotbar slots (3 spells + 3 items) -
+    a fixed layout derived only from SPELL_ORDER/ITEMS and screen width, not
+    from any Player instance, so GameplayState's tap handling and Player's
+    own drawing always agree on the exact same rects without either side
+    needing to own the other's state."""
+    from game.theme import SW
+    from game.items import ITEMS
+    ids = [("spell", s) for s in SPELL_ORDER] + [("item", i) for i in ITEMS]
+    total_w = len(ids) * _HOTBAR_SLOT + (len(ids) - 1) * _HOTBAR_GAP
+    x0 = SW // 2 - total_w // 2
+    slots = []
+    for i, (kind, key) in enumerate(ids):
+        x = x0 + i * (_HOTBAR_SLOT + _HOTBAR_GAP)
+        slots.append((kind, key, pygame.Rect(x, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT)))
+    return slots
 
 class Player:
     def __init__(self, x, y, audio_mgr):
@@ -76,10 +109,15 @@ class Player:
         }
         self.slash_sprite = create_projectile_sprite("slash")
         self._tinted_sprite_cache = {}
+        # Set by GameplayState.__init__ from the level's WeatherSystem
+        # (Stage D5) - a plain float, not a StatusEffectCarrier entry,
+        # since it's tied to standing in a level rather than a
+        # duration/tick-based debuff.
+        self.weather_speed_mult = 1.0
 
     @property
     def speed(self):
-        return self.stats.speed * self.status.speed_multiplier
+        return self.stats.speed * self.status.speed_multiplier * self.weather_speed_mult
 
     @property
     def max_hp(self):
@@ -137,7 +175,10 @@ class Player:
             return False
         spell = SPELLS[spell_id]
         self.mana -= spell["mana_cost"]
-        self.spell_cooldowns[spell_id] = spell["cooldown"]
+        # Haste (Destreza) speeds up spell cooldowns the same way it speeds
+        # up melee attack_cooldown - one stat for "attack speed" and "cast
+        # speed" instead of a second, parallel system.
+        self.spell_cooldowns[spell_id] = spell["cooldown"] * (1 - self.stats.haste)
         return True
 
     @property
@@ -154,9 +195,11 @@ class Player:
         else:  # up
             return pygame.Rect(self.x, self.y - self.attack_range, self.width, self.attack_range)
 
-    def take_damage(self, amount):
+    def take_damage(self, amount, dtype="physical"):
         if self.invincible or self.debug_invincible:
             return
+        defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
+        amount = mitigate(amount, defense)
         self.hp -= amount * self.status.damage_taken_multiplier
         self.invincible = True
         self.invincible_timer = self.invincible_duration
@@ -164,6 +207,7 @@ class Player:
 
     def update(self, dt, walls, movement_vector):
         self.mana = min(self.max_mana, self.mana + self.stats.mana_regen * dt)
+        self.hp = min(self.max_hp, self.hp + self.stats.hp_regen * dt)
 
         for spell_id in list(self.spell_cooldowns):
             self.spell_cooldowns[spell_id] = max(0.0, self.spell_cooldowns[spell_id] - dt)
@@ -310,6 +354,59 @@ class Player:
         surface.blit(gold_txt, (178, 32))
 
         self._draw_status_chips(surface)
+        self._draw_hotbar(surface)
+
+    def _draw_hotbar(self, surface):
+        from game.theme import font, ACCENT_GOLD
+        from game.items import ITEMS
+        f_key = font(11, bold=True)
+        f_icon = font(12, bold=True)
+        f_count = font(11, bold=True)
+        for i, (kind, key, rect) in enumerate(hotbar_slots()):
+            if kind == "spell":
+                locked = bool(missing_requirements(self.stats, key))
+                on_cooldown = self.spell_cooldowns.get(key, 0) > 0
+                affordable = self.mana >= SPELLS[key]["mana_cost"]
+                usable = not locked and not on_cooldown and affordable
+                color = _SPELL_COLOR[key]
+                abbr = _SPELL_ABBR[key]
+                selected = self.selected_spell == key
+            else:
+                count = self.inventory.get(key, 0)
+                usable = count > 0
+                color = _ITEM_COLOR[key]
+                abbr = _ITEM_ABBR[key]
+                selected = False
+
+            box_color = color if usable else tuple(c // 3 for c in color)
+            pygame.draw.rect(surface, box_color, rect, border_radius=6)
+            pygame.draw.rect(surface, (230, 230, 235) if usable else (90, 90, 95), rect, 2, border_radius=6)
+            if selected:
+                pygame.draw.rect(surface, ACCENT_GOLD, rect.inflate(4, 4), 2, border_radius=8)
+
+            icon_color = (20, 20, 25) if usable else (150, 150, 155)
+            icon_surf = f_icon.render(abbr, True, icon_color)
+            surface.blit(icon_surf, (rect.centerx - icon_surf.get_width() // 2,
+                                      rect.centery - icon_surf.get_height() // 2))
+
+            key_surf = f_key.render(_HOTBAR_KEYS[i], True, (255, 255, 255))
+            key_bg = pygame.Rect(rect.x - 2, rect.y - 2, key_surf.get_width() + 4, key_surf.get_height() + 2)
+            pygame.draw.rect(surface, (20, 20, 30), key_bg, border_radius=3)
+            surface.blit(key_surf, (key_bg.x + 2, key_bg.y + 1))
+
+            if kind == "spell" and on_cooldown:
+                cd_frac = min(1.0, self.spell_cooldowns[key] / SPELLS[key]["cooldown"]) if SPELLS[key]["cooldown"] else 1.0
+                wipe_h = int(rect.height * cd_frac)
+                wipe = pygame.Surface((rect.width, wipe_h), pygame.SRCALPHA)
+                wipe.fill((0, 0, 0, 160))
+                surface.blit(wipe, (rect.x, rect.bottom - wipe_h))
+            elif kind == "item":
+                count = self.inventory.get(key, 0)
+                count_surf = f_count.render(str(count), True, (255, 255, 255))
+                cbg = pygame.Rect(rect.right - count_surf.get_width() - 4, rect.bottom - count_surf.get_height() - 2,
+                                   count_surf.get_width() + 4, count_surf.get_height() + 2)
+                pygame.draw.rect(surface, (20, 20, 30), cbg, border_radius=3)
+                surface.blit(count_surf, (cbg.x + 2, cbg.y + 1))
 
     def _draw_status_chips(self, surface):
         # Debuff indicator row, below the HP/mana/XP dock - not optional

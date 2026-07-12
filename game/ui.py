@@ -1,7 +1,17 @@
 import pygame
 
 
-def draw_text(surface, text, f, color, cx, y, shadow=True):
+def draw_text(surface, text, f, color, cx, y, shadow=True, align="center"):
+    """cx is a center x by default; align="left" treats it as a left edge
+    instead (e.g. paperdoll.py's two-column stat grid, where centering each
+    line independently would make the columns ragged)."""
+    if align == "left":
+        if shadow:
+            s = f.render(text, True, (0, 0, 0))
+            surface.blit(s, (cx + 2, y+2))
+        r = f.render(text, True, color)
+        surface.blit(r, (cx, y))
+        return r.get_height()
     if shadow:
         s = f.render(text, True, (0, 0, 0))
         surface.blit(s, (cx - s.get_width()//2 + 2, y+2))

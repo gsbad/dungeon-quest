@@ -1,13 +1,16 @@
 """
-Ambient weather (RPG systems expansion, see .claude/plans/cozy-wiggling-pumpkin.md).
-Same registry-dict pattern as game/stats.py's ENEMY_ARCHETYPES - a new
-weather type is a line in WEATHER_TYPES, not a new class.
+Ambient weather (RPG systems expansion, see .claude/plans/cozy-wiggling-pumpkin.md;
+biome fit + real gameplay effects added in Stage D5). Same registry-dict
+pattern as game/stats.py's ENEMY_ARCHETYPES - a new weather type is a line
+in WEATHER_TYPES, not a new class.
 
-Purely visual for now. speed_mult/visibility_mult on each entry are neutral
-(1.0) placeholders so a later pass can make e.g. Nevoeiro actually shrink
-enemy aggro range, or Tempestade slow movement, without redesigning this
-module - same "leave the hook, wire it later" spirit as ENEMY_ARCHETYPES'
-dexterity=0 pending Stage B tuning.
+speed_mult/visibility_mult now have real effects (see game/states.py's
+GameplayState, which multiplies them into player speed and enemy aggro
+range) instead of the neutral 1.0 placeholders this module shipped with
+originally. The optional "debuff" field is (effect_id, interval_seconds) -
+GameplayState applies that game/status_effects.py effect to the player on
+that interval while the weather is active; one generic mechanism, no
+per-weather branching code.
 """
 import pygame
 import random
@@ -15,21 +18,34 @@ from game.theme import SW, SH
 
 WEATHER_TYPES = {
     "fog":   {"kind": "overlay", "color": (200, 200, 210), "alpha": 70,
-              "speed_mult": 1.0, "visibility_mult": 1.0},
+              "speed_mult": 1.0, "visibility_mult": 0.70},
     "rain":  {"kind": "particles", "color": (150, 180, 220), "count": 60,
-              "speed_mult": 1.0, "visibility_mult": 1.0},
+              "speed_mult": 0.93, "visibility_mult": 1.0},
     "snow":  {"kind": "particles", "color": (240, 240, 250), "count": 40,
-              "speed_mult": 1.0, "visibility_mult": 1.0},
+              "speed_mult": 1.0, "visibility_mult": 0.90, "debuff": ("chill", 10.0)},
     "storm": {"kind": "particles", "color": (150, 180, 220), "count": 90,
-              "speed_mult": 1.0, "visibility_mult": 1.0, "lightning": True},
+              "speed_mult": 0.95, "visibility_mult": 0.90, "lightning": True},
     # Difficulty tier's "Penumbra" affix (Stage B5, game/difficulty.py) -
     # deliberately darker than plain fog, not just relabeled, so the tier's
-    # visibility hit is actually visible. visibility_mult<1.0 is still a
-    # placeholder for a later gameplay pass (see module docstring) - today
-    # it only informs how heavy the overlay itself looks.
+    # visibility hit is actually visible.
     "dimming_fog": {"kind": "overlay", "color": (25, 25, 35), "alpha": 130,
                      "speed_mult": 1.0, "visibility_mult": 0.6},
+    # Desert biome (Stage D5) - fast sand streaks (drawn like rain) plus a
+    # heat debuff, replacing the old rain-on-a-desert mismatch.
+    "sandstorm": {"kind": "particles", "color": (210, 180, 120), "count": 70,
+                  "speed_mult": 0.90, "visibility_mult": 0.75, "debuff": ("heat", 8.0)},
+    # Crypt/tower biome - a darker overlay than plain fog, no particles.
+    "gloom": {"kind": "overlay", "color": (40, 40, 60), "alpha": 95,
+              "speed_mult": 1.0, "visibility_mult": 0.80},
+    # Ashen/volcanic biome - slow falling ash (drawn like snow) plus heat.
+    "ashfall": {"kind": "particles", "color": (170, 150, 140), "count": 45,
+                "speed_mult": 1.0, "visibility_mult": 0.85, "debuff": ("heat", 10.0)},
 }
+
+# Weather ids whose particles fall slowly like snowflakes rather than
+# streaking down like rain - drives both spawn speed (__init__) and which
+# draw method each drop uses (draw()).
+_SLOW_FALL = {"snow", "ashfall"}
 
 
 class _FallingDrop:
@@ -68,11 +84,12 @@ class WeatherSystem:
         self.drops = []
         self._flash_alpha = 0.0
         self._lightning_timer = random.uniform(3.0, 7.0)
+        self._lightning_struck = False
         if self.defn and self.defn["kind"] == "particles":
-            is_snow = weather_id == "snow"
-            min_speed, max_speed = (30, 80) if is_snow else (350, 550)
+            is_slow = weather_id in _SLOW_FALL
+            min_speed, max_speed = (30, 80) if is_slow else (350, 550)
             for _ in range(self.defn["count"]):
-                size = random.randint(2, 4) if is_snow else random.randint(8, 16)
+                size = random.randint(2, 4) if is_slow else random.randint(8, 16)
                 self.drops.append(_FallingDrop(self.defn["color"], min_speed, max_speed, size))
 
     @property
@@ -93,14 +110,22 @@ class WeatherSystem:
             if self._lightning_timer <= 0:
                 self._lightning_timer = random.uniform(4.0, 9.0)
                 self._flash_alpha = 160
+                self._lightning_struck = True
             elif self._flash_alpha > 0:
                 self._flash_alpha = max(0.0, self._flash_alpha - dt * 400)
+
+    def consume_lightning(self):
+        """True exactly once per flash (the frame it starts) - lets
+        GameplayState roll a Choque debuff synced to the visible strike
+        instead of a second, independent timer."""
+        struck, self._lightning_struck = self._lightning_struck, False
+        return struck
 
     def draw(self, surface):
         if not self.defn:
             return
         if self.defn["kind"] == "particles":
-            draw_fn = "draw_snow" if self.weather_id == "snow" else "draw_rain"
+            draw_fn = "draw_snow" if self.weather_id in _SLOW_FALL else "draw_rain"
             for d in self.drops:
                 getattr(d, draw_fn)(surface)
             if self._flash_alpha > 0:

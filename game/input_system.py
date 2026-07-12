@@ -25,6 +25,9 @@ class Action(Enum):
     CAST_2 = auto()
     CAST_3 = auto()
     CAST_SELECTED = auto()
+    USE_1 = auto()
+    USE_2 = auto()
+    USE_3 = auto()
     DEV_NEXT_LEVEL = auto()
     DEV_PREV_LEVEL = auto()
     DEBUG_PANEL = auto()
@@ -284,6 +287,12 @@ class InputManager:
                 self._press_action(Action.CAST_2)
             if event.key == pygame.K_3:
                 self._press_action(Action.CAST_3)
+            if event.key == pygame.K_4:
+                self._press_action(Action.USE_1)
+            if event.key == pygame.K_5:
+                self._press_action(Action.USE_2)
+            if event.key == pygame.K_6:
+                self._press_action(Action.USE_3)
             if event.key == pygame.K_m:
                 self._press_action(Action.DEV_NEXT_LEVEL)
             if event.key == pygame.K_n:

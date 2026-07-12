@@ -19,7 +19,7 @@ import json
 from game.player import Player
 from game.professions import determine_profession
 
-SAVE_VERSION = 4
+SAVE_VERSION = 5
 _KEY = "dungeon_quest_save"
 _NATIVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_save.json")
 
@@ -29,7 +29,7 @@ def new_game_state():
         "version": SAVE_VERSION,
         "character": {
             "name": "", "level": 1, "xp": 0, "unspent_points": 0,
-            "attributes": {"str": 10, "dex": 10, "int": 10, "wis": 10, "vig": 10},
+            "attributes": {"str": 10, "dex": 10, "int": 10, "wis": 10, "vig": 10, "lck": 10},
         },
         "progression": {
             "current_difficulty": "normal",
@@ -94,6 +94,13 @@ def _migrate(data):
             "cleared_difficulties": [],
         }
         data["version"] = 4
+    if data["version"] < 5:
+        # Sorte (luck) attribute added (Stage D). Existing characters get
+        # the same baseline every attribute starts at (BASE_ATTR = 10) -
+        # it's a new sink, not a rebalance of points already spent
+        # elsewhere, so no deficit correction like the v2->3 step needed.
+        data["character"]["attributes"].setdefault("lck", 10)
+        data["version"] = 5
     return data
 
 
@@ -119,6 +126,7 @@ def character_from_state(state, x, y, audio_mgr):
     p.stats.intelligence = attrs["int"]
     p.stats.wisdom = attrs["wis"]
     p.stats.vigor = attrs["vig"]
+    p.stats.luck = attrs.get("lck", 10)
     p.profession = determine_profession(p.stats)
     p.name = char.get("name", "")
     p.level = char["level"]
@@ -140,7 +148,7 @@ def sync_character(state, player):
     char["attributes"] = {
         "str": player.stats.strength, "dex": player.stats.dexterity,
         "int": player.stats.intelligence, "wis": player.stats.wisdom,
-        "vig": player.stats.vigor,
+        "vig": player.stats.vigor, "lck": player.stats.luck,
     }
 
 

@@ -3,13 +3,13 @@ import math
 import random
 from game.assets import create_enemy_sprite, create_projectile_sprite, create_item_sprite
 from game.player import TILE
-from game.stats import StatBlock, ENEMY_ARCHETYPES, BASE_XP, GOLD_DROPS, scale_archetype
+from game.stats import StatBlock, ENEMY_ARCHETYPES, BASE_XP, GOLD_DROPS, scale_archetype, mitigate
 from game.status_effects import StatusEffectCarrier
 from game.affixes import AFFIXES
 
 class EnemyProjectile:
     def __init__(self, x, y, vx, vy, damage=1, color=(160,100,255),
-                 status_effect=None, status_chance=0.0):
+                 status_effect=None, status_chance=0.0, dtype="magic"):
         self.x = float(x)
         self.y = float(y)
         self.vx = vx
@@ -22,6 +22,9 @@ class EnemyProjectile:
         # Optional debuff this hit may inflict - see game/status_effects.py.
         self.status_effect = status_effect
         self.status_chance = status_chance
+        # Ranged bolt = the mob's "spell", never contact - see
+        # game/boss.py's Projectile for why this defaults to magic.
+        self.dtype = dtype
 
     @property
     def rect(self):
@@ -131,11 +134,36 @@ class Puddle:
         surface.blit(s, (sx, sy))
 
 
+# AI/animation tuning that isn't a combat stat - stays local to enemy.py.
+# Stage D6 generalizes the two hardcoded etype-specific behaviors
+# (dark_knight's laser, goblin's puddles) into data here, so a new
+# archetype's "spell" (ranged bolt, on-hit debuff, ground hazard) is a
+# dict entry instead of a new `if self.etype == ...` branch:
+#   "ranged": {color, status_effect, status_chance, speed} - fires an
+#     EnemyProjectile (always magic-typed, see game/boss.py's Projectile)
+#     at the player from range instead of/before closing to melee.
+#   "melee_status": (effect_id, chance) - rolled on every successful melee
+#     hit, on top of the normal physical damage.
+#   "puddles": True - spawns goblin-style damage-over-time floor hazards
+#     while chasing the player (game/level.py applies them, dtype=magic).
 ENEMY_FLAVOR = {
-    # AI/animation tuning that isn't a combat stat - stays local to enemy.py.
     "skeleton":    {"atk_cd": 1.0, "color": (230,230,230)},
-    "goblin":      {"atk_cd": 0.8, "color": (80,180,80)},
-    "dark_knight": {"atk_cd": 1.2, "color": (40,40,60)},
+    "goblin":      {"atk_cd": 0.8, "color": (80,180,80), "puddles": True},
+    "dark_knight": {"atk_cd": 1.2, "color": (40,40,60),
+                     "ranged": {"color": (180,100,255), "status_effect": "weakness",
+                                "status_chance": 0.15, "speed": 220}},
+    # Stage D6 - one new archetype per new stage (game/level.py's LEVEL_MAPS).
+    "swamp_troll":  {"atk_cd": 1.3, "color": (90,110,60), "puddles": True,
+                      "melee_status": ("poison", 0.20)},
+    "cursed_mage":  {"atk_cd": 1.4, "color": (70,50,110),
+                      "ranged": {"color": (120,180,255), "status_effect": "slow",
+                                 "status_chance": 0.20, "speed": 200}},
+    "crypt_wraith": {"atk_cd": 0.7, "color": (180,200,220),
+                      "melee_status": ("chill", 0.15)},
+    "ash_fiend":    {"atk_cd": 1.1, "color": (120,50,40),
+                      "ranged": {"color": (255,120,40), "status_effect": "burn",
+                                 "status_chance": 0.25, "speed": 240}},
+    "royal_guard":  {"atk_cd": 1.0, "color": (90,75,30)},
 }
 
 # BASE_XP/GOLD_DROPS live in game/stats.py now (Stage B1) - re-exported here
@@ -196,6 +224,7 @@ class Enemy:
 
         self.stats = StatBlock(**scale_archetype(ENEMY_ARCHETYPES[etype], ml))
         flavor = ENEMY_FLAVOR[etype]
+        self.flavor = flavor
         self.max_hp = self.stats.max_hp
         self.hp = self.max_hp
         self._speed_mult = speed_multiplier
@@ -227,19 +256,33 @@ class Enemy:
         self.particles = []
         self.projectiles = []
         self.projectile_sprite = create_projectile_sprite("fireball")
-        # Goblin puddle timer
-        self.puddle_timer = random.uniform(4.0, 8.0) if self.etype == "goblin" else None
+        # Puddle timer - any archetype whose flavor opts in (goblin, and
+        # Stage D6's swamp_troll)
+        self.puddle_timer = random.uniform(4.0, 8.0) if flavor.get("puddles") else None
 
     @property
     def rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
-    def take_damage(self, amount):
+    def take_damage(self, amount, dtype="physical", crit=False):
+        # dtype=None (status-effect DoT ticks) bypasses defense entirely -
+        # poison/burn are fixed-per-tick damage that already accounts for
+        # going around armor, same as Player's DoT handling in
+        # game/player.py's update() (which skips take_damage altogether).
+        if dtype is not None:
+            defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
+            amount = mitigate(amount, defense)
         self.hp -= amount
         self.hit_flash = 0.15
-        # Spawn hit particles
+        # Spawn hit particles - a crit gets extra gold-tinted particles on
+        # top of the normal red hit-spray, same visual language as the
+        # existing level-up/gold-pickup particle bursts.
+        particle_color = (255, 100, 50)
         for _ in range(8):
-            self.particles.append(Particle(self.x + 16, self.y + 18, (255, 100, 50)))
+            self.particles.append(Particle(self.x + 16, self.y + 18, particle_color))
+        if crit:
+            for _ in range(8):
+                self.particles.append(Particle(self.x + 16, self.y + 18, (255, 215, 0)))
         if self.hp <= 0:
             self.alive = False
             for _ in range(16):
@@ -252,7 +295,7 @@ class Enemy:
         self.speed = self.stats.speed * self._speed_mult * self.status.speed_multiplier
         tick_dmg = self.status.update(dt)
         if tick_dmg and self.alive:
-            self.take_damage(tick_dmg)
+            self.take_damage(tick_dmg, dtype=None)
 
         # Update particles
         self.particles = [p for p in self.particles if p.life > 0]
@@ -263,7 +306,7 @@ class Enemy:
         for proj in self.projectiles:
             proj.update(dt, walls)
             if proj.rect.colliderect(player.rect):
-                player.take_damage(proj.damage)
+                player.take_damage(proj.damage, dtype=proj.dtype)
                 if proj.status_effect and random.random() < proj.status_chance:
                     player.status.apply(proj.status_effect)
                 if self.affix == "vampiric":
@@ -271,8 +314,8 @@ class Enemy:
                 proj.alive = False
         self.projectiles = [p for p in self.projectiles if p.alive]
 
-        # Goblin: spawn puddles occasionally
-        if self.etype == "goblin" and puddles is not None and self.puddle_timer is not None:
+        # Puddle-spawning archetypes only (flavor["puddles"])
+        if puddles is not None and self.puddle_timer is not None:
             self.puddle_timer -= dt
             if self.puddle_timer <= 0:
                 self.puddle_timer = random.uniform(4.0, 8.0)
@@ -313,14 +356,20 @@ class Enemy:
                 self.y += dy * self.speed * dt
                 self._resolve_y(walls, dy)
 
-            # Dark knight laser attack when not too close
-            if self.etype == "dark_knight" and self.attack_cooldown <= 0 and dist > self.attack_range and dist < self.aggro_range:
+            # Ranged attack (flavor["ranged"]) when not too close
+            if self.flavor.get("ranged") and self.attack_cooldown <= 0 and dist > self.attack_range and dist < self.aggro_range:
                 self._shoot_at_player(player)
                 self.attack_cooldown = self.attack_cd_max
             elif self.attack_cooldown <= 0 and dist < self.attack_range:
-                player.take_damage(self.damage)
+                dmg, is_crit = self.stats.roll_physical()
+                player.take_damage(dmg, dtype="physical")
+                melee_status = self.flavor.get("melee_status")
+                if melee_status:
+                    effect_id, chance = melee_status
+                    if random.random() < chance:
+                        player.status.apply(effect_id)
                 if self.affix == "vampiric":
-                    self.hp = min(self.max_hp, self.hp + self.damage * 0.2)
+                    self.hp = min(self.max_hp, self.hp + dmg * 0.2)
                 self.attack_cooldown = self.attack_cd_max
         else:
             # Patrol
@@ -337,6 +386,7 @@ class Enemy:
             self.attack_cooldown -= dt
 
     def _shoot_at_player(self, player):
+        ranged = self.flavor["ranged"]
         cx = self.x + self.width / 2
         cy = self.y + self.height / 2
         px = player.x + player.width / 2
@@ -344,12 +394,13 @@ class Enemy:
         dist = math.hypot(px - cx, py - cy)
         if dist == 0:
             return
-        speed = 220
+        speed = ranged["speed"]
         vx = (px - cx) / dist * speed
         vy = (py - cy) / dist * speed
         self.projectiles.append(EnemyProjectile(
-            cx, cy, vx, vy, self.damage, (180, 100, 255),
-            status_effect="weakness", status_chance=0.15
+            cx, cy, vx, vy, self.damage, ranged["color"],
+            status_effect=ranged["status_effect"], status_chance=ranged["status_chance"],
+            dtype="magic"
         ))
 
     def _resolve_x(self, walls, dx):

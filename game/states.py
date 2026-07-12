@@ -2,10 +2,11 @@ import pygame
 import math
 import time
 import random
-from game.player import Player
+from game.player import Player, hotbar_slots
+from game.items import ITEMS, use_item
 from game.level import Level, LEVEL_MAPS
 from game.boss import Boss, CacodemonBoss, Projectile
-from game.enemy import Particle
+from game.enemy import Particle, Enemy
 from game.camera import Camera
 from game.paperdoll import Paperdoll
 from game.merchant import ItemsOverlay
@@ -95,7 +96,7 @@ class MenuState:
         self.stars = [Star() for _ in range(80)]
         self.t = 0
         self.selected = 0
-        self.options = (["CONTINUAR", "DIFICULDADE"] if has_save else []) + ["NOVO JOGO", "SAIR"]
+        self.options = (["CONTINUAR", "DIFICULDADE", "RESETAR CHAR"] if has_save else ["NOVO JOGO"]) + ["SAIR"]
         # 4 options (has_save) need tighter spacing to clear the controls
         # panel above (bottom edge ~y380) and stay on-screen (SH=600).
         base_y, step = (385, 46) if len(self.options) >= 4 else (410, 55)
@@ -177,6 +178,70 @@ class MenuState:
         f_tiny = font(12)
         v = f_tiny.render("Linguagem de Programacao Aplicada - UNINTER 2026", True, (80,80,100))
         self.screen.blit(v, (SW//2 - v.get_width()//2, SH - 24))
+
+
+# ─── Confirm Character Reset ───────────────────────────────────────────────────
+class ConfirmResetState:
+    """Safety confirmation before "RESETAR CHAR" actually wipes the save
+    (Stage D4) - modeled on GameOverState's shape (stars background, two
+    TextButtons, same Action.MENU_UP/DOWN/CONFIRM handling), since it's the
+    same "two-choice decision screen" shape. Defaults to NAO so an
+    accidental Enter/tap on the menu option itself can't cascade into a
+    wipe without a second deliberate confirm."""
+
+    def __init__(self, screen, input_mgr, audio_mgr):
+        self.screen = screen
+        self.input = input_mgr
+        self.audio = audio_mgr
+        self.t = 0
+        self.stars = [Star() for _ in range(60)]
+        self.selected = 0
+        self.options = [("NAO - VOLTAR", "menu"), ("SIM - APAGAR TUDO", "reset_confirmed")]
+        self.option_buttons = [
+            TextButton(label, SW//2, 380 + i*55, pad_x=24, pad_y=14)
+            for i, (label, _) in enumerate(self.options)
+        ]
+
+    def handle_event(self, event):
+        if self.input.consume_action(Action.MENU_UP) or self.input.consume_action(Action.MENU_DOWN):
+            self.selected = 1 - self.selected
+            self.audio.play("menu_move")
+        if self.input.consume_action(Action.CONFIRM):
+            self.audio.play("menu_select")
+            return self.options[self.selected][1]
+        for i, btn in enumerate(self.option_buttons):
+            if self.input.tapped_rect(btn.rect):
+                self.audio.play("menu_select")
+                return self.options[i][1]
+        return None
+
+    def update(self, dt):
+        self.t += dt
+        for s in self.stars:
+            s.update(dt)
+
+    def draw(self):
+        self.screen.fill(BG_GAME_OVER)
+        for s in self.stars:
+            s.draw(self.screen)
+
+        f1 = font(48, bold=True)
+        pulse = abs(math.sin(self.t * 2))
+        r = int(180 + 75 * pulse)
+        draw_text(self.screen, "RESETAR PERSONAGEM", f1, (r, 30, 30), SW//2, 160)
+
+        f2 = font(18)
+        draw_text(self.screen, "Tem certeza? Nome, nivel, atributos, ouro e progresso",
+                  f2, (200,150,150), SW//2, 250)
+        draw_text(self.screen, "da masmorra serao apagados. Essa acao nao pode ser desfeita.",
+                  f2, (200,150,150), SW//2, 278)
+
+        f3 = font(20, bold=True)
+        for i, (label, _) in enumerate(self.options):
+            color = SELECTED if i == self.selected else UNSELECTED
+            prefix = "> " if i == self.selected else "  "
+            self.option_buttons[i].label = prefix + label
+            self.option_buttons[i].draw(self.screen, f3, color)
 
 
 # ─── Difficulty Select ─────────────────────────────────────────────────────────
@@ -449,6 +514,12 @@ class GameplayState:
         if boss_key:
             boss_factory, spawn_dx, spawn_y = BOSS_REGISTRY[boss_key]
             self.boss = boss_factory(SW//2 - spawn_dx, spawn_y, self.difficulty["boss_enrage_frac"])
+        # Enemies spawned by a boss's "summon" pattern (necromancer, Stage
+        # D6) - tracked separately from self.level.enemies just to cap how
+        # many of THIS boss's adds can be alive at once; the enemies
+        # themselves live in self.level.enemies like any other mob once
+        # spawned, so game/level.py's normal update handles them.
+        self.boss_summons = []
 
         self.paused = False
         self.next_state = None
@@ -480,6 +551,25 @@ class GameplayState:
         if "dimming" in self.difficulty["level_affixes"] and self.level.data["type"] == "combat":
             weather_id = "dimming_fog"
         self.weather = WeatherSystem(weather_id)
+
+        # Weather's speed_mult/visibility_mult (Stage D5) - a fresh
+        # GameplayState per level means this naturally resets on the next
+        # level instead of needing explicit cleanup. Enemy aggro range
+        # shrinks in fog/gloom - this is what finally gives
+        # visibility_mult a gameplay effect instead of just informing how
+        # heavy the overlay looks.
+        self.player.weather_speed_mult = self.weather.speed_multiplier
+        for enemy in self.level.enemies:
+            enemy.aggro_range *= self.weather.visibility_multiplier
+
+        # Periodic weather debuff (e.g. Calor while sandstorm/ashfall is
+        # active) - same shape as the cursed_ground timer below, but driven
+        # by the level's weather instead of a difficulty-tier affix, so it
+        # runs on boss levels too (weather is part of a level's identity,
+        # not an optional harder-difficulty extra).
+        weather_debuff = self.weather.defn.get("debuff") if self.weather.defn else None
+        self._weather_debuff_effect = weather_debuff[0] if weather_debuff else None
+        self._weather_debuff_timer = weather_debuff[1] if weather_debuff else None
 
         # "Chao Amaldicoado" level affix (Stage B5) - periodic Poison while
         # exploring a combat level, independent of taking any hit. None
@@ -535,6 +625,22 @@ class GameplayState:
             self._attempt_cast(SPELL_ORDER[2])
         elif self.input.consume_action(Action.CAST_SELECTED):
             self._attempt_cast(self.player.selected_spell)
+        elif self.input.consume_action(Action.USE_1):
+            use_item(self.player, list(ITEMS)[0])
+        elif self.input.consume_action(Action.USE_2):
+            use_item(self.player, list(ITEMS)[1])
+        elif self.input.consume_action(Action.USE_3):
+            use_item(self.player, list(ITEMS)[2])
+
+    def _handle_hotbar_taps(self):
+        for kind, key, rect in hotbar_slots():
+            if not self.input.tapped_rect(rect):
+                continue
+            if kind == "spell":
+                self._attempt_cast(key)
+            else:
+                use_item(self.player, key)
+            return
 
     def _dev_jump(self, delta):
         target = self.level_num + delta
@@ -575,14 +681,15 @@ class GameplayState:
             tx = target.x + target.width / 2
             ty = target.y + target.height / 2
             if math.hypot(tx - px, ty - py) <= radius:
-                target.take_damage(dmg)
+                target.take_damage(dmg, dtype="magic")
                 if hasattr(target, "status"):
                     target.status.apply("slow")
         for _ in range(24):
             self.level_up_particles.append(Particle(px, py, (140, 220, 255)))
 
     def _cast_healing_light(self, spell):
-        self.player.hp = min(self.player.max_hp, self.player.hp + self.player.max_hp * spell["heal_frac"])
+        heal_frac = spell["heal_frac"] * self.player.stats.healing_power
+        self.player.hp = min(self.player.max_hp, self.player.hp + self.player.max_hp * heal_frac)
         for _ in range(16):
             self.level_up_particles.append(
                 Particle(self.player.x + self.player.width/2,
@@ -592,8 +699,8 @@ class GameplayState:
     def update(self, dt):
         self.weather.update(dt)  # ambient - keeps animating through pause/overlays
         if self.paperdoll_open:
-            self.paperdoll.handle_tap(self.input, self.player)
-            self.paperdoll.handle_keys(self.input, self.player)
+            self.paperdoll.handle_tap(self.input, self.player, self.save_state)
+            self.paperdoll.handle_keys(self.input, self.player, self.save_state)
             return
         if self.items_open:
             self.items.handle_tap(self.input, self.player, self.save_state)
@@ -605,6 +712,8 @@ class GameplayState:
         if self.paused:
             return
 
+        self._handle_hotbar_taps()
+
         self.camera.follow(self.player, dt)
 
         if self.msg_timer > 0:
@@ -615,6 +724,18 @@ class GameplayState:
             if self._cursed_ground_timer <= 0:
                 self._cursed_ground_timer = 8.0
                 self.player.status.apply("poison")
+
+        if self._weather_debuff_effect is not None:
+            self._weather_debuff_timer -= dt
+            if self._weather_debuff_timer <= 0:
+                weather_debuff = self.weather.defn["debuff"]
+                self._weather_debuff_timer = weather_debuff[1]
+                self.player.status.apply(self._weather_debuff_effect)
+
+        # Storm lightning (Choque) - synced to the visible flash so the hit
+        # reads as caused by the strike, not an invisible separate timer.
+        if self.weather.consume_lightning() and random.random() < 0.40:
+            self.player.status.apply("shock")
 
         hp_before = self.player.hp
         self.player.update(dt, self.level.walls, self.input.movement_vector())
@@ -629,11 +750,32 @@ class GameplayState:
             if self.player.attacking:
                 atk_rect = self.player.get_attack_rect()
                 hit_boss = atk_rect.colliderect(self.boss.rect)
-                self.boss.take_damage(self.player.attack_damage if hit_boss else 0)
+                dmg, is_crit = self.player.stats.roll_physical() if hit_boss else (0, False)
+                self.boss.take_damage(dmg, dtype="physical", crit=is_crit)
                 if hit_boss:
                     self.camera.shake(5, 0.12)
                     self.camera.zoom_pulse(0.05, 0.15)
             self.boss.update(dt, self.player, self.level.walls)
+
+            # Drain necromancer's summon requests into real Enemy instances,
+            # capped at 3 alive from this boss at once (per the design doc -
+            # the cap lives here, not on Boss, since only GameplayState
+            # knows which of its summons are still alive).
+            if self.boss.pending_summons:
+                self.boss_summons = [e for e in self.boss_summons if e.alive]
+                free_slots = max(0, 3 - len(self.boss_summons))
+                for sx, sy in self.boss.pending_summons[:free_slots]:
+                    summon = Enemy(sx, sy, "skeleton", ml=20 + self.difficulty["ml_bonus"])
+                    summon.aggro_range *= self.weather.visibility_multiplier
+                    self.level.enemies.append(summon)
+                    self.boss_summons.append(summon)
+                self.boss.pending_summons = []
+
+            # Summoned adds need the same chase/melee/credit-kill handling
+            # as any other mob - boss fights never ran Level.update() before
+            # Stage D6 (self.level.enemies was always empty on boss levels
+            # until now), so this is a no-op for orc_warlord/shadow_king.
+            self.level.update(dt, self.player, self.audio)
         else:
             self.level.update(dt, self.player, self.audio)
             if self.level.check_exit(self.player):
@@ -651,7 +793,7 @@ class GameplayState:
                 continue
             for target in cast_targets:
                 if getattr(target, "alive", True) and proj.rect.colliderect(target.rect):
-                    target.take_damage(proj.damage)
+                    target.take_damage(proj.damage, dtype=proj.dtype)
                     proj.alive = False
                     if not target.alive and hasattr(target, "etype"):
                         self.level.credit_kill(self.player, target)
@@ -784,7 +926,7 @@ class GameplayState:
 
         # Paperdoll overlay
         if self.paperdoll_open:
-            self.paperdoll.draw(self.screen, self.player)
+            self.paperdoll.draw(self.screen, self.player, self.save_state)
 
         # Itens overlay
         if self.items_open:
@@ -1079,6 +1221,16 @@ class GameStateManager:
     def _continue_level(self):
         diff_id = self.save_state["progression"]["current_difficulty"]
         highest = self.save_state["progression"]["highest_level_cleared"].get(diff_id, 0)
+        if highest >= 12:
+            # This tier's final boss is already cleared - move on to the
+            # next difficulty (already unlocked, since clearing tier N is
+            # exactly what unlocks tier N+1) instead of re-fighting the
+            # same final boss forever.
+            nd = next_difficulty(diff_id)
+            if nd:
+                self.save_state["progression"]["current_difficulty"] = nd
+                return 1
+            return 12  # Inferno has no next tier - keep replaying its final boss
         return min(highest + 1, 12)
 
     def _is_fullscreen(self):
@@ -1119,6 +1271,14 @@ class GameStateManager:
                 if ns == "game_over":
                     self.save_state["counters"]["deaths"] = self.save_state["counters"].get("deaths", 0) + 1
                     self._just_cleared_difficulty = None
+                    # Death sends the dungeon back to the start of the
+                    # current tier - "Continuar" never resumes where the
+                    # player died. The character itself (xp/level/
+                    # attributes/gold/inventory, synced below) is never
+                    # lost; only this tier's level checkpoint resets.
+                    # cleared_difficulties (which tiers are unlocked) is
+                    # untouched.
+                    self.save_state["progression"]["highest_level_cleared"][self.state.difficulty_id] = 0
                 else:
                     prog = self.save_state["progression"]
                     diff_id = self.state.difficulty_id
@@ -1148,9 +1308,15 @@ class GameStateManager:
         self.fullscreen_button.draw(self.screen, self._is_fullscreen())
 
     def _has_progress(self):
+        # A death now zeroes the active tier's highest_level_cleared (see
+        # the "game_over" branch above), so a character who dies before
+        # clearing level 1 anywhere would otherwise make this false and
+        # silently orphan their name/gold/attributes behind "Novo Jogo".
+        # A non-empty name means a character exists, dungeon progress or not.
         highest = self.save_state["progression"]["highest_level_cleared"]
         return (any(v > 0 for v in highest.values())
-                or self.save_state["character"]["level"] > 1)
+                or self.save_state["character"]["level"] > 1
+                or bool(self.save_state["character"]["name"]))
 
     def _transition(self, result):
         if result == "NOVO JOGO":
@@ -1170,6 +1336,19 @@ class GameStateManager:
         elif result == "menu":
             self.player = None
             self.state = MenuState(self.screen, self.input, self.audio, has_save=self._has_progress())
+        elif result == "RESETAR CHAR":
+            self.state = ConfirmResetState(self.screen, self.input, self.audio)
+        elif result == "reset_confirmed":
+            import game.save as save
+            fresh = save.new_game_state()
+            fresh["settings"]["muted"] = self.save_state["settings"]["muted"]
+            self.save_state = fresh
+            self._persist()  # wipe must survive an immediate quit
+            self.player = None
+            # has_progress() is now False -> menu shows "Novo Jogo" again,
+            # same character-creation entry point as any other fresh save;
+            # reset doesn't re-prompt for a name or start a run itself.
+            self.state = MenuState(self.screen, self.input, self.audio, has_save=self._has_progress())
         elif result == "DIFICULDADE":
             self.state = DifficultySelectState(
                 self.screen, self.input, self.audio,
@@ -1186,8 +1365,11 @@ class GameStateManager:
             self.play_time = 0.0
         elif result in ("CONTINUAR", "restart"):
             # Both resume the persisted character at its furthest cleared
-            # level (within the currently active difficulty tier) - dying
-            # keeps your level/xp (this isn't a roguelite).
+            # level (within the currently active difficulty tier). The
+            # character (xp/level/attributes/gold/inventory) is never lost -
+            # only a death (see update()'s "game_over" branch) zeroes this
+            # tier's furthest-cleared checkpoint, sending the dungeon itself
+            # back to level 1 without touching the character underneath it.
             self.player = self._player_from_save()
             self.state = TransitionState(self.screen, self._continue_level(), self.player)
             self.play_time = 0.0
