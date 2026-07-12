@@ -128,6 +128,49 @@ Atribuído por nível via `LEVEL_MAPS[n]["weather"]` — Floresta Encantada (fog
 | Rei das Sombras — tiro triplo | nenhum (mantém variedade) | — |
 | Cacodemon — tiro triplo | Fogo | 15% por projétil |
 
+## Bestiário — descrição de todos os mobs e bosses
+
+Texto de identidade (nome + descrição) vem de `game/bestiary.py`'s `BESTIARY` — mesma fonte usada pela aba "Bestiário" do paperdoll in-game; nenhuma lore nova foi inventada aqui, só documentada. Números de HP/dano/velocidade não são repetidos nesta seção porque já vivem em "Atributos e stats derivados" e mudam com ML/dificuldade — aqui é só identidade + formato de ataque.
+
+### Mobs comuns
+
+Individualização (fases 5/6/7/9/10/11 — Atos 2 e 3): `swamp_troll`/`cursed_mage`/`crypt_wraith`/`ash_fiend`/`royal_guard` foram aposentados (eram só recolorações dos 3 rigs de `skeleton`/`goblin`/`dark_knight`, sem sprite/ataque próprios) e substituídos por um elenco novo, um por fase, cada um com seu próprio rig (`game/assets.py`'s `ENEMY_SPRITES`/`_RIG_PAINTERS`) e ataque (`game/enemy.py`'s `ENEMY_FLAVOR`). `skeleton`/`goblin`/`dark_knight` continuam como estavam — usados nas fases 1-3, não tocadas nesta passada.
+
+| Fase | Mob | Descrição | Ataques |
+|---|---|---|---|
+| 1-3 | Esqueleto (`skeleton`) | Um guerreiro morto reanimado por magia negra - ataca sem hesitar e sem sentir dor. | Corpo a corpo + à distância sem efeito adicional (dano direto). |
+| 1-3 | Goblin (`goblin`) | Pequeno e covarde sozinho, mas perigoso em grupo - suas poças de veneno cobrem o chão de armadilhas. | Corpo a corpo + à distância sem efeito adicional; deixa poças venenosas pelo chão. |
+| 1-3 | Cavaleiro Negro (`dark_knight`) | Um cavaleiro caído, blindado e implacável - dispara um raio arcano de longe quando não pode alcançar. | À distância: Fraqueza (15%). |
+| 5 | Aranha (`aranha`) | Emboscada suas presas nas sombras do pântano. | Toque: Veneno (30%). |
+| 5 | Serpente (`serpente`) | Furtiva e traiçoeira. | Toque: Veneno (25%). |
+| 5 | Treant (`treant`) | Árvore ancestral desperta que protege o pântano. | À distância, em leque de 3 (`ranged_shape="spread3"`): Lentidão (25%). |
+| 6 | Esqueleto (`skeleton`) | (reaproveitado, ver acima) | — |
+| 6 | Troll (`troll`) | Amaldiçoado pela torre. | Toque: Fraqueza (25%). |
+| 6 | Cavaleiro da Morte (`death_knight`) | Jurou lealdade além da morte. | À distância: Fraqueza (22%, mais forte que o `dark_knight`). |
+| 7 | Zumbi (`zumbi`) | Cadáver reanimado, só ataca de perto. | Toque: Veneno (30%); sem ataque à distância. |
+| 7 | Verme (`verme`) | Se arrasta pela cripta. | Toque: Veneno (25%). |
+| 7 | Imp (`imp`) | Pequeno demônio travesso e rápido. | À distância, rajada errática de 5 (`ranged_shape="spread5"`): Choque (20%). |
+| 9 | Dark Horse (`dark_horse`) | Corcel espectral do salão gelado. | Toque: Frio (25%). |
+| 9 | Acólito (`acolito`) | Seguidor de rituais profanos. | À distância: Fraqueza (20%). |
+| 9 | Feiticeira (`feiticeira`) | Elite caster do salão gelado. | À distância: Frio (25%), dano maior. |
+| 10 | Fire Hound (`fire_hound`) | Cão infernal veloz. | À distância: Queimadura (25%). |
+| 10 | Ogro (`ogro`) | Brutal e resistente. | Corpo a corpo puro, sem efeito - só dano bruto. |
+| 10 | Elemental de Pedra (`elemental_pedra`) | Tanque extremo, o mais lento de todos. | À distância, explosão radial de 6 (`ranged_shape="circle6"`): sem efeito, dano alto. |
+| 11 | Quimera (`chimera`) | Fusão de leão, cabra e serpente. | À distância: Queimadura (25%) **e** toque: Fraqueza (20%) - as duas ativas ao mesmo tempo (distâncias diferentes). |
+| 11 | Lyzardman (`lyzardman`) | Guerreiro reptiliano ágil. | Toque: Veneno (25%). |
+| 11 | Esqueleto Sombrio (`dark_skeleton`) | Versão sombria e elite do esqueleto comum. | À distância: Choque (20%); único mob comum com `luck` > 0 (chance de crítico), papel que era do `royal_guard`. |
+
+### Bosses (Stage B4b — sprite e sala individualizados por boss, ver seção "Campanha em 3 atos" abaixo)
+
+| Boss | Descrição | Identidade visual | Ataques (fase 1) |
+|---|---|---|---|
+| Senhor da Guerra Orc (`orc_warlord`) | Lidera pela força bruta - sua investida é capaz de esmagar quem estiver no caminho. | Humanoide verde, sobrancelha franzida ("olhar de mau"), segurando um tacape. | Investida (dano físico de contato); tiro triplo mirado. |
+| Necromante (`necromancer`) | Comanda os mortos, invocando esqueletos e lançando maldições a distância. | Figura sombria de manto/capuz preto, rosto = caveira. | Invoca até 3 esqueletos; rajada circular de projéteis; maldição a distância (Fraqueza). |
+| Rei das Sombras (`shadow_king`) | O tirano final do reino - mestre em rajadas de magia sombria em todas as direções. | Espectro negro sólido, sem rosto além dos olhos brancos brilhantes (estilo Noob Saibot), bordas esfarrapadas. | Rajada circular de projéteis; tiro triplo mirado; espiral de projéteis. |
+| Cacodemônio (`cacodemon`) | Demônio infernal da fase secreta - um demônio humanoide, chifrudo e de olho único, que cospe fogo em todas as direções. | Humanoide (deixou de ser a esfera flutuante original), olho central grande, chifres, pequenas asas. | Rajada de projéteis de fogo em todas as direções (ver tabela de debuffs acima para a chance de Fogo). |
+
+As 4 salas de boss (fases 4/8/12/13) também deixaram de ser o mesmo retângulo vazio recolorido: cada uma tem um piso (`create_tile()`) e um layout de obstáculos temáticos próprios — acampamento de guerra (caixotes/estacas), colunata de tumbas, salão do trono (dais + pilares esparsos) e um abismo de obsidiana esparso e assimétrico para o Cacodemônio (substituindo o piso de lava/magma original, que não combinava com o tema).
+
 ## Bugs reais encontrados durante o desenvolvimento (não features, correções)
 
 - **`CacodemonBoss.update()` nunca checava colisão de projétil com o jogador** — o boss da fase secreta não causava dano nenhum desde antes desta rodada de features. Corrigido ao ligar o gancho de debuff de Fogo nesse boss.
@@ -203,22 +246,30 @@ Overlay de desenvolvedor, tecla `F1` (livre, confirmado por grep completo do tec
 
 ## Campanha em 3 atos e bosses generalizados (Stage B4)
 
-O que era 1 boss único (Rei das Sombras) + 1 fase secreta virou 3 atos, cada um com 3 fases de combate + 1 boss próprio — sem duplicar a classe `Boss`. `game/boss.py`'s `Boss.__init__(x, y, boss_id=...)` agora lê um bloco de atributos de `BOSS_ARCHETYPES` (`game/stats.py`) em vez de ter valores fixos no corpo da classe — mesma jogada de "um rig, várias skins" que `ENEMY_ARCHETYPES`/Paragon já usam. `create_boss_sprite()` (`game/assets.py`) ganhou parâmetros opcionais `body_colors`/`eye_colors` (`None` reproduz a paleta original do Rei das Sombras, byte a byte). O boost de velocidade da fase 2 (enrage) passou de um valor fixo (`130`) para proporcional (`stats.speed * 1.625`), preservando o número exato do Rei das Sombras enquanto funciona para qualquer arquétipo.
+O que era 1 boss único (Rei das Sombras) + 1 fase secreta virou 3 atos, cada um com 3 fases de combate + 1 boss próprio — sem duplicar a classe `Boss`. `game/boss.py`'s `Boss.__init__(x, y, boss_id=...)` agora lê um bloco de atributos de `BOSS_ARCHETYPES` (`game/stats.py`) em vez de ter valores fixos no corpo da classe — mesma jogada de "um rig, várias skins" que `ENEMY_ARCHETYPES`/Paragon já usam. O boost de velocidade da fase 2 (enrage) passou de um valor fixo (`130`) para proporcional (`stats.speed * 1.625`), preservando o número exato do Rei das Sombras enquanto funciona para qualquer arquétipo.
+
+**Individualização de sprite e sala (Stage B4b):** o "um rig, várias skins" valia só para os *stats* — visualmente os 3 bosses (+ Cacodemon numa classe própria) ainda compartilhavam uma única silhueta genérica recolorida (`create_boss_sprite(phase, body_colors, eye_colors)`), e as 4 salas de boss eram o mesmo retângulo vazio com piso levemente diferente. Corrigido: `create_boss_sprite(boss_id, phase)` (`game/assets.py`) agora despacha pra um rig próprio por `boss_id` (`BOSS_SPRITES`/`_BOSS_RIG_PAINTERS`, mesmo padrão `ENEMY_SPRITES`/`_RIG_PAINTERS` já usado pelos mobs comuns) — `BOSS_ARCHETYPES` perdeu as chaves `body_colors`/`eye_colors` (viraram dado morto, nenhum stat numérico mudou). Cacodemon deixou de ser uma esfera flutuante desenhada inline em `CacodemonBoss.draw()` e passou a usar o mesmo `create_boss_sprite("cacodemon", ...)`, cacheado uma vez em `__init__` como `Boss` já fazia com `sprite_p1`/`sprite_p2`. Ver a tabela de bosses no Bestiário acima pra identidade visual de cada um. As 4 salas (`LEVEL_MAPS[4/8/12/13]`) ganharam piso (`create_tile()`) e layout de obstáculos próprios; o piso de lava do Cacodemon foi trocado por um abismo de obsidiana mais discreto (era "magma gritante" demais pro tema).
 
 `BOSS_REGISTRY` (`game/states.py`) mapeia a chave `"boss"` de cada `LEVEL_MAPS[n]` pra uma fábrica — Orc Warlord/Necromante/Rei das Sombras compartilham a fábrica lambda genérica (`Boss(x, y, boss_id=...)`); só o Cacodemon (fase secreta) continua sendo uma classe própria, por ter um padrão de ataque realmente diferente, não por limitação do registry.
 
 **Numeração de fases (`LEVEL_MAPS`, 1-13):**
 
-| Fase | Título | Tipo | Boss | ML |
+| Fase | Título | Tipo | Boss/Monstros | ML |
 |---|---|---|---|---|
-| 1-3 | Floresta Encantada / Ruínas do Deserto / Masmorra das Sombras | combate | — | 1/4/8 |
+| 1-3 | Floresta Encantada / Ruínas do Deserto / Masmorra das Sombras | combate | esqueleto, goblin, cavaleiro negro | 1/4/8 |
 | 4 | Acampamento de Guerra | boss | Senhor da Guerra Orc | — |
-| 5-7 | Pântano Sombrio / Torre Amaldiçoada / Cripta Perdida | combate | — | 12/16/20 |
+| 5 | Pântano Sombrio | combate | aranha, serpente, treant | 12 |
+| 6 | Torre Amaldiçoada | combate | esqueleto, troll, cavaleiro da morte | 16 |
+| 7 | Cripta Perdida | combate | zumbi, verme, imp | 20 |
 | 8 | Cripta do Necromante | boss | Necromante | — |
-| 9-11 | Salão dos Ecos / Abismo de Cinzas / Corredor Final | combate | — | 24/28/32 |
+| 9 | Salão dos Ecos | combate | dark horse, acólito, feiticeira | 24 |
+| 10 | Abismo de Cinzas | combate | fire hound, ogro, elemental de pedra | 28 |
+| 11 | Corredor Final | combate | quimera, lyzardman, esqueleto sombrio | 32 |
 | 12 | Trono das Trevas | boss (final da campanha, `victory:"victory"`) | Rei das Sombras | — |
 | 13 | Fase Secreta: INFERNO | boss (`victory:"secret_victory"`) | Cacodemon | — |
 
 Recompensa dos 3 bosses escalada à mão pra refletir a posição na campanha (não pela fórmula de ML, que é só pra mobs comuns): Orc Warlord 100 XP/40 ouro, Necromante 200/80, Rei das Sombras 300/120 (subiu de 150/60 — deixou de ser o único boss do jogo pra ser o final do Ato 3). `game/states.py`'s `_continue_level()` (cap do botão CONTINUAR) e o alvo da transição `"secret"` foram atualizados de `4`/`5` pra `12`/`13`.
 
-Nenhum arquétipo de inimigo comum novo — os 6 novos mapas de combate reusam goblin/esqueleto/dark_knight em proporções crescentes (mais dark_knight nas fases mais tardias), e ganham um tile novo (`"swamp"`, `create_tile()` em `game/assets.py`) só pro Pântano Sombrio.
+**Individualização de mobs comuns (Stage B4b, fases 5/6/7/9/10/11):** o parágrafo acima ficou desatualizado - as 6 fases de combate dos Atos 2/3 tinham cada uma seu próprio `monster_level`, mas reusavam só `goblin`/`skeleton`/`dark_knight` recolorados (via `swamp_troll`/`cursed_mage`/`crypt_wraith`/`ash_fiend`/`royal_guard`) em vez de um elenco visualmente próprio. Corrigido junto com os bosses: 17 arquétipos novos (ver tabela de mobs comuns no Bestiário acima), cada um com seu rig em `game/assets.py` e ataque em `game/enemy.py`'s `ENEMY_FLAVOR` — `skeleton`/`goblin`/`dark_knight` continuam intactos, usados só nas fases 1-3. `Enemy._shoot_at_player()` ganhou um parâmetro opcional `flavor["ranged_shape"]` (`"spread3"`/`"spread5"`/`"circle6"`, default `"single"` = comportamento antigo inalterado) pros 3 mobs cujo ataque pedia mais que um tiro reto (treant, imp, elemental_pedra) — a mesma técnica de leque/rajada circular que `game/boss.py` já usava, adaptada pra `Enemy`/`EnemyProjectile` em vez de `Boss`/`Projectile`. Nenhum mob comum ganhou charge/dash ou invocação — essas continuam exclusivas de boss (exigiriam a máquina de estados de `Boss._update_charge`/o dreno de `pending_summons`, fora do escopo pedido). Cenário: fase 6 ganhou `"cursed_floor"` (pedra + runas roxas) e fase 9 ganhou `"ritual_floor"` (pedra pálida + círculo arcano), fase 7 passou a reusar `"crypt_floor"` (já existia, criado pro Necromante); fases 5/10/11 mantiveram `swamp`/`lava`/`boss_floor` (já combinavam com o elenco novo).
+
+**Bestiário além de 12 entradas (`game/paperdoll.py`):** a aba Bestiário tinha um grid fixo de exatamente 3 linhas (`_BESTIARY_DETAIL_Y` hardcoded pra `3 * _BESTIARY_CELL`) porque nunca tinha passado de 8 mobs + 4 bosses. Com o elenco crescendo pra 20 mobs + 4 bosses (24 entradas), isso viraria 6 linhas e o painel de detalhe ficaria por cima do grid. Corrigido pra ser derivado (`math.ceil(len(BESTIARY_ORDER)/_BESTIARY_COLS)` linhas, nunca mais um literal solto) e o grid passou de 4 colunas/70px pra 6 colunas/56px (cabe na mesma largura de painel, menos linhas no total). Atlas não precisou de nenhuma mudança de código — já lia `title`/`description`/`enemies` de `LEVEL_MAPS` dinamicamente.

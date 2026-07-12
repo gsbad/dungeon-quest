@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pygbag-pc",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "pygbag", "--bind", "localhost", "--port", "8000", "main.py"],
+      "port": 8000
+    },
+    {
+      "name": "pygbag-mobile",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "pygbag", "--bind", "192.168.100.19", "--port", "8001", "main.py"],
+      "port": 8001
+    }
+  ]
+}

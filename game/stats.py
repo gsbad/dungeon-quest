@@ -136,17 +136,38 @@ ENEMY_ARCHETYPES = {
     "goblin":      dict(strength=3,  dexterity=0, vigor=0, luck=0, weapon_base=5.5, base_speed=110),
     "skeleton":    dict(strength=10, dexterity=0, vigor=2, luck=0, weapon_base=3,   base_speed=70),
     "dark_knight": dict(strength=12, dexterity=0, vigor=8, luck=0, weapon_base=10,  base_speed=55),
-    # Stage D6 - one new archetype per new stage, each landing between
-    # goblin/dark_knight's ML1 numbers (verify via tools/balance_sim.py).
-    # Sprite/attack flavor lives in game/assets.py's ENEMY_SPRITES and
-    # game/enemy.py's ENEMY_FLAVOR, not here - this is combat stats only.
-    "swamp_troll":  dict(strength=8,  dexterity=0,  vigor=6,  luck=0,  weapon_base=4, base_speed=60),
-    "cursed_mage":  dict(strength=2,  dexterity=0,  vigor=1,  luck=0,  weapon_base=6, base_speed=65),
-    "crypt_wraith": dict(strength=6,  dexterity=10, vigor=3,  luck=0,  weapon_base=5, base_speed=95),
-    "ash_fiend":    dict(strength=5,  dexterity=4,  vigor=2,  luck=0,  weapon_base=6, base_speed=80),
-    # First common archetype with luck>0 - a rare crit telegraphs "this is
-    # the endgame" without needing a whole new mechanic to introduce it.
-    "royal_guard":  dict(strength=14, dexterity=6,  vigor=10, luck=20, weapon_base=9, base_speed=55),
+    # Individualization pass (levels 5/6/7/9/10/11) - swamp_troll/cursed_mage/
+    # crypt_wraith/ash_fiend/royal_guard retired (they were only ever
+    # recolors of skeleton/goblin/dark_knight, ENEMY_SPRITES-wise, and only
+    # appeared inside these 6 levels) in favor of a per-level, per-monster
+    # roster with its own rig (game/assets.py's ENEMY_SPRITES) and attack
+    # (game/enemy.py's ENEMY_FLAVOR). Sprite/attack flavor lives in those two
+    # files, not here - this is combat stats only.
+    # Level 5 - Pantano Sombrio
+    "aranha":          dict(strength=4,  dexterity=8, vigor=2,  luck=0, weapon_base=4,  base_speed=100),
+    "serpente":        dict(strength=5,  dexterity=6, vigor=2,  luck=0, weapon_base=5,  base_speed=90),
+    "treant":          dict(strength=10, dexterity=0, vigor=12, luck=0, weapon_base=5,  base_speed=40),
+    # Level 6 - Torre Amaldicoada (skeleton reused, not redefined)
+    "troll":           dict(strength=9,  dexterity=0, vigor=10, luck=0, weapon_base=6,  base_speed=55),
+    "death_knight":    dict(strength=14, dexterity=2, vigor=12, luck=0, weapon_base=11, base_speed=55),
+    # Level 7 - Cripta Perdida
+    "zumbi":           dict(strength=8,  dexterity=0, vigor=8,  luck=0, weapon_base=6,  base_speed=40),
+    "verme":           dict(strength=5,  dexterity=2, vigor=4,  luck=0, weapon_base=4,  base_speed=70),
+    "imp":             dict(strength=3,  dexterity=6, vigor=2,  luck=0, weapon_base=4,  base_speed=100),
+    # Level 9 - Salao dos Ecos
+    "dark_horse":      dict(strength=10, dexterity=8, vigor=6,  luck=0, weapon_base=7,  base_speed=130),
+    "acolito":         dict(strength=3,  dexterity=0, vigor=4,  luck=0, weapon_base=6,  base_speed=65),
+    "feiticeira":      dict(strength=4,  dexterity=2, vigor=5,  luck=0, weapon_base=8,  base_speed=70),
+    # Level 10 - Abismo de Cinzas
+    "fire_hound":      dict(strength=7,  dexterity=6, vigor=5,  luck=0, weapon_base=6,  base_speed=120),
+    "ogro":            dict(strength=16, dexterity=0, vigor=14, luck=0, weapon_base=10, base_speed=50),
+    "elemental_pedra": dict(strength=12, dexterity=0, vigor=18, luck=0, weapon_base=8,  base_speed=35),
+    # Level 11 - Corredor Final
+    "chimera":         dict(strength=14, dexterity=6, vigor=14, luck=0,  weapon_base=10, base_speed=75),
+    "lyzardman":       dict(strength=10, dexterity=8, vigor=7,  luck=0,  weapon_base=8,  base_speed=100),
+    # Elite crit archetype (role royal_guard used to fill) - luck>0 telegraphs
+    # "this one can crit" without a whole new mechanic.
+    "dark_skeleton":   dict(strength=13, dexterity=6, vigor=9,  luck=15, weapon_base=9,  base_speed=60),
 }
 
 # Base XP/gold per kill at monster level (ML) 1 - see scale_by_ml() below for
@@ -157,46 +178,47 @@ BASE_XP = {
     "skeleton": 10,
     "goblin": 8,
     "dark_knight": 25,
-    "swamp_troll": 18,
-    "cursed_mage": 22,
-    "crypt_wraith": 20,
-    "ash_fiend": 22,
-    "royal_guard": 30,
+    "aranha": 9, "serpente": 9, "treant": 20,
+    "troll": 20, "death_knight": 28,
+    "zumbi": 16, "verme": 14, "imp": 18,
+    "dark_horse": 24, "acolito": 20, "feiticeira": 26,
+    "fire_hound": 22, "ogro": 28, "elemental_pedra": 30,
+    "chimera": 32, "lyzardman": 24, "dark_skeleton": 28,
 }
 GOLD_DROPS = {
     "skeleton": 4,
     "goblin": 3,
     "dark_knight": 10,
-    "swamp_troll": 7,
-    "cursed_mage": 9,
-    "crypt_wraith": 8,
-    "ash_fiend": 9,
-    "royal_guard": 12,
+    "aranha": 4, "serpente": 4, "treant": 8,
+    "troll": 8, "death_knight": 11,
+    "zumbi": 6, "verme": 6, "imp": 7,
+    "dark_horse": 9, "acolito": 8, "feiticeira": 10,
+    "fire_hound": 9, "ogro": 11, "elemental_pedra": 12,
+    "chimera": 13, "lyzardman": 9, "dark_skeleton": 11,
 }
 
 # Boss identities (Stage B4) - the campaign now has 3 acts, each ending in
 # its own boss, instead of one boss for the whole game. All 3 share the
 # exact same Boss class/attack-pattern shape (see game/boss.py) - only the
-# attribute block, name, palette, and reward differ, same "one rig, several
-# palette-swapped encounters" idea as ENEMY_ARCHETYPES vs. Paragon. Shadow
-# King's own numbers are untouched from Stage A3's calibration (still 270
-# hp) - only its reward moved up, since it's now the campaign's true final
-# boss (Act 3) rather than its only one.
+# attribute block, name, and reward differ. Sprite look is no longer a
+# palette on this dict (Stage B4b individualization) - each boss_id has its
+# own dedicated rig in game/assets.py's BOSS_SPRITES/create_boss_sprite();
+# this dict stays stats/reward-only. Shadow King's own numbers are
+# untouched from Stage A3's calibration (still 270 hp) - only its reward
+# moved up, since it's now the campaign's true final boss (Act 3) rather
+# than its only one.
 BOSS_ARCHETYPES = {
     "orc_warlord": dict(
         name="Senhor da Guerra Orc", strength=10, dexterity=0, vigor=46.67, luck=0,
         weapon_base=2, base_speed=90, xp_reward=100, gold_reward=40,
-        body_colors=((90, 60, 10), (150, 40, 10)), eye_colors=((255, 180, 40), (255, 90, 30)),
     ),
     "necromancer": dict(
         name="Necromante", strength=10, dexterity=0, vigor=63.33, luck=0,
         weapon_base=2.5, base_speed=70, xp_reward=200, gold_reward=80,
-        body_colors=((20, 70, 40), (10, 100, 60)), eye_colors=((120, 255, 140), (180, 255, 120)),
     ),
     "shadow_king": dict(
         name="Rei das Sombras", strength=10, dexterity=0, vigor=83.33, luck=0,
         weapon_base=3, base_speed=80, xp_reward=300, gold_reward=120,
-        body_colors=None, eye_colors=None,  # keeps create_boss_sprite's original palette
     ),
 }
 

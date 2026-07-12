@@ -157,8 +157,8 @@ class Boss:
         self.move_dir = (1, 0)
         self.hit_flash = 0
 
-        self.sprite_p1 = create_boss_sprite(1, archetype["body_colors"], archetype["eye_colors"])
-        self.sprite_p2 = create_boss_sprite(2, archetype["body_colors"], archetype["eye_colors"])
+        self.sprite_p1 = create_boss_sprite(self.boss_id, phase=1)
+        self.sprite_p2 = create_boss_sprite(self.boss_id, phase=2)
 
         self.hp_bar = ProgressBar(self.width, 10, (60,0,0), (220,220,220), border_width=1)
         self.hud_bar = ProgressBar(400, 16, (40,0,60), (200,200,220), border_width=2, margin=2)
@@ -480,6 +480,11 @@ class CacodemonBoss:
         self.bob_offset = 0  # For hovering animation
         self.bob_timer = 0
 
+        # Humanoid demon rig (Stage B4b) - replaces the old inline
+        # floating-sphere drawing in draw(); cached once like Boss's
+        # sprite_p1/p2, since it never changes per-frame.
+        self.sprite = create_boss_sprite("cacodemon", phase=1)
+
         self.hp_bar = ProgressBar(self.width, 10, (60,0,0), (220,100,0), border_width=1)
         self.hud_bar = ProgressBar(400, 16, (60,0,0), (255,150,0), border_width=2, margin=2)
 
@@ -584,53 +589,19 @@ class CacodemonBoss:
         sx = int(self.x - cam_x)
         sy = int(self.y - cam_y + self.bob_offset)
 
-        # Create demon sprite (red/orange sphere with eyes)
-        demon_surf = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-
-        # Main body - dark orange sphere
-        pygame.draw.circle(demon_surf, (180, 40, 10), (self.width//2, self.height//2), self.width//2)
-
-        # Flame pattern on body
-        for i in range(5):
-            angle = math.pi * 2 * i / 5 + self.bob_timer
-            ex = self.width//2 + math.cos(angle) * 18
-            ey = self.height//2 + math.sin(angle) * 18
-            pygame.draw.circle(demon_surf, (255, 130, 0), (ex, ey), 8)
-            pygame.draw.circle(demon_surf, (255, 190, 0), (ex, ey), 4)
-
-        # Eyes (evil slanted)
-        eye_y = self.height//2 - 8
-        left_eye = [(self.width//4-12, eye_y), (self.width//4+2, eye_y-8), (self.width//4+12, eye_y)]
-        right_eye = [(3*self.width//4-12, eye_y), (3*self.width//4+2, eye_y-8), (3*self.width//4+12, eye_y)]
-        pygame.draw.polygon(demon_surf, (255, 80, 0), left_eye)
-        pygame.draw.polygon(demon_surf, (255, 80, 0), right_eye)
-        pygame.draw.circle(demon_surf, (40, 0, 0), (self.width//4, eye_y+2), 5)
-        pygame.draw.circle(demon_surf, (40, 0, 0), (3*self.width//4, eye_y+2), 5)
-        pygame.draw.circle(demon_surf, (255, 140, 0), (self.width//4, eye_y+2), 2)
-        pygame.draw.circle(demon_surf, (255, 140, 0), (3*self.width//4, eye_y+2), 2)
-
-        # Horns (spikes)
-        horn_positions = [
-            (self.width//8, 4),
-            (self.width//4 - 4, 2),
-            (self.width//2, 0),
-            (3*self.width//4 + 4, 2),
-            (7*self.width//8, 4),
-        ]
-        for hx, hy in horn_positions:
-            pygame.draw.polygon(demon_surf, (255, 120, 0),
-                               [(hx-5, hy+8), (hx, hy), (hx+5, hy+8)])
-        for hx, hy in [(self.width//4, 12), (3*self.width//4, 12)]:
-            pygame.draw.polygon(demon_surf, (255, 100, 0),
-                               [(hx-4, hy+8), (hx, hy), (hx+4, hy+8)])
-
-        # Apply hit flash
+        demon_surf = self.sprite
         if self.hit_flash > 0.06:
-            demo_flash = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+            demo_flash = pygame.Surface(demon_surf.get_size(), pygame.SRCALPHA)
             demo_flash.fill((255, 255, 255, 128))
+            demon_surf = demon_surf.copy()
             demon_surf.blit(demo_flash, (0, 0))
 
-        surface.blit(demon_surf, (sx, sy))
+        # Sprite canvas (96x96) is a bit larger than the hitbox (80x80) -
+        # center it over the hitbox instead of top-left aligning, so the
+        # bigger humanoid rig doesn't visually drift off to one side.
+        ox = (self.width - demon_surf.get_width()) // 2
+        oy = (self.height - demon_surf.get_height()) // 2
+        surface.blit(demon_surf, (sx + ox, sy + oy))
 
         # HP bar
         bx = sx

@@ -161,27 +161,73 @@ ENEMY_FLAVOR = {
     "dark_knight": {"atk_cd": 1.2, "color": (40,40,60),
                      "ranged": {"color": (180,100,255), "status_effect": "weakness",
                                 "status_chance": 0.15, "speed": 220}},
-    # Stage D6 - one new archetype per new stage (game/level.py's LEVEL_MAPS).
-    "swamp_troll":  {"atk_cd": 1.3, "color": (90,110,60), "puddles": True,
-                      "melee_status": ("poison", 0.20),
-                      "ranged": {"color": (110,180,70), "status_effect": "poison",
-                                 "status_chance": 0.20, "speed": 190}},
-    "cursed_mage":  {"atk_cd": 1.4, "color": (70,50,110),
-                      "ranged": {"color": (120,180,255), "status_effect": "slow",
-                                 "status_chance": 0.20, "speed": 200}},
-    "crypt_wraith": {"atk_cd": 0.7, "color": (180,200,220),
-                      "melee_status": ("chill", 0.15),
-                      "ranged": {"color": (150,210,255), "status_effect": "chill",
-                                 "status_chance": 0.15, "speed": 230}},
-    "ash_fiend":    {"atk_cd": 1.1, "color": (120,50,40),
-                      "ranged": {"color": (255,120,40), "status_effect": "burn",
-                                 "status_chance": 0.25, "speed": 240}},
-    # First archetype with luck>0 (crit) - its ranged attack is a plain,
-    # harder-hitting shot rather than a debuff, matching its "elite guard"
-    # role instead of a caster's.
-    "royal_guard":  {"atk_cd": 1.0, "color": (90,75,30),
-                      "ranged": {"color": (255,225,140), "status_effect": None,
-                                 "status_chance": 0.0, "speed": 250}},
+
+    # Individualization pass (levels 5/6/7/9/10/11) - swamp_troll/cursed_mage/
+    # crypt_wraith/ash_fiend/royal_guard retired, replaced by a per-level
+    # roster. "ranged_shape" (optional, default "single") picks how
+    # _shoot_at_player fires the flavor's "ranged" bolt(s) - see that method
+    # below for "spread3"/"spread5"/"circle6". A missing "ranged" key means
+    # the mob never shoots (pure melee, e.g. zumbi/ogro).
+
+    # Level 5 - Pantano Sombrio
+    "aranha":   {"atk_cd": 0.9, "color": (60,40,70),
+                  "melee_status": ("poison", 0.30)},
+    "serpente": {"atk_cd": 0.8, "color": (60,120,60),
+                  "melee_status": ("poison", 0.25)},
+    "treant":   {"atk_cd": 1.6, "color": (60,45,25),
+                  "ranged": {"color": (120,200,90), "status_effect": "slow",
+                             "status_chance": 0.25, "speed": 150},
+                  "ranged_shape": "spread3"},
+
+    # Level 6 - Torre Amaldicoada (skeleton reused as-is)
+    "troll":        {"atk_cd": 1.3, "color": (90,110,70),
+                       "melee_status": ("weakness", 0.25)},
+    "death_knight": {"atk_cd": 1.1, "color": (30,30,40),
+                       "ranged": {"color": (150,80,220), "status_effect": "weakness",
+                                  "status_chance": 0.22, "speed": 230}},
+
+    # Level 7 - Cripta Perdida
+    "zumbi": {"atk_cd": 1.4, "color": (90,110,70),
+               "melee_status": ("poison", 0.30)},
+    "verme": {"atk_cd": 1.0, "color": (110,90,50),
+               "melee_status": ("poison", 0.25)},
+    "imp":   {"atk_cd": 1.0, "color": (150,40,40),
+               "ranged": {"color": (255,240,120), "status_effect": "shock",
+                          "status_chance": 0.20, "speed": 210},
+               "ranged_shape": "spread5"},
+
+    # Level 9 - Salao dos Ecos
+    "dark_horse": {"atk_cd": 0.9, "color": (30,25,40),
+                     "melee_status": ("chill", 0.25)},
+    "acolito":    {"atk_cd": 1.2, "color": (110,90,60),
+                     "ranged": {"color": (200,120,220), "status_effect": "weakness",
+                                "status_chance": 0.20, "speed": 210}},
+    "feiticeira": {"atk_cd": 1.3, "color": (60,70,120),
+                     "ranged": {"color": (150,210,255), "status_effect": "chill",
+                                "status_chance": 0.25, "speed": 220}},
+
+    # Level 10 - Abismo de Cinzas
+    "fire_hound":      {"atk_cd": 0.9, "color": (150,60,20),
+                          "ranged": {"color": (255,140,40), "status_effect": "burn",
+                                     "status_chance": 0.25, "speed": 240}},
+    "ogro":            {"atk_cd": 1.5, "color": (110,80,40)},
+    "elemental_pedra": {"atk_cd": 2.0, "color": (100,90,85),
+                          "ranged": {"color": (160,140,120), "status_effect": None,
+                                     "status_chance": 0.0, "speed": 170},
+                          "ranged_shape": "circle6"},
+
+    # Level 11 - Corredor Final
+    "chimera":       {"atk_cd": 1.2, "color": (140,100,40),
+                        "melee_status": ("weakness", 0.20),
+                        "ranged": {"color": (255,120,30), "status_effect": "burn",
+                                   "status_chance": 0.25, "speed": 230}},
+    "lyzardman":     {"atk_cd": 0.9, "color": (40,110,70),
+                        "melee_status": ("poison", 0.25)},
+    # First archetype with luck>0 (crit) since royal_guard's retirement -
+    # its ranged attack is a plain shock bolt, elite-guard role again.
+    "dark_skeleton": {"atk_cd": 1.0, "color": (50,50,55),
+                        "ranged": {"color": (255,255,140), "status_effect": "shock",
+                                   "status_chance": 0.20, "speed": 250}},
 }
 
 # BASE_XP/GOLD_DROPS live in game/stats.py now (Stage B1) - re-exported here
@@ -410,22 +456,51 @@ class Enemy:
             self.attack_cooldown -= dt
 
     def _shoot_at_player(self, player):
+        """Fires flavor["ranged"] as 1+ EnemyProjectile(s). Most archetypes
+        use the default "single" shape (one bolt aimed at the player,
+        unchanged from before); a few (treant/imp/elemental_pedra) opt into
+        a multi-shot shape via flavor["ranged_shape"], same
+        spread/circle-burst techniques game/boss.py's Boss already uses for
+        its own patterns, just aimed from an Enemy instead."""
         ranged = self.flavor["ranged"]
         cx = self.x + self.width / 2
         cy = self.y + self.height / 2
+        shape = self.flavor.get("ranged_shape", "single")
+
+        if shape == "circle6":
+            speed = ranged["speed"]
+            for i in range(6):
+                angle = (2 * math.pi / 6) * i
+                vx, vy = math.cos(angle) * speed, math.sin(angle) * speed
+                self.projectiles.append(EnemyProjectile(
+                    cx, cy, vx, vy, self.damage, ranged["color"],
+                    status_effect=ranged["status_effect"], status_chance=ranged["status_chance"],
+                    dtype="magic"
+                ))
+            return
+
         px = player.x + player.width / 2
         py = player.y + player.height / 2
         dist = math.hypot(px - cx, py - cy)
         if dist == 0:
             return
+        base_angle = math.atan2(py - cy, px - cx)
+        if shape == "spread3":
+            offsets = (-0.3, 0.0, 0.3)
+        elif shape == "spread5":
+            offsets = (-0.5, -0.25, 0.0, 0.25, 0.5)
+        else:
+            offsets = (0.0,)
+
         speed = ranged["speed"]
-        vx = (px - cx) / dist * speed
-        vy = (py - cy) / dist * speed
-        self.projectiles.append(EnemyProjectile(
-            cx, cy, vx, vy, self.damage, ranged["color"],
-            status_effect=ranged["status_effect"], status_chance=ranged["status_chance"],
-            dtype="magic"
-        ))
+        for offset in offsets:
+            angle = base_angle + offset
+            vx, vy = math.cos(angle) * speed, math.sin(angle) * speed
+            self.projectiles.append(EnemyProjectile(
+                cx, cy, vx, vy, self.damage, ranged["color"],
+                status_effect=ranged["status_effect"], status_chance=ranged["status_chance"],
+                dtype="magic"
+            ))
 
     def _resolve_x(self, walls, dx):
         r = self.rect

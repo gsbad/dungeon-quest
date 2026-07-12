@@ -71,15 +71,21 @@ _ATLAS_GAP = 8
 _ATLAS_GRID_Y = 10
 _ATLAS_DETAIL_Y = _ATLAS_GRID_Y + 4 * _ATLAS_CELL + 3 * _ATLAS_GAP + 20
 
-# Bestiary tab (Stage E4) - a 4x3 icon grid (exactly the 8 mobs + 4 bosses
-# in BESTIARY_ORDER) above a detail panel for whichever entry is selected.
-_BESTIARY_COLS = 4
-_BESTIARY_CELL = 70
-_BESTIARY_GAP = 8
+# Bestiary tab (Stage E4, individualization pass) - an icon grid (row count
+# derived from BESTIARY_ORDER's length, not hardcoded - the mob roster grew
+# from 8 to 20 common mobs + 4 bosses, so a fixed "3 rows" assumption would
+# make the detail panel overlap the grid) above a detail panel for
+# whichever entry is selected. 6 cols/56px cells (down from 4/70) keep the
+# grid width inside the panel while fitting the bigger roster in fewer rows.
+_BESTIARY_COLS = 6
+_BESTIARY_CELL = 56
+_BESTIARY_GAP = 6
 # Relative to content_top (self.py + _CONTENT_TOP), same convention as
 # _DERIVED_START_Y etc. above - callers add content_top themselves.
 _BESTIARY_GRID_Y = 10
-_BESTIARY_DETAIL_Y = _BESTIARY_GRID_Y + 3 * _BESTIARY_CELL + 2 * _BESTIARY_GAP + 20
+_BESTIARY_ROWS = math.ceil(len(BESTIARY_ORDER) / _BESTIARY_COLS)
+_BESTIARY_DETAIL_Y = (_BESTIARY_GRID_Y + _BESTIARY_ROWS * _BESTIARY_CELL
+                      + (_BESTIARY_ROWS - 1) * _BESTIARY_GAP + 20)
 
 _SPELL_START_Y = _HEADER_H + 16
 _SPELL_BLOCK_H = 100

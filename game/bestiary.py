@@ -10,7 +10,6 @@ already has *something* to show here before anyone writes its flavor text.
 Discovery is derived, not stored (same "derived, never a second value that
 can drift" precedent as game/professions.py) - see is_discovered() below.
 """
-import pygame
 from game.stats import ENEMY_ARCHETYPES, BOSS_ARCHETYPES, StatBlock, scale_archetype
 from game.enemy import ENEMY_FLAVOR
 from game.boss import BOSS_PATTERNS, CacodemonBoss
@@ -26,16 +25,56 @@ BESTIARY = {
                       "description": "Pequeno e covarde sozinho, mas perigoso em grupo - suas poças de veneno cobrem o chao de armadilhas."},
     "dark_knight":  {"name": "Cavaleiro Negro",
                       "description": "Um cavaleiro caido, blindado e implacavel - dispara um raio arcano de longe quando nao pode alcançar."},
-    "swamp_troll":  {"name": "Troll do Pantano",
-                      "description": "Criatura pantanosa e resistente - seu toque envenenado apodrece a carne aos poucos."},
-    "cursed_mage":  {"name": "Mago Amaldicoado",
-                      "description": "Um conjurador fragil de corpo, mas seus feiticos gelados lentificam quem ousa se aproximar."},
-    "crypt_wraith": {"name": "Espectro da Cripta",
-                      "description": "Veloz e silencioso, o mais agil dos mortos-vivos - seu toque gela os ossos de quem alcança."},
-    "ash_fiend":    {"name": "Demonio de Cinzas",
-                      "description": "Nascido das cinzas do Abismo, cospe bolas de fogo que incendeiam tudo ao redor."},
-    "royal_guard":  {"name": "Guarda Real",
-                      "description": "Elite da guarda caida - ataca com precisao mortal, e golpes certeiros o tornam temido ate por veteranos."},
+    # Individualization pass (levels 5/6/7/9/10/11) - retired
+    # swamp_troll/cursed_mage/crypt_wraith/ash_fiend/royal_guard, replaced
+    # by a per-level roster below.
+
+    # Level 5 - Pantano Sombrio
+    "aranha":   {"name": "Aranha",
+                  "description": "Uma aranha peconhenta que emboscada suas presas nas sombras do pantano - sua mordida envenena quem chega perto demais."},
+    "serpente": {"name": "Serpente",
+                  "description": "Furtiva e traicoeira - sua picada injeta um veneno que corroi aos poucos."},
+    "treant":   {"name": "Treant",
+                  "description": "Uma arvore ancestral desperta para proteger o pantano - arremessa espinhos em leque que prendem quem tenta fugir."},
+
+    # Level 6 - Torre Amaldicoada
+    "troll":        {"name": "Troll",
+                       "description": "Um troll amaldicoado pela torre - seus golpes carregam uma maldicao que enfraquece o alvo."},
+    "death_knight": {"name": "Cavaleiro da Morte",
+                       "description": "Um cavaleiro morto que jurou lealdade alem da morte - dispara rajadas sombrias que corroem a vontade de quem e atingido."},
+
+    # Level 7 - Cripta Perdida
+    "zumbi": {"name": "Zumbi",
+               "description": "Um cadaver reanimado que so ataca de perto - seu toque podre transmite uma infeccao venenosa."},
+    "verme": {"name": "Verme",
+               "description": "Verme cadaverico que se arrasta pela cripta - sua mordida acida corroi a carne."},
+    "imp":   {"name": "Imp",
+               "description": "Pequeno demonio travesso e rapido - dispara rajadas erraticas de energia que chocam quem e atingido."},
+
+    # Level 9 - Salao dos Ecos
+    "dark_horse": {"name": "Dark Horse",
+                     "description": "Um corcel espectral que galopa entre as sombras - seu coice gelado congela quem ousa se aproximar."},
+    "acolito":    {"name": "Acolito",
+                     "description": "Um seguidor devoto de rituais profanos - lanca maldicoes que enfraquecem seus inimigos a distancia."},
+    "feiticeira": {"name": "Feiticeira",
+                     "description": "Uma feiticeira poderosa do salao gelado - conjura rajadas de gelo que lentificam quem e atingido."},
+
+    # Level 10 - Abismo de Cinzas
+    "fire_hound":      {"name": "Fire Hound",
+                          "description": "Um cao infernal veloz - cospe baforadas de fogo que incendeiam a distancia."},
+    "ogro":            {"name": "Ogro",
+                          "description": "Um ogro brutal e resistente - seus golpes brutos nao perdoam quem fica no caminho."},
+    "elemental_pedra": {"name": "Elemental de Pedra",
+                          "description": "Um elemental de pedra vivo - quando aproximado, libera uma explosao radial de estilhacos em todas as direcoes."},
+
+    # Level 11 - Corredor Final
+    "chimera":       {"name": "Quimera",
+                        "description": "Fusao monstruosa de leao, cabra e serpente - alterna baforadas de fogo a distancia com garras que enfraquecem no corpo a corpo."},
+    "lyzardman":     {"name": "Lyzardman",
+                        "description": "Guerreiro reptiliano agil - sua mordida venenosa e rapida e traicoeira."},
+    "dark_skeleton": {"name": "Esqueleto Sombrio",
+                        "description": "Uma versao sombria e elite do esqueleto comum - seus tiros carregam uma chance de critico devastador."},
+
     "orc_warlord":  {"name": "Senhor da Guerra Orc",
                       "description": "Lidera pela força bruta - sua investida e capaz de esmagar quem estiver no caminho."},
     "necromancer":  {"name": "Necromante",
@@ -43,7 +82,7 @@ BESTIARY = {
     "shadow_king":  {"name": "Rei das Sombras",
                       "description": "O tirano final do reino - mestre em rajadas de magia sombria em todas as direçoes."},
     "cacodemon":    {"name": "Cacodemonio",
-                      "description": "Demonio infernal da fase secreta - uma esfera de furia flutuante que cospe fogo em todas as direçoes."},
+                      "description": "Demonio infernal da fase secreta - um demonio humanoide, chifrudo e de olho unico, que cospe fogo em todas as direçoes."},
 }
 
 # Full-name translations for the 2-3 letter STATUS_DISPLAY codes
@@ -84,20 +123,11 @@ def mob_sprite(etype):
 
 
 def boss_sprite(boss_id):
-    if boss_id == "cacodemon":
-        # CacodemonBoss draws itself procedurally straight to the target
-        # surface each frame (no reusable sprite Surface of its own, unlike
-        # Boss's sprite_p1/p2) - a small static icon in its established
-        # palette (game/boss.py's draw()) stands in for a bestiary preview.
-        s = pygame.Surface((48, 48), pygame.SRCALPHA)
-        pygame.draw.circle(s, (180, 40, 10), (24, 24), 22)
-        pygame.draw.circle(s, (255, 130, 0), (16, 20), 6)
-        pygame.draw.circle(s, (255, 130, 0), (32, 20), 6)
-        pygame.draw.circle(s, (40, 0, 0), (16, 20), 3)
-        pygame.draw.circle(s, (40, 0, 0), (32, 20), 3)
-        return s
-    archetype = BOSS_ARCHETYPES[boss_id]
-    return create_boss_sprite(1, archetype["body_colors"], archetype["eye_colors"])
+    # Every boss now has its own dedicated rig (game/assets.py's
+    # BOSS_SPRITES/create_boss_sprite, Stage B4b) including Cacodemon
+    # (which used to need a hardcoded mini-sprite here since it had no
+    # reusable Surface of its own) - one call covers all 4 boss_ids.
+    return create_boss_sprite(boss_id, phase=1)
 
 
 def mob_stats(etype):
