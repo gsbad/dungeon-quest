@@ -30,7 +30,30 @@ Algoritmo:
 3. Se o segundo colocado gastou menos da metade do primeiro (`spent[p2]/spent[p1] < 0.5`) → profissão **pura** do primeiro.
 4. Senão → profissão **híbrida** do par.
 
-5 puras + 10 híbridas (todos os pares de 5 atributos) + Aventureiro = 16 profissões. Cada uma tem uma cor de tint (`TINTS`) aplicada no retrato do paperdoll (multiplicação de canal sobre a sprite procedural existente) — placeholder visual até o Stage C trazer spritesheets reais por profissão.
+5 puras + 10 híbridas (todos os pares de 5 atributos) + Aventureiro = 16 profissões. Cada uma tem uma cor de tint (`TINTS`) aplicada no retrato do paperdoll (multiplicação de canal sobre a sprite procedural existente) — placeholder visual até o Stage C trazer spritesheets reais por profissão (ver "Individualização de sprites por profissão" mais abaixo, onde isso finalmente aconteceu).
+
+### As 16 profissões
+
+| Profissão | Base (atributo(s) dominante(s)) | Tint atual (`TINTS`) |
+|---|---|---|
+| Aventureiro | nenhum (< 20 pontos gastos no total) | branco |
+| Guerreiro | FOR pura | vermelho |
+| Assassino | DES pura | cinza-azulado |
+| Mago | INT pura | azul |
+| Feiticeiro | SAB pura | roxo |
+| Cavaleiro | VIG pura | dourado |
+| Duelista | FOR + DES | laranja |
+| Cavaleiro Arcano | FOR + INT | azul claro |
+| Paladino | FOR + SAB | dourado pálido |
+| Campeão | FOR + VIG | vermelho vivo |
+| Monge | DES + INT | verde-água |
+| Xamã | DES + SAB | verde claro |
+| Ranger | DES + VIG | verde |
+| Arcanista | INT + SAB | violeta |
+| Druida | INT + VIG | verde |
+| Templário | SAB + VIG | dourado pálido |
+
+"Pura" = o atributo com mais pontos gastos tem pelo menos o dobro do segundo colocado (`spent[p2]/spent[p1] < 0.5`); caso contrário é a híbrida do par top-2. Empate de pontos gastos é resolvido pela ordem fixa FOR > DES > INT > SAB > VIG (`_PRIORITY`, `game/professions.py`). Sorte (SOR) não entra nessa conta — gastar pontos nela não empurra pra nenhuma profissão específica, de propósito (não existe uma profissão "Sortudo").
 
 ## XP e nível
 
@@ -90,6 +113,10 @@ Cura em *fração* do máximo atual (não valor fixo) — mantém as poções re
 | Luz Curativa | Cura 25% da vida máxima | 15 mana | 10s | SAB 25 | Mesma fórmula de fração das poções |
 
 Magia "desbloqueada" = atende aos requisitos de atributo no momento — não é uma flag persistida (mesmo raciocínio de `profession` não estar no save). Conjuração: teclado **F** (Bola de Fogo) / **Q** (Nova de Gelo) / **R** (Luz Curativa) conjura direto — trocado de 1/2/3 pra ficar mais perto do teclado de movimento (WASD); `R` também continua reiniciando na tela de pausa/morte (`Action.RESTART`), sem colisão real entre os dois usos porque cada `Action` só é consumida no branch certo (pausado vs. em jogo) e `InputManager.update()` limpa qualquer ação não consumida a cada frame. Celular seleciona a magia na aba "Magias" do paperdoll e dispara com um botão dedicado. A aba Magias mostra a tecla de cada magia (`F`/`Q`/`R`, `game/paperdoll.py`'s `SPELL_KEYS`) em vez de um número de lista, pra não ficar desatualizada.
+
+**Nova de Gelo "não fazia nada" — dois problemas reais, não um bug na mecânica:** testado diretamente (`GameplayState._cast_frost_nova` com um inimigo próximo) e o dano/lentidão/gasto de mana já funcionavam corretamente. O que faltava era *feedback*:
+1. **Cast falho era 100% silencioso.** `_attempt_cast()` só fazia algo quando `Player.try_cast()` retornava `True`; se a magia estivesse bloqueada por atributo, em recarga, ou sem mana suficiente, apertar a tecla não tinha efeito nenhum visível — indistinguível de "a tecla não faz nada". Corrigido com `_cast_fail_message()`, reusando o mesmo `msg_timer`/`msg_text` toast que level-up/troca de profissão já usam, explicando exatamente qual dos 3 motivos bloqueou o cast.
+2. **O efeito visual não mostrava alcance nenhum.** A explosão original espalhava 24 partículas a partir do próprio jogador com velocidade/direção aleatória — sem nada indicando "isso atingiu até aqui", fácil de achar que nada foi lançado, especialmente contra um inimigo fora do alcance de 110px (que é *por design* uma explosão centrada no jogador, não um projétil mirado — mesma geometria de estouro circular que os bosses já usam, ver `game/boss.py`'s `_shoot_circle`). Trocado por um anel de 32 partículas nascendo exatamente na circunferência do raio real (110px), plus 12 partículas centrais — o alcance verdadeiro da magia agora pisca visivelmente na tela em vez de ficar implícito.
 
 ## Status effects (debuffs)
 

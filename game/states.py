@@ -17,7 +17,7 @@ from game.assets import create_heart_sprite, create_mana_orb_sprite, create_logo
 from game.input_system import Action, FullscreenButton, PaperdollButton, ItemsButton
 from game.audio import SoundButton
 from game.stats import POINTS_PER_LEVEL, MAX_LEVEL
-from game.spells import SPELLS, ORDER as SPELL_ORDER
+from game.spells import SPELLS, ORDER as SPELL_ORDER, missing_requirements, requirement_text
 from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER, next_difficulty, is_unlocked
 from game.affixes import AFFIXES
 from game.theme import (
@@ -757,6 +757,11 @@ class GameplayState:
     def _attempt_cast(self, spell_id):
         self.player.selected_spell = spell_id
         if not self.player.try_cast(spell_id):
+            # A failed cast used to be completely silent - pressing the key
+            # while locked/on cooldown/out of mana looked identical to the
+            # key doing nothing at all. Same msg_timer/msg_text toast the
+            # level-up/profession-change messages already use.
+            self._cast_fail_message(spell_id)
             return
         spell = SPELLS[spell_id]
         self.audio.play("attack")
@@ -766,6 +771,18 @@ class GameplayState:
             self._cast_frost_nova(spell)
         elif spell_id == "healing_light":
             self._cast_healing_light(spell)
+
+    def _cast_fail_message(self, spell_id):
+        spell = SPELLS[spell_id]
+        if missing_requirements(self.player.stats, spell_id):
+            text = f"{spell['name']} bloqueada: requer {requirement_text(spell_id)}"
+        elif self.player.spell_cooldowns.get(spell_id, 0) > 0:
+            text = f"{spell['name']} em recarga"
+        elif self.player.mana < spell["mana_cost"]:
+            text = f"Mana insuficiente para {spell['name']}"
+        else:
+            return
+        self.msg_timer, self.msg_text = 1.6, text
 
     def _cast_fireball(self, spell):
         px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
@@ -791,8 +808,19 @@ class GameplayState:
                 target.take_damage(dmg, dtype="magic")
                 if hasattr(target, "status"):
                     target.status.apply("slow")
-        for _ in range(24):
-            self.level_up_particles.append(Particle(px, py, (140, 220, 255)))
+        # Ring burst - particles placed AROUND the circumference of the real
+        # hit radius (not scattered randomly from the player), so the
+        # nova's actual reach flashes into view instead of reading as a
+        # faint poof at the caster's own feet with nothing showing where it
+        # actually hit.
+        ring_count = 32
+        for i in range(ring_count):
+            angle = (2 * math.pi / ring_count) * i
+            rx = px + math.cos(angle) * radius
+            ry = py + math.sin(angle) * radius
+            self.level_up_particles.append(Particle(rx, ry, (140, 220, 255)))
+        for _ in range(12):
+            self.level_up_particles.append(Particle(px, py, (210, 240, 255)))
 
     def _cast_healing_light(self, spell):
         heal_frac = spell["heal_frac"] * self.player.stats.healing_power
