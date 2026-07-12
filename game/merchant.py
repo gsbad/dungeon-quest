@@ -3,6 +3,7 @@ import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
 from game.ui import Panel, draw_text
 from game.items import ITEMS, use_item, buy_item
+from game.assets import create_potion_icon
 from game.input_system import Action
 
 _ROW_H = 34
@@ -108,6 +109,7 @@ class ItemsOverlay:
             y = self.py + _SEUS_ITENS_START_Y + i * _ROW_H
             count = player.inventory.get(item_id, 0)
             name = ITEMS[item_id]["name"]
+            surface.blit(create_potion_icon(item_id), (self.px + 20, y - 16))
             draw_text(surface, f"{name} x{count}", f_row, (215, 215, 225), label_cx, y - 8, shadow=False)
 
             rect = self.use_buttons[item_id]
@@ -121,6 +123,7 @@ class ItemsOverlay:
         for i, item_id in enumerate(ITEMS):
             y = self.py + _LOJA_START_Y + i * _ROW_H
             item = ITEMS[item_id]
+            surface.blit(create_potion_icon(item_id), (self.px + 20, y - 16))
             draw_text(surface, f"{item['name']} - {item['price']}g", f_row, (215, 215, 225),
                       label_cx, y - 8, shadow=False)
 
@@ -132,4 +135,4 @@ class ItemsOverlay:
                       rect.centerx, rect.y + 5, shadow=False)
 
         f_hint = font(14)
-        draw_text(surface, "W/S seleciona | ESPACO compra/usa | I - Fechar", f_hint, SUBTEXT, cx, self.py + _HINT_Y)
+        draw_text(surface, "W/S seleciona | ESPACO compra/usa | I/ESC - Fechar", f_hint, SUBTEXT, cx, self.py + _HINT_Y)

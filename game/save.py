@@ -19,7 +19,7 @@ import json
 from game.player import Player
 from game.professions import determine_profession
 
-SAVE_VERSION = 5
+SAVE_VERSION = 6
 _KEY = "dungeon_quest_save"
 _NATIVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_save.json")
 
@@ -35,6 +35,11 @@ def new_game_state():
             "current_difficulty": "normal",
             "highest_level_cleared": {"normal": 0},
             "cleared_difficulties": [],
+            # Stage F3 (Atlas tab): levels ever loaded, regardless of
+            # difficulty or death - unlike highest_level_cleared this never
+            # regresses, since a death shouldn't re-hide a map the player
+            # has already seen.
+            "levels_seen": [],
         },
         "counters": {"kills": {}, "boss_kills": {}, "deaths": 0, "playtime_s": 0.0},
         "settings": {"muted": False},
@@ -101,7 +106,22 @@ def _migrate(data):
         # elsewhere, so no deficit correction like the v2->3 step needed.
         data["character"]["attributes"].setdefault("lck", 10)
         data["version"] = 5
+    if data["version"] < 6:
+        data["progression"]["levels_seen"] = data["progression"].get("levels_seen", [])
+        data["version"] = 6
     return data
+
+
+def update_browser_title(player):
+    """Stage F6: browser tab title reflects who's playing, once a player
+    exists - "Dungeon Master - {Nome} - Lvl {N}". Desktop keeps the fixed
+    caption set once in main.py; same emscripten-only bridge as
+    _read_raw/_write_raw's localStorage calls above, just targeting
+    document.title instead."""
+    if sys.platform != "emscripten":
+        return
+    import js
+    js.document.title = f"Dungeon Master - {player.name or 'Heroi'} - Lvl {player.level}"
 
 
 def load():

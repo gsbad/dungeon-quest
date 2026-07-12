@@ -2,15 +2,19 @@ import math
 import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
 from game.ui import Panel, draw_text
-from game.assets import create_player_sprite
+from game.assets import create_player_sprite, create_attribute_icon, create_level_thumbnail, create_debuff_icon
 from game.professions import TINTS
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
-from game.input_system import Action
+from game.input_system import Action, HELP_ENTRIES
 from game.stats import mitigate
 from game.bestiary import (
     BESTIARY, MOB_IDS, BOSS_IDS, is_discovered, mob_sprite, mob_stats, mob_attacks,
     boss_sprite, boss_stats, boss_attacks,
 )
+from game.level import LEVEL_MAPS
+from game.weather import WEATHER_TYPES, WEATHER_DISPLAY_NAME
+
+ATLAS_ORDER = sorted(LEVEL_MAPS.keys())
 
 BESTIARY_ORDER = MOB_IDS + BOSS_IDS
 
@@ -53,7 +57,16 @@ _ATTR_LINE_H = 32
 _HINT_Y = _ATTR_START_Y + _ATTR_LINE_H * len(ATTRS) + 12
 _PANEL_H = _CONTENT_TOP + _HINT_Y + 26
 
-_TAB_ORDER = ["stats", "spells", "bestiary"]
+_TAB_ORDER = ["stats", "spells", "bestiary", "atlas", "help"]
+
+# Atlas tab (Stage F3) - a grid of level thumbnails (same shape as the
+# Bestiary grid above) over a detail panel for the selected level. 13
+# levels at 4 cols = 4 rows, one more than Bestiary's 3 rows of 12 mobs.
+_ATLAS_COLS = 4
+_ATLAS_CELL = 62
+_ATLAS_GAP = 8
+_ATLAS_GRID_Y = 10
+_ATLAS_DETAIL_Y = _ATLAS_GRID_Y + 4 * _ATLAS_CELL + 3 * _ATLAS_GAP + 20
 
 # Bestiary tab (Stage E4) - a 4x3 icon grid (exactly the 8 mobs + 4 bosses
 # in BESTIARY_ORDER) above a detail panel for whichever entry is selected.
@@ -87,16 +100,22 @@ class Paperdoll:
         self.stats_cursor = 0
         self.spell_cursor = 0
         self.bestiary_cursor = 0
+        self.atlas_cursor = 0
 
-        tab_w, tab_h, gap = 130, 28, 8
-        triple_w = tab_w * 3 + gap * 2
-        tab_x0 = self.px + (_PANEL_W - triple_w) // 2
+        # Tab bar width is derived from however many tabs _TAB_ORDER has -
+        # was hardcoded for exactly 3 (Stage E4); Stage F3/F4 added a 4th
+        # (Atlas) and 5th (Help) tab, so this now scales down tab_w instead
+        # of overflowing the fixed _PANEL_W.
+        n_tabs = len(_TAB_ORDER)
+        gap = 6
+        tab_w = min(130, (_PANEL_W - 24 - gap * (n_tabs - 1)) // n_tabs)
+        tab_h = 28
+        row_w = tab_w * n_tabs + gap * (n_tabs - 1)
+        tab_x0 = self.px + (_PANEL_W - row_w) // 2
         tab_y = self.py + 8
-        self.tab_buttons = {
-            "stats": pygame.Rect(tab_x0, tab_y, tab_w, tab_h),
-            "spells": pygame.Rect(tab_x0 + tab_w + gap, tab_y, tab_w, tab_h),
-            "bestiary": pygame.Rect(tab_x0 + 2 * (tab_w + gap), tab_y, tab_w, tab_h),
-        }
+        self.tab_buttons = {}
+        for i, tab_id in enumerate(_TAB_ORDER):
+            self.tab_buttons[tab_id] = pygame.Rect(tab_x0 + i * (tab_w + gap), tab_y, tab_w, tab_h)
 
         self.bestiary_buttons = []
         grid_w = _BESTIARY_COLS * _BESTIARY_CELL + (_BESTIARY_COLS - 1) * _BESTIARY_GAP
@@ -107,6 +126,15 @@ class Paperdoll:
             y = self.py + _CONTENT_TOP + _BESTIARY_GRID_Y + row * (_BESTIARY_CELL + _BESTIARY_GAP)
             # (self.py + _CONTENT_TOP) matches _draw_bestiary's `top` param
             self.bestiary_buttons.append(pygame.Rect(x, y, _BESTIARY_CELL, _BESTIARY_CELL))
+
+        self.atlas_buttons = []
+        atlas_grid_w = _ATLAS_COLS * _ATLAS_CELL + (_ATLAS_COLS - 1) * _ATLAS_GAP
+        atlas_grid_x0 = self.px + (_PANEL_W - atlas_grid_w) // 2
+        for i, level_num in enumerate(ATLAS_ORDER):
+            col, row = i % _ATLAS_COLS, i // _ATLAS_COLS
+            x = atlas_grid_x0 + col * (_ATLAS_CELL + _ATLAS_GAP)
+            y = self.py + _CONTENT_TOP + _ATLAS_GRID_Y + row * (_ATLAS_CELL + _ATLAS_GAP)
+            self.atlas_buttons.append(pygame.Rect(x, y, _ATLAS_CELL, _ATLAS_CELL))
 
         self.plus_buttons = {}
         self.minus_buttons = {}
@@ -156,11 +184,19 @@ class Paperdoll:
             self._handle_tap_spells(input_mgr, player)
         elif self.active_tab == "bestiary":
             self._handle_tap_bestiary(input_mgr)
+        elif self.active_tab == "atlas":
+            self._handle_tap_atlas(input_mgr)
 
     def _handle_tap_bestiary(self, input_mgr):
         for i, rect in enumerate(self.bestiary_buttons):
             if input_mgr.tapped_rect(rect):
                 self.bestiary_cursor = i
+                return
+
+    def _handle_tap_atlas(self, input_mgr):
+        for i, rect in enumerate(self.atlas_buttons):
+            if input_mgr.tapped_rect(rect):
+                self.atlas_cursor = i
                 return
 
     def _handle_tap_stats(self, input_mgr, player):
@@ -198,6 +234,8 @@ class Paperdoll:
             self._handle_keys_spells(input_mgr, player)
         elif self.active_tab == "bestiary":
             self._handle_keys_bestiary(input_mgr)
+        elif self.active_tab == "atlas":
+            self._handle_keys_atlas(input_mgr)
 
     def _handle_keys_bestiary(self, input_mgr):
         if input_mgr.consume_action(Action.MENU_LEFT):
@@ -208,6 +246,17 @@ class Paperdoll:
             self.bestiary_cursor = (self.bestiary_cursor - _BESTIARY_COLS) % len(BESTIARY_ORDER)
         if input_mgr.consume_action(Action.MENU_DOWN):
             self.bestiary_cursor = (self.bestiary_cursor + _BESTIARY_COLS) % len(BESTIARY_ORDER)
+
+    def _handle_keys_atlas(self, input_mgr):
+        n = len(ATLAS_ORDER)
+        if input_mgr.consume_action(Action.MENU_LEFT):
+            self.atlas_cursor = (self.atlas_cursor - 1) % n
+        if input_mgr.consume_action(Action.MENU_RIGHT):
+            self.atlas_cursor = (self.atlas_cursor + 1) % n
+        if input_mgr.consume_action(Action.MENU_UP):
+            self.atlas_cursor = (self.atlas_cursor - _ATLAS_COLS) % n
+        if input_mgr.consume_action(Action.MENU_DOWN):
+            self.atlas_cursor = (self.atlas_cursor + _ATLAS_COLS) % n
 
     def _handle_keys_stats(self, input_mgr, player):
         if input_mgr.consume_action(Action.MENU_UP):
@@ -247,15 +296,16 @@ class Paperdoll:
         surface.blit(glow, rect.topleft)
         pygame.draw.rect(surface, (255, 225, 120), rect, 2, border_radius=6)
 
-    def draw(self, surface, player, save_state=None):
+    def draw(self, surface, player, save_state=None, forced=False):
         overlay = pygame.Surface((SW, SH), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
         surface.blit(overlay, (0, 0))
 
         self.panel.draw(surface, (self.px, self.py))
 
-        f_tab = font(15, bold=True)
-        tab_labels = {"stats": "STATUS", "spells": "MAGIAS", "bestiary": "BESTIARIO"}
+        f_tab = font(15 if len(_TAB_ORDER) <= 3 else 11, bold=True)
+        tab_labels = {"stats": "STATUS", "spells": "MAGIAS", "bestiary": "BESTIARIO",
+                      "atlas": "ATLAS", "help": "AJUDA"}
         for tab_id, rect in self.tab_buttons.items():
             active = tab_id == self.active_tab
             pygame.draw.rect(surface, (90, 60, 140) if active else (45, 40, 60), rect, border_radius=6)
@@ -265,11 +315,15 @@ class Paperdoll:
 
         content_top = self.py + _CONTENT_TOP
         if self.active_tab == "stats":
-            self._draw_stats(surface, player, content_top)
+            self._draw_stats(surface, player, content_top, forced=forced and player.unspent_points > 0)
         elif self.active_tab == "spells":
             self._draw_spells(surface, player, content_top)
         elif self.active_tab == "bestiary":
             self._draw_bestiary(surface, player, save_state, content_top)
+        elif self.active_tab == "atlas":
+            self._draw_atlas(surface, save_state, content_top)
+        elif self.active_tab == "help":
+            self._draw_help(surface, content_top)
 
     def _draw_header(self, surface, player, top):
         cx = self.px + _PANEL_W // 2
@@ -290,7 +344,7 @@ class Paperdoll:
                   f, (230, 230, 240), header_cx, top + _LEVEL_Y)
         return cx
 
-    def _draw_stats(self, surface, player, top):
+    def _draw_stats(self, surface, player, top, forced=False):
         cx = self._draw_header(surface, player, top)
 
         f2 = font(14)
@@ -336,6 +390,8 @@ class Paperdoll:
             if i == self.stats_cursor:
                 self._draw_glow(surface, pygame.Rect(self.px + 12, y - 16, _PANEL_W - 24, 32))
             value = getattr(player.stats, attr)
+            icon = create_attribute_icon(attr)
+            surface.blit(icon, (self.px + 20, y - 8 - icon.get_height() // 2))
             draw_text(surface, f"{label}: {int(value)}", f_row, (225, 225, 235),
                       self.px + 150, y - 9, shadow=False)
 
@@ -356,8 +412,13 @@ class Paperdoll:
                       plus_rect.centerx, plus_rect.y + 3, shadow=False)
 
         f_hint = font(14)
-        draw_text(surface, "TAB troca aba | W/S seleciona | A/D distribui | C - Fechar", f_hint, SUBTEXT,
-                  cx, top + _HINT_Y)
+        if forced:
+            hint = "Voce subiu de nivel! Distribua todos os pontos para continuar"
+            hint_color = ACCENT_GOLD
+        else:
+            hint = "TAB troca aba | W/S seleciona | A/D distribui | C/ESC - Fechar"
+            hint_color = SUBTEXT
+        draw_text(surface, hint, f_hint, hint_color, cx, top + _HINT_Y)
 
     def _draw_spells(self, surface, player, top):
         self._draw_header(surface, player, top)
@@ -402,7 +463,7 @@ class Paperdoll:
             draw_text(surface, label, f_btn, (240, 240, 245), rect.centerx, rect.y + 6, shadow=False)
 
         f_hint = font(14)
-        draw_text(surface, "TAB troca aba | W/S seleciona | ESPACO seleciona magia | C - Fechar", f_hint, SUBTEXT,
+        draw_text(surface, "TAB troca aba | W/S seleciona | ESPACO seleciona magia | C/ESC - Fechar", f_hint, SUBTEXT,
                   self.px + _PANEL_W // 2, top + _SPELL_START_Y + len(SPELL_ORDER) * _SPELL_BLOCK_H + 10)
 
     def _draw_bestiary(self, surface, player, save_state, top):
@@ -464,7 +525,94 @@ class Paperdoll:
                 draw_text(surface, "- Apenas ataque corpo a corpo", f_body, (200, 175, 220), cx, y, shadow=False)
 
         f_hint = font(14)
-        draw_text(surface, "TAB troca aba | setas navegam | C - Fechar", f_hint, SUBTEXT,
+        draw_text(surface, "TAB troca aba | setas navegam | C/ESC - Fechar", f_hint, SUBTEXT,
+                  cx, self.py + _PANEL_H - 30)
+
+    def _draw_atlas(self, surface, save_state, top):
+        levels_seen = set(save_state["progression"]["levels_seen"]) if save_state else set()
+        levels_seen.add(1)  # the first level is always visible, even on a fresh save
+
+        f_key = font(20, bold=True)
+        for i, level_num in enumerate(ATLAS_ORDER):
+            rect = self.atlas_buttons[i]
+            seen = level_num in levels_seen
+            if i == self.atlas_cursor:
+                self._draw_glow(surface, rect.inflate(6, 6))
+            pygame.draw.rect(surface, (35, 30, 50), rect, border_radius=6)
+            pygame.draw.rect(surface, (200, 200, 210) if seen else (90, 90, 100), rect, 1, border_radius=6)
+            if seen:
+                thumb = create_level_thumbnail(LEVEL_MAPS[level_num]["floor"], LEVEL_MAPS[level_num]["bg"])
+                scaled = pygame.transform.scale(thumb, (rect.width - 10, rect.height - 18))
+                surface.blit(scaled, (rect.x + 5, rect.y + 5))
+                num = font(11, bold=True).render(str(level_num), True, (220, 220, 230))
+                surface.blit(num, (rect.centerx - num.get_width() // 2, rect.bottom - 14))
+            else:
+                q = f_key.render("?", True, (110, 110, 120))
+                surface.blit(q, (rect.centerx - q.get_width() // 2, rect.centery - q.get_height() // 2))
+
+        cx = self.px + _PANEL_W // 2
+        level_num = ATLAS_ORDER[self.atlas_cursor]
+        seen = level_num in levels_seen
+        data = LEVEL_MAPS[level_num]
+
+        f_name = font(19, bold=True)
+        f_body = font(14)
+        y = top + _ATLAS_DETAIL_Y
+        if not seen:
+            draw_text(surface, "???", f_name, SUBTEXT, cx, y)
+            draw_text(surface, "Alcance esta fase para revela-la no Atlas.", f_body, SUBTEXT, cx, y + 30)
+        else:
+            draw_text(surface, f"Fase {level_num}: {data['title']}", f_name, ACCENT_GOLD, cx, y)
+            y += 26
+
+            for line in self._wrap_text(data.get("description", ""), f_body, _PANEL_W - 48):
+                draw_text(surface, line, f_body, (210, 210, 225), cx, y, shadow=False)
+                y += 18
+            y += 4
+
+            mob_ids = list(dict.fromkeys(data.get("enemies", [])))
+            mob_names = ", ".join(BESTIARY[m]["name"] for m in mob_ids if m in BESTIARY)
+            boss_key = data.get("boss")
+            if boss_key and boss_key in BESTIARY:
+                mob_names = (mob_names + ", " if mob_names else "") + f"{BESTIARY[boss_key]['name']} (Chefe)"
+            draw_text(surface, f"Monstros: {mob_names or 'nenhum'}", f_body, (200, 175, 220), cx, y, shadow=False)
+            y += 20
+
+            weather_id = data.get("weather")
+            if weather_id:
+                weather_name = WEATHER_DISPLAY_NAME.get(weather_id, weather_id)
+                debuff = WEATHER_TYPES.get(weather_id, {}).get("debuff")
+                draw_text(surface, f"Clima: {weather_name}", f_body, (190, 210, 230), cx, y, shadow=False)
+                if debuff:
+                    icon = create_debuff_icon(debuff[0])
+                    icon_x = cx + f_body.size(f"Clima: {weather_name}")[0] // 2 + 8
+                    surface.blit(icon, (icon_x, y + 1))
+            else:
+                draw_text(surface, "Clima: nenhum", f_body, (190, 210, 230), cx, y, shadow=False)
+
+        f_hint = font(14)
+        draw_text(surface, "TAB troca aba | setas navegam | C/ESC - Fechar", f_hint, SUBTEXT,
+                  cx, self.py + _PANEL_H - 30)
+
+    def _draw_help(self, surface, top):
+        cx = self.px + _PANEL_W // 2
+        f_title = font(19, bold=True)
+        draw_text(surface, "ATALHOS", f_title, ACCENT_GOLD, cx, top + 6)
+
+        f_key = font(15, bold=True)
+        f_desc = font(14)
+        key_x = self.px + 24
+        desc_x = self.px + 190
+        y = top + 42
+        for key_label, description in HELP_ENTRIES:
+            draw_text(surface, key_label, f_key, ACCENT_GOLD, key_x, y, shadow=False, align="left")
+            for line in self._wrap_text(description, f_desc, self.px + _PANEL_W - 24 - desc_x):
+                draw_text(surface, line, f_desc, (210, 210, 225), desc_x, y, shadow=False, align="left")
+                y += 17
+            y += 12
+
+        f_hint = font(14)
+        draw_text(surface, "TAB troca aba | C/ESC - Fechar", f_hint, SUBTEXT,
                   cx, self.py + _PANEL_H - 30)
 
     @staticmethod

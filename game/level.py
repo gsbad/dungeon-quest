@@ -22,6 +22,7 @@ LEVEL_MAPS = {
         "floor": "grass",
         "bg": (20, 80, 20),
         "title": "Floresta Encantada",
+        "description": "Uma floresta densa envolta em neblina - o primeiro territorio disputado com esqueletos e goblins.",
         "enemies": ["skeleton", "goblin"],
         "layout": [
             "####################",
@@ -56,6 +57,7 @@ LEVEL_MAPS = {
         "floor": "sand",
         "bg": (160, 130, 60),
         "title": "Ruinas do Deserto",
+        "description": "Ruinas soterradas por uma tempestade de areia constante, com poças acidas deixadas por goblins.",
         "enemies": ["skeleton", "goblin", "goblin"],
         "layout": [
             "####################",
@@ -92,6 +94,7 @@ LEVEL_MAPS = {
         "floor": "floor",
         "bg": (30, 20, 50),
         "title": "Masmorra das Sombras",
+        "description": "Corredores de pedra sem luz do sol, onde um Cavaleiro Negro comanda uma horda de esqueletos e goblins.",
         "enemies": ["dark_knight", "skeleton", "goblin", "goblin", "goblin"],
         "layout": [
             "####################",
@@ -118,12 +121,12 @@ LEVEL_MAPS = {
         "boss": "orc_warlord",
         "next": 5,
         "victory": None,
-        "heart_spawns": True,
         "weather": "storm",
         "tileset": "boss_floor",
         "floor": "boss_floor",
         "bg": (35, 20, 10),
         "title": "Acampamento de Guerra",
+        "description": "O acampamento fortificado do Senhor da Guerra Orc, sob uma tempestade constante - final do Ato 1.",
         "enemies": [],
         "layout": [
             "####################",
@@ -156,6 +159,7 @@ LEVEL_MAPS = {
         "floor": "swamp",
         "bg": (25, 40, 25),
         "title": "Pantano Sombrio",
+        "description": "Um pantano encharcado pela chuva, lar de trolls venenosos que se escondem entre goblins e esqueletos.",
         "enemies": ["swamp_troll", "goblin", "swamp_troll", "skeleton"],
         "layout": [
             "####################",
@@ -188,6 +192,7 @@ LEVEL_MAPS = {
         "floor": "floor",
         "bg": (25, 15, 40),
         "title": "Torre Amaldicoada",
+        "description": "Uma torre castigada por tempestades, onde magos amaldicoados lançam feitiços de longe.",
         "enemies": ["cursed_mage", "skeleton", "cursed_mage", "dark_knight"],
         "layout": [
             "####################",
@@ -220,6 +225,7 @@ LEVEL_MAPS = {
         "floor": "floor",
         "bg": (20, 20, 30),
         "title": "Cripta Perdida",
+        "description": "Uma cripta esquecida na escuridao, assombrada por espectros gelados que vagam entre as sombras.",
         "enemies": ["crypt_wraith", "skeleton", "crypt_wraith", "cursed_mage", "skeleton"],
         "layout": [
             "####################",
@@ -246,12 +252,12 @@ LEVEL_MAPS = {
         "boss": "necromancer",
         "next": 9,
         "victory": None,
-        "heart_spawns": True,
         "weather": "gloom",
         "tileset": "boss_floor",
         "floor": "boss_floor",
         "bg": (10, 30, 20),
         "title": "Cripta do Necromante",
+        "description": "O santuario sombrio do Necromante, que invoca mortos-vivos sob uma escuridao permanente - final do Ato 2.",
         "enemies": [],
         "layout": [
             "####################",
@@ -284,6 +290,7 @@ LEVEL_MAPS = {
         "floor": "floor",
         "bg": (30, 30, 45),
         "title": "Salao dos Ecos",
+        "description": "Um salao gelado onde a neve cai sem parar, ecoando os passos de espectros e magos amaldicoados.",
         "enemies": ["crypt_wraith", "cursed_mage", "skeleton", "crypt_wraith", "dark_knight"],
         "layout": [
             "####################",
@@ -316,6 +323,7 @@ LEVEL_MAPS = {
         "floor": "lava",
         "bg": (90, 35, 15),
         "title": "Abismo de Cinzas",
+        "description": "Um abismo vulcanico sob chuva de cinzas, onde demonios de fogo cospem chamas a distancia.",
         "enemies": ["ash_fiend", "dark_knight", "ash_fiend", "skeleton", "ash_fiend"],
         "layout": [
             "####################",
@@ -348,6 +356,7 @@ LEVEL_MAPS = {
         "floor": "boss_floor",
         "bg": (20, 10, 25),
         "title": "Corredor Final",
+        "description": "O ultimo corredor antes do trono, guardado pela Guarda Real sob uma neblina densa.",
         "enemies": ["royal_guard", "dark_knight", "royal_guard", "cursed_mage", "royal_guard"],
         "layout": [
             "####################",
@@ -374,12 +383,12 @@ LEVEL_MAPS = {
         "boss": "shadow_king",
         "next": None,
         "victory": "victory",
-        "heart_spawns": True,
         "weather": "storm",
         "tileset": "boss_floor",
         "floor": "boss_floor",
         "bg": (15, 5, 30),
         "title": "Trono das Trevas",
+        "description": "O trono do Rei das Sombras, envolto em tempestade eterna - o confronto final do Ato 3.",
         "enemies": [],
         "layout": [
             "####################",
@@ -411,6 +420,7 @@ LEVEL_MAPS = {
         "floor": "lava",
         "bg": (120, 40, 10),
         "title": "Fase Secreta: INFERNO",
+        "description": "Um campo de cinzas escondido, guardado por um Cacodemon vindo de outro mundo.",
         "enemies": [],
         "layout": [
             "####################",
@@ -519,7 +529,8 @@ class Level:
                     spawn_col, spawn_row = self._find_enemy_spawn(col_i, row_i)
                     spawn_x = spawn_col * TILE
                     spawn_y = spawn_row * TILE
-                    self.enemies.append(Enemy(spawn_x + 8, spawn_y + 8, etype, speed_multiplier=speed_mul, ml=monster_level))
+                    self.enemies.append(Enemy(spawn_x + 8, spawn_y + 8, etype, speed_multiplier=speed_mul,
+                                               ml=monster_level, level_num=self.level_num))
                     self._used_enemy_tiles.add((spawn_col, spawn_row))
 
         if self.data["exit"]:

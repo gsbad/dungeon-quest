@@ -12,10 +12,10 @@ from game.paperdoll import Paperdoll
 from game.merchant import ItemsOverlay
 from game.debug_panel import DebugPanel
 from game.weather import WeatherSystem
-from game.assets import create_heart_sprite, create_logo_sprite, create_victory_hero_sprite
+from game.assets import create_heart_sprite, create_mana_orb_sprite, create_logo_sprite, create_victory_hero_sprite
 from game.input_system import Action, FullscreenButton
 from game.audio import SoundButton
-from game.stats import POINTS_PER_LEVEL
+from game.stats import POINTS_PER_LEVEL, MAX_LEVEL
 from game.spells import SPELLS, ORDER as SPELL_ORDER
 from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER, next_difficulty, is_unlocked
 from game.affixes import AFFIXES
@@ -23,7 +23,7 @@ from game.theme import (
     SW, SH, font, BG_MENU, BG_GAME_OVER, BG_VICTORY, TITLE_MENU, TITLE_PAUSE,
     ACCENT_GOLD, SELECTED, UNSELECTED, SUBTEXT, PANEL_FILL, PANEL_BORDER,
 )
-from game.ui import draw_text, TextButton, Panel
+from game.ui import draw_text, TextButton, Panel, ProgressBar
 
 # Maps a level's "boss" key (LEVEL_MAPS) to (BossClass, spawn_dx_from_center, spawn_y).
 # Data-driven so new levels/bosses only need a registry entry + LEVEL_MAPS metadata,
@@ -69,11 +69,17 @@ class Star:
         surface.blit(s, (int(self.x), int(self.y)))
 
 
-class HeartPickup:
-    def __init__(self, x, y, sprite):
+class Pickup:
+    """A heart or mana-orb dropped on the ground (Stage F8 generalized the
+    old heart-only HeartPickup to also cover mana, same bob-animation and
+    lifecycle for both - only `kind` differs, read by
+    GameplayState._check_pickup_pickups() to decide what it heals)."""
+
+    def __init__(self, x, y, sprite, kind):
         self.x = float(x)
         self.y = float(y)
         self.sprite = sprite
+        self.kind = kind
         self.rect = pygame.Rect(self.x, self.y, sprite.get_width(), sprite.get_height())
         self._bob = random.uniform(0, math.pi * 2)
         self.offset = 0
@@ -430,6 +436,58 @@ class NameEntryState:
         draw_text(self.screen, "ENTER / toque em Confirmar", f_hint, SUBTEXT, SW // 2, SH - 30)
 
 
+# ─── Stage Complete ─────────────────────────────────────────────────────────
+class StageCompleteState:
+    """Stage F9: shown once a regular (non-final-boss) level's exit fires,
+    before the existing level-name TransitionState - "next:N" on confirm
+    re-enters GameStateManager._transition exactly like the old direct
+    TransitionState path did, so no other transition logic needs to change."""
+
+    def __init__(self, screen, input_mgr, audio_mgr, level_num, next_level,
+                 xp_gained, gold_gained, player):
+        self.screen = screen
+        self.input = input_mgr
+        self.audio = audio_mgr
+        self.level_num = level_num
+        self.next_level = next_level
+        self.xp_gained = xp_gained
+        self.gold_gained = gold_gained
+        self.player = player
+        self.continue_button = TextButton("[ ENTER ] - Continuar", SW // 2, SH - 90)
+        self._xp_bar = ProgressBar(320, 14, (40, 40, 40), (140, 140, 140), border_width=2)
+
+    def handle_event(self, event):
+        if self.input.consume_action(Action.CONFIRM):
+            self.audio.play("menu_select")
+            return f"next:{self.next_level}"
+        if self.input.tapped_rect(self.continue_button.rect):
+            self.audio.play("menu_select")
+            return f"next:{self.next_level}"
+        return None
+
+    def update(self, dt):
+        pass
+
+    def draw(self):
+        self.screen.fill((10, 12, 22))
+
+        f1 = font(40, bold=True)
+        draw_text(self.screen, f"Fase {self.level_num} concluida!", f1, ACCENT_GOLD, SW // 2, 110)
+
+        f2 = font(20)
+        draw_text(self.screen, f"+{self.xp_gained} XP", f2, (200, 220, 255), SW // 2, 200)
+        draw_text(self.screen, f"+{self.gold_gained} ouro", f2, (230, 200, 80), SW // 2, 232)
+
+        bar_x = SW // 2 - self._xp_bar.w // 2
+        self._xp_bar.draw(self.screen, bar_x, 280, self.player.xp_frac, ACCENT_GOLD)
+        f3 = font(15)
+        lvl_label = "Nivel maximo!" if self.player.level >= MAX_LEVEL else f"Nivel {self.player.level}"
+        draw_text(self.screen, lvl_label, f3, SUBTEXT, SW // 2, 302)
+
+        f4 = font(18, bold=True)
+        self.continue_button.draw(self.screen, f4, (220, 220, 235))
+
+
 # ─── Transition ───────────────────────────────────────────────────────────────
 class TransitionState:
     def __init__(self, screen, next_level, player):
@@ -484,6 +542,11 @@ class GameplayState:
         self.level = Level(level_num, extra_speed_mult=hastened_mult, ml_bonus=self.difficulty["ml_bonus"])
         self.camera = Camera(SW, SH, self.level.width, self.level.height)
 
+        # Stage F3 (Atlas tab): record this level as seen, permanently -
+        # separate from highest_level_cleared, which regresses on death.
+        if save_state is not None and level_num not in save_state["progression"]["levels_seen"]:
+            save_state["progression"]["levels_seen"].append(level_num)
+
         if player is None:
             sx, sy = self.level.get_player_start()
             self.player = Player(sx, sy, audio_mgr)
@@ -507,9 +570,12 @@ class GameplayState:
 
         # Boss, driven by the level's metadata (LEVEL_MAPS[level_num]["boss"])
         self.boss = None
-        self.hearts = []
-        self.heart_sprite = create_heart_sprite(True)
-        self.heart_spawn_timer = random.uniform(8.0, 14.0)
+        # Stage F8: hearts used to be boss-level-only (gated by
+        # LEVEL_MAPS' now-removed "heart_spawns" flag); a mana orb (rarer)
+        # was added alongside it, and both now spawn on every combat level.
+        self.pickups = []
+        self._pickup_sprites = {"heart": create_heart_sprite(True), "mana": create_mana_orb_sprite()}
+        self.pickup_spawn_timer = random.uniform(8.0, 14.0)
         boss_key = self.level.data.get("boss")
         if boss_key:
             boss_factory, spawn_dx, spawn_y = BOSS_REGISTRY[boss_key]
@@ -539,6 +605,11 @@ class GameplayState:
 
         self.paperdoll = Paperdoll()
         self.paperdoll_open = False
+        # Stage F2: level-up opens the Paperdoll's stats tab automatically
+        # and, while this is True, ESC/C can't close it until every point is
+        # spent - otherwise the toast was too easy to miss and points sat
+        # unspent for the rest of the run.
+        self.level_up_forced = False
         self.items = ItemsOverlay()
         self.items_open = False
         self.debug_panel = DebugPanel()
@@ -584,6 +655,17 @@ class GameplayState:
         # regular enemies or a boss depending on which fight this level is.
         self.player_projectiles = []
 
+        # Stage F6 - only re-touch the browser tab title (and only import
+        # `js`) when name/level actually changed, not every frame.
+        self._last_title_key = None
+
+        # Stage F9 - snapshot for the stage-complete screen's "XP ganho" /
+        # "+N ouro" figures, diffed against the player's running totals when
+        # this level's exit fires (see GameStateManager._transition's
+        # "next:" branch).
+        self._xp_at_level_start = self.player.xp_earned_total
+        self._gold_at_level_start = self.player.gold
+
     def handle_event(self, event):
         # Dev/test shortcuts (Stage B4 follow-up): jump forward/back one
         # level directly, bypassing bosses/exits - lets every one of the 13
@@ -595,18 +677,35 @@ class GameplayState:
         if self.input.consume_action(Action.DEV_PREV_LEVEL):
             self._dev_jump(-1)
 
+        # A forced level-up (see the pending_level_up handling in update())
+        # can't be dismissed by either key until every point is spent.
+        paperdoll_locked = self.level_up_forced and self.player.unspent_points > 0
         if self.input.consume_action(Action.PAPERDOLL):
-            if not self.paused and not self.items_open and not self.debug_panel_open:
-                self.paperdoll_open = not self.paperdoll_open
+            if self.paperdoll_open:
+                if not paperdoll_locked:
+                    self.paperdoll_open = False
+                    self.level_up_forced = False
+            elif not self.paused and not self.items_open and not self.debug_panel_open:
+                self.paperdoll_open = True
         if self.input.consume_action(Action.ITEMS):
-            if not self.paused and not self.paperdoll_open and not self.debug_panel_open:
-                self.items_open = not self.items_open
+            if self.items_open:
+                self.items_open = False
+            elif not self.paused and not self.paperdoll_open and not self.debug_panel_open:
+                self.items_open = True
         if self.input.consume_action(Action.DEBUG_PANEL):
             if not self.paused and not self.paperdoll_open and not self.items_open:
                 self.debug_panel_open = not self.debug_panel_open
                 if not self.debug_panel_open and self.debug_panel.consume_difficulty_dirty():
                     self._dev_jump(0)
         if self.paperdoll_open or self.items_open or self.debug_panel_open:
+            # Stage F2: ESC also closes whichever menu is open, same as
+            # pressing the key that opened it, instead of only pausing.
+            if self.input.consume_action(Action.PAUSE):
+                if self.paperdoll_open and not paperdoll_locked:
+                    self.paperdoll_open = False
+                    self.level_up_forced = False
+                elif self.items_open:
+                    self.items_open = False
             return
         if self.input.consume_action(Action.PAUSE):
             self.paused = not self.paused
@@ -698,6 +797,13 @@ class GameplayState:
 
     def update(self, dt):
         self.weather.update(dt)  # ambient - keeps animating through pause/overlays
+
+        title_key = (self.player.name, self.player.level)
+        if title_key != self._last_title_key:
+            self._last_title_key = title_key
+            import game.save as save
+            save.update_browser_title(self.player)
+
         if self.paperdoll_open:
             self.paperdoll.handle_tap(self.input, self.player, self.save_state)
             self.paperdoll.handle_keys(self.input, self.player, self.save_state)
@@ -740,9 +846,8 @@ class GameplayState:
         hp_before = self.player.hp
         self.player.update(dt, self.level.walls, self.input.movement_vector())
 
-        if self.level.data.get("heart_spawns"):
-            self._update_heart_spawns(dt)
-            self._check_heart_pickups()
+        self._update_pickup_spawns(dt)
+        self._check_pickup_pickups()
 
         boss_was_alive = self.boss.alive if self.boss else False
 
@@ -833,6 +938,14 @@ class GameplayState:
             save.sync_character(self.save_state, self.player)
             save.sync_economy(self.save_state, self.player)
             save.save(self.save_state)
+        if self.player.pending_level_up > 0:
+            # Stage F2: open the stats tab immediately and lock it until the
+            # new points are spent, instead of relying on the toast alone.
+            self.paperdoll_open = True
+            self.paperdoll.active_tab = "stats"
+            self.level_up_forced = True
+            self.items_open = False
+            self.debug_panel_open = False
         while self.player.pending_level_up > 0:
             self.player.pending_level_up -= 1
             self.msg_timer = 2.5
@@ -867,8 +980,8 @@ class GameplayState:
 
         self.level.draw(self.screen, cx, cy, SW, SH)
 
-        for heart in self.hearts:
-            heart.draw(self.screen, cx, cy)
+        for pickup in self.pickups:
+            pickup.draw(self.screen, cx, cy)
 
         if self.boss:
             self.boss.draw(self.screen, cx, cy)
@@ -888,7 +1001,7 @@ class GameplayState:
         self.weather.draw(self.screen)
 
         # HUD
-        self.player.draw_hud(self.screen)
+        self.player.draw_hud(self.screen, self.save_state)
         self.level.draw_hud_info(self.screen)
 
         # Difficulty tag + active level affixes (Stage B5) - just above the
@@ -926,7 +1039,7 @@ class GameplayState:
 
         # Paperdoll overlay
         if self.paperdoll_open:
-            self.paperdoll.draw(self.screen, self.player, self.save_state)
+            self.paperdoll.draw(self.screen, self.player, self.save_state, forced=self.level_up_forced)
 
         # Itens overlay
         if self.items_open:
@@ -939,43 +1052,54 @@ class GameplayState:
         if self.input.touch_active:
             self.input.draw(self.screen)
 
-    def _spawn_heart(self):
+    def _spawn_pickup(self, kind):
+        sprite = self._pickup_sprites[kind]
         attempts = 0
         while attempts < 50:
             attempts += 1
             margin = 48
-            x = random.randint(margin, self.level.width - margin - self.heart_sprite.get_width())
-            y = random.randint(margin, self.level.height - margin - self.heart_sprite.get_height())
-            candidate = pygame.Rect(x, y, self.heart_sprite.get_width(), self.heart_sprite.get_height())
+            x = random.randint(margin, self.level.width - margin - sprite.get_width())
+            y = random.randint(margin, self.level.height - margin - sprite.get_height())
+            candidate = pygame.Rect(x, y, sprite.get_width(), sprite.get_height())
             if any(candidate.colliderect(w) for w in self.level.walls):
                 continue
             if self.boss and candidate.colliderect(self.boss.rect):
                 continue
             if candidate.colliderect(self.player.rect):
                 continue
-            self.hearts.append(HeartPickup(x, y, self.heart_sprite))
+            self.pickups.append(Pickup(x, y, sprite, kind))
             return
 
-    def _update_heart_spawns(self, dt):
+    def _update_pickup_spawns(self, dt):
         if self.boss and not self.boss.alive:
             return
-        if self.hearts:
-            for heart in self.hearts:
-                heart.update(dt)
+        if self.pickups:
+            for pickup in self.pickups:
+                pickup.update(dt)
             return
-        self.heart_spawn_timer -= dt
-        if self.heart_spawn_timer <= 0:
-            self.heart_spawn_timer = random.uniform(8.0, 14.0)
-            self._spawn_heart()
+        self.pickup_spawn_timer -= dt
+        if self.pickup_spawn_timer <= 0:
+            self.pickup_spawn_timer = random.uniform(8.0, 14.0)
+            # Mana is rarer than hearts (Stage F8) - a single weighted roll
+            # per spawn, same "only one pickup on the ground at a time"
+            # rule as before, just now covering both kinds together.
+            kind = "mana" if random.random() < 0.3 else "heart"
+            self._spawn_pickup(kind)
 
-    def _check_heart_pickups(self):
-        for heart in self.hearts[:]:
-            if self.player.rect.colliderect(heart.rect):
-                # Same ~1/6-of-max_hp heal as before, rescaled to the bigger
-                # hp range from game/stats.py (Stage A3).
-                heal = round(self.player.max_hp / 6)
-                self.player.hp = min(self.player.max_hp, self.player.hp + heal)
-                self.hearts.remove(heart)
+    def _check_pickup_pickups(self):
+        for pickup in self.pickups[:]:
+            if self.player.rect.colliderect(pickup.rect):
+                if pickup.kind == "heart":
+                    # Same ~1/6-of-max_hp heal as before, rescaled to the
+                    # bigger hp range from game/stats.py (Stage A3).
+                    heal = round(self.player.max_hp / 6)
+                    self.player.hp = min(self.player.max_hp, self.player.hp + heal)
+                else:
+                    # Smaller fraction than mana_potion's 0.6 (game/items.py)
+                    # since this one is free and drops on a timer.
+                    mana = round(self.player.max_mana * 0.25)
+                    self.player.mana = min(self.player.max_mana, self.player.mana + mana)
+                self.pickups.remove(pickup)
                 self.audio.play("pickup")
 
 
@@ -1399,4 +1523,18 @@ class GameStateManager:
             self.state = SecretVictoryState(self.screen, self.input, self.audio)
         elif result and result.startswith("next:"):
             next_lvl = int(result.split(":")[1])
-            self.state = TransitionState(self.screen, next_lvl, self.player)
+            if isinstance(self.state, GameplayState):
+                # Stage F9: a real level exit shows the stage-complete
+                # summary first; its own "Continuar" re-enters this same
+                # branch with self.state now being that StageCompleteState,
+                # which falls through to the plain TransitionState below -
+                # same one-screen-per-transition path dev level-skips
+                # (M/N keys) also go through, unmodified.
+                finished = self.state
+                xp_gained = self.player.xp_earned_total - finished._xp_at_level_start
+                gold_gained = self.player.gold - finished._gold_at_level_start
+                self.state = StageCompleteState(self.screen, self.input, self.audio,
+                                                 finished.level_num, next_lvl,
+                                                 xp_gained, gold_gained, self.player)
+            else:
+                self.state = TransitionState(self.screen, next_lvl, self.player)

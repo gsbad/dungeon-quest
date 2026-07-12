@@ -1,6 +1,9 @@
 import pygame
 import math
-from game.assets import create_player_sprite, create_projectile_sprite
+from game.assets import (
+    create_player_sprite, create_projectile_sprite,
+    create_spell_icon, create_potion_icon, create_debuff_icon,
+)
 from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL, mitigate
 from game.status_effects import StatusEffectCarrier
 from game.professions import determine_profession, TINTS
@@ -9,18 +12,16 @@ from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missin
 TILE = 48
 
 # Stage E2/E3 hotbar - 3 spell slots (keys 1/2/3, already cast this way)
-# plus 3 item slots (keys 4/5/6, new). Flat-color + abbreviation icons,
-# consistent with this game's existing minimalist pixel-art style rather
-# than adding new detailed sprite art for 6 more small icons.
+# plus 3 item slots (keys 4/5/6, new). Slot background tint + a real pixel
+# icon (Stage F1, game/assets.py's create_spell_icon/create_potion_icon) -
+# used to be flat-color boxes + a 2-3 letter abbreviation.
 _HOTBAR_SLOT = 36
 _HOTBAR_GAP = 6
 # Below the top-center "Inimigos: N" / exit-hint text (game/level.py draws
 # it at y=12) - the hotbar used to sit right on top of it.
 _HOTBAR_Y = 34
 _HOTBAR_KEYS = ["1", "2", "3", "4", "5", "6"]
-_SPELL_ABBR = {"fireball": "BF", "frost_nova": "NG", "healing_light": "LC"}
 _SPELL_COLOR = {"fireball": (255, 120, 20), "frost_nova": (90, 180, 255), "healing_light": (255, 235, 190)}
-_ITEM_ABBR = {"health_potion": "VID", "mana_potion": "MAN", "antidote": "ANT"}
 _ITEM_COLOR = {"health_potion": (200, 60, 60), "mana_potion": (60, 100, 210), "antidote": (70, 180, 90)}
 
 
@@ -78,6 +79,11 @@ class Player:
         # reads and clears it each frame to trigger the fanfare (it owns the
         # camera/particles gain_xp() has no access to).
         self.pending_level_up = 0
+        # Stage F9: raw XP earned, never reset by a level-up (unlike
+        # self.xp, which rolls back over on every level-up threshold) - lets
+        # GameplayState snapshot this at level start and diff it at level
+        # end for the stage-complete screen's "XP ganho" figure.
+        self.xp_earned_total = 0
 
         self.attacking = False
         self.attack_timer = 0
@@ -141,6 +147,7 @@ class Player:
         if self.level >= MAX_LEVEL:
             return
         self.xp += amount
+        self.xp_earned_total += amount
         while self.level < MAX_LEVEL and self.xp >= xp_to_next(self.level):
             self.xp -= xp_to_next(self.level)
             self.level += 1
@@ -327,7 +334,7 @@ class Player:
             slash_surf.fill((255, 255, 200, 80))
             surface.blit(slash_surf, (ar.x - cam_x, ar.y - cam_y))
 
-    def draw_hud(self, surface):
+    def draw_hud(self, surface, save_state=None):
         # HP/mana/XP bars - stats.py's bigger hp range (see Stage A3) no
         # longer maps cleanly onto discrete heart icons, so it's bars like
         # bosses already use.
@@ -338,29 +345,44 @@ class Player:
             self._mana_bar = ProgressBar(160, 10, (0, 0, 50), (180, 180, 220), border_width=2)
             self._xp_bar = ProgressBar(160, 6, (40, 40, 40), (140, 140, 140), border_width=1)
 
+        # Stage F5: name - profession - reputation, above the bars. Pushes
+        # the whole dock down 14px to make room instead of overlapping it.
+        self._draw_title_line(surface, save_state)
+        dock_y = 26
+
         hp_frac = max(0.0, self.hp / self.max_hp)
-        self._hp_bar.draw(surface, 12, 12, hp_frac, (220, 40, 40))
+        self._hp_bar.draw(surface, 12, dock_y, hp_frac, (220, 40, 40))
 
         mana_frac = max(0.0, self.mana / self.max_mana)
-        self._mana_bar.draw(surface, 12, 32, mana_frac, (60, 110, 230))
+        self._mana_bar.draw(surface, 12, dock_y + 20, mana_frac, (60, 110, 230))
 
-        self._xp_bar.draw(surface, 12, 46, self.xp_frac, ACCENT_GOLD)
+        self._xp_bar.draw(surface, 12, dock_y + 34, self.xp_frac, ACCENT_GOLD)
 
         f = font(16, bold=True)
         lvl_txt = f.render(f"Lv {self.level}", True, ACCENT_GOLD)
-        surface.blit(lvl_txt, (178, 12))
+        surface.blit(lvl_txt, (178, dock_y))
 
         gold_txt = f.render(f"{self.gold}g", True, (230, 200, 80))
-        surface.blit(gold_txt, (178, 32))
+        surface.blit(gold_txt, (178, dock_y + 20))
 
-        self._draw_status_chips(surface)
+        self._draw_status_chips(surface, dock_y + 46)
         self._draw_hotbar(surface)
+
+    def _draw_title_line(self, surface, save_state):
+        from game.theme import font
+        from game.reputation import determine_reputation, kills_total, deaths_total
+        reputation = determine_reputation(kills_total(self, save_state), deaths_total(save_state))
+        text = f"{self.name or 'Heroi'} - {self.profession} - {reputation}"
+        f = font(12, bold=True)
+        txt_surf = f.render(text, True, (225, 220, 210))
+        shadow = f.render(text, True, (0, 0, 0))
+        surface.blit(shadow, (13, 1))
+        surface.blit(txt_surf, (12, 0))
 
     def _draw_hotbar(self, surface):
         from game.theme import font, ACCENT_GOLD
         from game.items import ITEMS
         f_key = font(11, bold=True)
-        f_icon = font(12, bold=True)
         f_count = font(11, bold=True)
         for i, (kind, key, rect) in enumerate(hotbar_slots()):
             if kind == "spell":
@@ -369,13 +391,13 @@ class Player:
                 affordable = self.mana >= SPELLS[key]["mana_cost"]
                 usable = not locked and not on_cooldown and affordable
                 color = _SPELL_COLOR[key]
-                abbr = _SPELL_ABBR[key]
+                icon = create_spell_icon(key)
                 selected = self.selected_spell == key
             else:
                 count = self.inventory.get(key, 0)
                 usable = count > 0
                 color = _ITEM_COLOR[key]
-                abbr = _ITEM_ABBR[key]
+                icon = create_potion_icon(key)
                 selected = False
 
             box_color = color if usable else tuple(c // 3 for c in color)
@@ -384,10 +406,13 @@ class Player:
             if selected:
                 pygame.draw.rect(surface, ACCENT_GOLD, rect.inflate(4, 4), 2, border_radius=8)
 
-            icon_color = (20, 20, 25) if usable else (150, 150, 155)
-            icon_surf = f_icon.render(abbr, True, icon_color)
-            surface.blit(icon_surf, (rect.centerx - icon_surf.get_width() // 2,
-                                      rect.centery - icon_surf.get_height() // 2))
+            icon_x = rect.centerx - icon.get_width() // 2
+            icon_y = rect.centery - icon.get_height() // 2
+            surface.blit(icon, (icon_x, icon_y))
+            if not usable:
+                dim = pygame.Surface(icon.get_size(), pygame.SRCALPHA)
+                dim.fill((0, 0, 0, 130))
+                surface.blit(dim, (icon_x, icon_y))
 
             key_surf = f_key.render(_HOTBAR_KEYS[i], True, (255, 255, 255))
             key_bg = pygame.Rect(rect.x - 2, rect.y - 2, key_surf.get_width() + 4, key_surf.get_height() + 2)
@@ -408,23 +433,21 @@ class Player:
                 pygame.draw.rect(surface, (20, 20, 30), cbg, border_radius=3)
                 surface.blit(count_surf, (cbg.x + 2, cbg.y + 1))
 
-    def _draw_status_chips(self, surface):
+    def _draw_status_chips(self, surface, y=58):
         # Debuff indicator row, below the HP/mana/XP dock - not optional
         # polish: Poison/Slow/Weakness last ~12s each and have no other
         # on-screen cue, so without this the player has no way to tell
         # why they're sluggish or bleeding hp.
         from game.status_effects import STATUS_DISPLAY
-        from game.theme import font
         if not self.status.active:
             return
-        f = font(13, bold=True)
         x = 12
         for effect_id in self.status.active:
-            label, color = STATUS_DISPLAY.get(effect_id, (effect_id[:3].upper(), (200, 200, 200)))
+            _, color = STATUS_DISPLAY.get(effect_id, (effect_id[:3].upper(), (200, 200, 200)))
             chip = pygame.Surface((36, 18), pygame.SRCALPHA)
             chip.fill((*color, 70))
             pygame.draw.rect(chip, color, (0, 0, 36, 18), 1)
-            surface.blit(chip, (x, 58))
-            txt = f.render(label, True, color)
-            surface.blit(txt, (x + 18 - txt.get_width() // 2, 58 + 2))
+            surface.blit(chip, (x, y))
+            icon = create_debuff_icon(effect_id)
+            surface.blit(icon, (x + 18 - icon.get_width() // 2, y + 9 - icon.get_height() // 2))
             x += 40

@@ -147,23 +147,41 @@ class Puddle:
 #   "puddles": True - spawns goblin-style damage-over-time floor hazards
 #     while chasing the player (game/level.py applies them, dtype=magic).
 ENEMY_FLAVOR = {
-    "skeleton":    {"atk_cd": 1.0, "color": (230,230,230)},
-    "goblin":      {"atk_cd": 0.8, "color": (80,180,80), "puddles": True},
+    # Stage F7 - every archetype gets a "ranged" entry now (previously only
+    # dark_knight/cursed_mage/ash_fiend did); Enemy only actually fires it
+    # once self.level_num >= 3 (see the ranged-attack branch in update()
+    # below), so levels 1-2 still play exactly as before even though
+    # skeleton/goblin keep spawning there.
+    "skeleton":    {"atk_cd": 1.0, "color": (230,230,230),
+                     "ranged": {"color": (220,220,210), "status_effect": None,
+                                "status_chance": 0.0, "speed": 210}},
+    "goblin":      {"atk_cd": 0.8, "color": (80,180,80), "puddles": True,
+                     "ranged": {"color": (180,220,120), "status_effect": None,
+                                "status_chance": 0.0, "speed": 230}},
     "dark_knight": {"atk_cd": 1.2, "color": (40,40,60),
                      "ranged": {"color": (180,100,255), "status_effect": "weakness",
                                 "status_chance": 0.15, "speed": 220}},
     # Stage D6 - one new archetype per new stage (game/level.py's LEVEL_MAPS).
     "swamp_troll":  {"atk_cd": 1.3, "color": (90,110,60), "puddles": True,
-                      "melee_status": ("poison", 0.20)},
+                      "melee_status": ("poison", 0.20),
+                      "ranged": {"color": (110,180,70), "status_effect": "poison",
+                                 "status_chance": 0.20, "speed": 190}},
     "cursed_mage":  {"atk_cd": 1.4, "color": (70,50,110),
                       "ranged": {"color": (120,180,255), "status_effect": "slow",
                                  "status_chance": 0.20, "speed": 200}},
     "crypt_wraith": {"atk_cd": 0.7, "color": (180,200,220),
-                      "melee_status": ("chill", 0.15)},
+                      "melee_status": ("chill", 0.15),
+                      "ranged": {"color": (150,210,255), "status_effect": "chill",
+                                 "status_chance": 0.15, "speed": 230}},
     "ash_fiend":    {"atk_cd": 1.1, "color": (120,50,40),
                       "ranged": {"color": (255,120,40), "status_effect": "burn",
                                  "status_chance": 0.25, "speed": 240}},
-    "royal_guard":  {"atk_cd": 1.0, "color": (90,75,30)},
+    # First archetype with luck>0 (crit) - its ranged attack is a plain,
+    # harder-hitting shot rather than a debuff, matching its "elite guard"
+    # role instead of a caster's.
+    "royal_guard":  {"atk_cd": 1.0, "color": (90,75,30),
+                      "ranged": {"color": (255,225,140), "status_effect": None,
+                                 "status_chance": 0.0, "speed": 250}},
 }
 
 # BASE_XP/GOLD_DROPS live in game/stats.py now (Stage B1) - re-exported here
@@ -214,11 +232,16 @@ class GoldDrop:
 
 
 class Enemy:
-    def __init__(self, x, y, etype="skeleton", speed_multiplier=1.0, ml=1):
+    def __init__(self, x, y, etype="skeleton", speed_multiplier=1.0, ml=1, level_num=1):
         self.x = float(x)
         self.y = float(y)
         self.etype = etype
         self.ml = ml
+        # Stage F7: which stage this mob spawned in - gates flavor["ranged"]
+        # below (level_num >= 3), independent of `ml` (monster level, which
+        # already diverges per difficulty tier and isn't 1:1 with the stage
+        # number a player would recognize as "fase 3").
+        self.level_num = level_num
         self.width = 32
         self.height = 36
 
@@ -357,7 +380,8 @@ class Enemy:
                 self._resolve_y(walls, dy)
 
             # Ranged attack (flavor["ranged"]) when not too close
-            if self.flavor.get("ranged") and self.attack_cooldown <= 0 and dist > self.attack_range and dist < self.aggro_range:
+            if (self.flavor.get("ranged") and self.level_num >= 3
+                    and self.attack_cooldown <= 0 and dist > self.attack_range and dist < self.aggro_range):
                 self._shoot_at_player(player)
                 self.attack_cooldown = self.attack_cd_max
             elif self.attack_cooldown <= 0 and dist < self.attack_range:

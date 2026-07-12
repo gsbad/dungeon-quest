@@ -33,6 +33,28 @@ class Action(Enum):
     DEBUG_PANEL = auto()
 
 
+# Stage F4 - Help tab content. Single source of truth for player-facing
+# keybindings, derived straight from feed()'s KEYDOWN branch above (the
+# main menu's old "controles" box had drifted out of sync with the real
+# key list - this is read by game/paperdoll.py's Help tab instead of
+# duplicating the list there). Debug-only keys (M/N level skip, F1 debug
+# panel) are intentionally left out - they're testing tools, not player
+# controls. Add a new keybinding here when adding one above to keep the
+# Help tab expansible without any layout change.
+HELP_ENTRIES = [
+    ("WASD / Setas", "Mover o personagem"),
+    ("ESPACO", "Atacar corpo a corpo"),
+    ("1 / 2 / 3", "Conjurar magia (slots do hotbar)"),
+    ("4 / 5 / 6", "Usar item (slots do hotbar)"),
+    ("C", "Abrir/fechar o menu Personagem"),
+    ("I", "Abrir/fechar o menu Itens"),
+    ("TAB", "Trocar de aba dentro de um menu"),
+    ("ESC", "Pausar o jogo / fechar o menu aberto"),
+    ("R", "Reiniciar (na tela de pausa ou de morte)"),
+    ("Toque no icone (tela)", "Tela cheia e Mudo - apenas mouse/toque, sem tecla"),
+]
+
+
 class VirtualJoystick:
     """Draggable analog base+knob. Tracks whichever pointer id pressed inside it."""
 

@@ -178,7 +178,11 @@ function show_infobox() {
 
 </script>
 
-    <title>{{cookiecutter.title}}</title>
+    <!-- CUSTOM: {{cookiecutter.title}} defaults to the project folder name
+    (pygbag has no config file here to override it), which isn't the game's
+    name - hardcoded instead. game/save.py's browser-tab title update
+    (Stage F6) overwrites this once a player is loaded in-game. -->
+    <title>Dungeon Quest</title>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <!-- CUSTOM: the dev server sends no Cache-Control header, so a plain
@@ -459,17 +463,11 @@ frameborder="1"
     // repeatedly for a few seconds after load to win against any late
     // resize call from pygbag's own runtime.
     (function() {
-        // DIAGNOSTIC: if the browser tab title doesn't change to this,
-        // either the page is cached (old template) or a JS error earlier
-        // on the page stopped execution before reaching here.
-        document.title = "FITCANVAS-LOADED";
-
         var LOGICAL_W = 800, LOGICAL_H = 600, RATIO = LOGICAL_W / LOGICAL_H;
 
         function fitCanvas() {
             var c = document.getElementById('canvas');
             if (!c) {
-                document.title = "FITCANVAS-NO-CANVAS";
                 return;
             }
             var vw = window.innerWidth, vh = window.innerHeight;
@@ -484,7 +482,6 @@ frameborder="1"
             c.style.position = 'absolute';
             c.style.left = ((vw - w) / 2) + 'px';
             c.style.top = ((vh - h) / 2) + 'px';
-            document.title = "FITCANVAS-APPLIED " + Math.round(w) + "x" + Math.round(h);
         }
 
         window.addEventListener('resize', fitCanvas);

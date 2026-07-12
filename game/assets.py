@@ -336,6 +336,17 @@ def create_heart_sprite(full=True):
     return s
 
 
+def create_mana_orb_sprite():
+    """Floating mana pickup (Stage F8) - same 24x24 canvas and bob-animation
+    contract as create_heart_sprite, just a blue orb instead of a heart, so
+    game/states.py's Pickup class can treat both interchangeably."""
+    s = pygame.Surface((24, 24), pygame.SRCALPHA)
+    pygame.draw.circle(s, (40, 90, 210), (12, 12), 9)
+    pygame.draw.circle(s, (110, 160, 255), (12, 12), 9, 2)
+    pygame.draw.circle(s, (180, 210, 255), (9, 9), 3)
+    return s
+
+
 def create_projectile_sprite(ptype="fireball"):
     s = pygame.Surface((16, 16), pygame.SRCALPHA)
     if ptype == "fireball":
@@ -372,7 +383,172 @@ def create_item_sprite(itype="key"):
     return s
 
 
+_LEVEL_THUMB_CACHE = {}
+
+
+def create_level_thumbnail(floor, bg):
+    """A small swatch for the Atlas tab (Stage F3) - the level's floor tile
+    pattern over its background color, since there's no per-level image
+    asset to show. Takes primitive values (not a LEVEL_MAPS dict) so
+    game/assets.py doesn't need to import game/level.py, which already
+    imports this module (would be circular)."""
+    key = (floor, bg)
+    if key in _LEVEL_THUMB_CACHE:
+        return _LEVEL_THUMB_CACHE[key]
+    s = pygame.Surface((48, 36), pygame.SRCALPHA)
+    s.fill(bg)
+    tile = create_tile(floor)
+    scaled = pygame.transform.scale(tile, (24, 24))
+    for x in (0, 24):
+        s.blit(scaled, (x, 6))
+    pygame.draw.rect(s, tuple(min(255, c + 40) for c in bg), (0, 0, 48, 36), 1)
+    _LEVEL_THUMB_CACHE[key] = s
+    return s
+
+
 def create_particle(color, size=4):
     s = pygame.Surface((size, size), pygame.SRCALPHA)
     s.fill(color)
+    return s
+
+
+# ─── Stage F1 icons ─────────────────────────────────────────────────────────
+# Hotbar/items/attributes/debuffs used to be flat-color boxes + a 2-3 letter
+# abbreviation (see game/player.py's old _SPELL_ABBR/_ITEM_ABBR). These are
+# small (14-16px) pixel-art icons instead, same draw_pixel_art/manual-rect
+# style as the rest of this file. Each create_* function memoizes into its
+# own module-level cache - called every frame from HUD/menu draw code, and
+# none of these depend on any live game state, so building once and reusing
+# the Surface is free correctness, not premature optimization.
+
+_SPELL_ICON_CACHE = {}
+_POTION_ICON_CACHE = {}
+_ATTR_ICON_CACHE = {}
+_DEBUFF_ICON_CACHE = {}
+
+
+def create_spell_icon(spell_id):
+    if spell_id in _SPELL_ICON_CACHE:
+        return _SPELL_ICON_CACHE[spell_id]
+    s = pygame.Surface((16, 16), pygame.SRCALPHA)
+    if spell_id == "fireball":
+        for (x, y, c) in [(3,7,(255,200,0)),(4,6,(255,200,0)),(5,5,(255,150,0)),
+                          (6,4,(255,100,0)),(7,3,(255,50,0)),(8,4,(255,100,0)),
+                          (9,5,(255,150,0)),(10,6,(255,200,0)),(11,7,(255,200,0)),
+                          (4,8,(255,150,0)),(5,9,(255,100,0)),(6,10,(200,50,0)),
+                          (7,8,(255,255,0)),(8,9,(255,200,0)),(9,8,(255,150,0))]:
+            pygame.draw.rect(s, c, (x, y, 2, 2))
+    elif spell_id == "frost_nova":
+        cx, cy = 8, 8
+        tip = (200, 235, 255)
+        core = (140, 210, 255)
+        pygame.draw.circle(s, core, (cx, cy), 3)
+        for dx, dy in [(0,-6),(0,6),(-6,0),(6,0),(-4,-4),(4,-4),(-4,4),(4,4)]:
+            pygame.draw.line(s, tip, (cx, cy), (cx + dx, cy + dy), 1)
+            pygame.draw.circle(s, tip, (cx + dx, cy + dy), 1)
+    elif spell_id == "healing_light":
+        gold = (255, 225, 120)
+        bright = (255, 250, 210)
+        pygame.draw.rect(s, gold, (7, 1, 2, 14))
+        pygame.draw.rect(s, gold, (1, 7, 14, 2))
+        pygame.draw.line(s, gold, (3, 3), (13, 13), 1)
+        pygame.draw.line(s, gold, (13, 3), (3, 13), 1)
+        pygame.draw.circle(s, bright, (8, 8), 2)
+    _SPELL_ICON_CACHE[spell_id] = s
+    return s
+
+
+_POTION_COLORS = {
+    "health_potion": ((200, 40, 40), (255, 110, 110)),
+    "mana_potion": ((40, 90, 210), (110, 160, 255)),
+    "antidote": ((50, 160, 80), (140, 230, 150)),
+}
+
+
+def create_potion_icon(item_id):
+    if item_id in _POTION_ICON_CACHE:
+        return _POTION_ICON_CACHE[item_id]
+    s = pygame.Surface((16, 16), pygame.SRCALPHA)
+    dark, light = _POTION_COLORS.get(item_id, ((150, 150, 150), (210, 210, 210)))
+    pygame.draw.rect(s, (140, 130, 120), (6, 1, 4, 3))
+    pygame.draw.rect(s, dark, (4, 4, 8, 10), border_radius=2)
+    pygame.draw.rect(s, light, (5, 6, 3, 6))
+    _POTION_ICON_CACHE[item_id] = s
+    return s
+
+
+def create_attribute_icon(attr):
+    if attr in _ATTR_ICON_CACHE:
+        return _ATTR_ICON_CACHE[attr]
+    s = pygame.Surface((16, 16), pygame.SRCALPHA)
+    if attr == "strength":  # arm with muscle
+        skin = (220, 170, 110)
+        pygame.draw.rect(s, skin, (2, 10, 5, 4))
+        pygame.draw.circle(s, skin, (9, 8), 5)
+        pygame.draw.circle(s, (190, 140, 90), (9, 8), 5, 1)
+    elif attr == "dexterity":  # boot
+        leather = (120, 80, 40)
+        pygame.draw.rect(s, leather, (5, 2, 4, 8))
+        pygame.draw.rect(s, leather, (5, 9, 9, 4))
+        pygame.draw.rect(s, (60, 40, 20), (5, 12, 9, 2))
+    elif attr == "intelligence":  # brain
+        pink = (230, 150, 180)
+        pygame.draw.ellipse(s, pink, (2, 3, 12, 10))
+        pygame.draw.line(s, (180, 100, 130), (8, 4), (8, 12), 1)
+        pygame.draw.arc(s, (180, 100, 130), (2, 3, 7, 10), 1.0, 3.0, 1)
+        pygame.draw.arc(s, (180, 100, 130), (7, 3, 7, 10), 0.1, 2.1, 1)
+    elif attr == "wisdom":  # wizard hat
+        purple = (130, 80, 200)
+        pygame.draw.polygon(s, purple, [(8, 0), (12, 12), (4, 12)])
+        pygame.draw.rect(s, purple, (2, 12, 12, 2))
+        pygame.draw.circle(s, (255, 220, 100), (8, 5), 1)
+    elif attr == "vigor":  # armor chestplate
+        steel = (150, 160, 175)
+        pygame.draw.polygon(s, steel, [(8, 2), (13, 5), (12, 13), (4, 13), (3, 5)])
+        pygame.draw.line(s, (100, 110, 125), (8, 3), (8, 12), 1)
+    elif attr == "luck":  # four-leaf clover
+        green = (60, 170, 80)
+        for dx, dy in [(-3, -3), (3, -3), (-3, 3), (3, 3)]:
+            pygame.draw.circle(s, green, (8 + dx, 8 + dy), 3)
+        pygame.draw.rect(s, (90, 60, 20), (7, 8, 2, 6))
+    _ATTR_ICON_CACHE[attr] = s
+    return s
+
+
+def create_debuff_icon(effect_id):
+    if effect_id in _DEBUFF_ICON_CACHE:
+        return _DEBUFF_ICON_CACHE[effect_id]
+    s = pygame.Surface((14, 14), pygame.SRCALPHA)
+    if effect_id == "poison":
+        c = (140, 220, 90)
+        pygame.draw.polygon(s, c, [(7, 1), (11, 8), (7, 13), (3, 8)])
+    elif effect_id == "slow":
+        c = (120, 170, 230)
+        pygame.draw.arc(s, c, (1, 1, 12, 12), 0.3, 5.5, 2)
+        pygame.draw.circle(s, c, (7, 2), 1)
+    elif effect_id == "weakness":
+        c = (200, 120, 200)
+        pygame.draw.circle(s, c, (7, 5), 4, 1)
+        pygame.draw.line(s, c, (5, 3), (6, 4), 1)
+        pygame.draw.line(s, c, (9, 3), (8, 4), 1)
+        pygame.draw.line(s, c, (7, 9), (7, 13), 2)
+    elif effect_id == "burn":
+        c = (255, 130, 40)
+        pygame.draw.polygon(s, c, [(7, 1), (10, 7), (8, 7), (10, 13), (4, 8), (6, 8)])
+    elif effect_id == "chill":
+        c = (150, 200, 255)
+        for dx, dy in [(0, -6), (0, 6), (-6, 0), (6, 0), (-4, -4), (4, -4), (-4, 4), (4, 4)]:
+            pygame.draw.line(s, c, (7, 7), (7 + dx, 7 + dy), 1)
+    elif effect_id == "heat":
+        c = (255, 180, 80)
+        pygame.draw.circle(s, c, (7, 7), 3)
+        for dx, dy in [(0,-6),(0,6),(-6,0),(6,0),(-4,-4),(4,-4),(-4,4),(4,4)]:
+            pygame.draw.line(s, c, (7 + dx * 0.5, 7 + dy * 0.5), (7 + dx, 7 + dy), 1)
+    elif effect_id == "shock":
+        c = (255, 255, 120)
+        pygame.draw.polygon(s, c, [(8, 1), (4, 8), (7, 8), (6, 13), (11, 6), (8, 6)])
+    else:
+        c = (200, 200, 200)
+        pygame.draw.circle(s, c, (7, 7), 4)
+    _DEBUFF_ICON_CACHE[effect_id] = s
     return s

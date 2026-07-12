@@ -42,6 +42,20 @@ WEATHER_TYPES = {
                 "speed_mult": 1.0, "visibility_mult": 0.85, "debuff": ("heat", 10.0)},
 }
 
+# Display name for the Atlas tab (Stage F3) - kept separate from
+# WEATHER_TYPES' balance data for the same reason STATUS_DISPLAY is split
+# out in game/status_effects.py.
+WEATHER_DISPLAY_NAME = {
+    "fog": "Neblina",
+    "rain": "Chuva",
+    "snow": "Neve",
+    "storm": "Tempestade",
+    "dimming_fog": "Penumbra",
+    "sandstorm": "Tempestade de Areia",
+    "gloom": "Escuridao",
+    "ashfall": "Chuva de Cinzas",
+}
+
 # Weather ids whose particles fall slowly like snowflakes rather than
 # streaking down like rain - drives both spawn speed (__init__) and which
 # draw method each drop uses (draw()).
