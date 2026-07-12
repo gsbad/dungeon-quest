@@ -2,7 +2,10 @@ import math
 import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
 from game.ui import Panel, draw_text
-from game.assets import create_player_sprite, create_attribute_icon, create_level_thumbnail, create_debuff_icon
+from game.assets import (
+    create_player_sprite, create_attribute_icon, create_level_thumbnail,
+    create_debuff_icon, create_spell_icon,
+)
 from game.professions import TINTS
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
 from game.input_system import Action, HELP_ENTRIES
@@ -315,9 +318,9 @@ class Paperdoll:
 
         content_top = self.py + _CONTENT_TOP
         if self.active_tab == "stats":
-            self._draw_stats(surface, player, content_top, forced=forced and player.unspent_points > 0)
+            self._draw_stats(surface, player, save_state, content_top, forced=forced and player.unspent_points > 0)
         elif self.active_tab == "spells":
-            self._draw_spells(surface, player, content_top)
+            self._draw_spells(surface, player, save_state, content_top)
         elif self.active_tab == "bestiary":
             self._draw_bestiary(surface, player, save_state, content_top)
         elif self.active_tab == "atlas":
@@ -325,7 +328,7 @@ class Paperdoll:
         elif self.active_tab == "help":
             self._draw_help(surface, content_top)
 
-    def _draw_header(self, surface, player, top):
+    def _draw_header(self, surface, player, save_state, top):
         cx = self.px + _PANEL_W // 2
         header_cx = self.px + _PORTRAIT_MARGIN + _PORTRAIT_SIZE + (
             _PANEL_W - _PORTRAIT_MARGIN * 2 - _PORTRAIT_SIZE) // 2
@@ -334,18 +337,23 @@ class Paperdoll:
         surface.blit(portrait, (self.px + _PORTRAIT_MARGIN, top + _PORTRAIT_MARGIN))
 
         f_title = font(24, bold=True)
-        draw_text(surface, player.name or "Heroi", f_title, ACCENT_GOLD, header_cx, top + _TITLE_Y)
+        draw_text(surface, player.display_name, f_title, ACCENT_GOLD, header_cx, top + _TITLE_Y)
 
+        # Stage G8: "Reputacao Profissao", same pattern as the HUD title
+        # line (game/player.py's _draw_title_line) - replaces the
+        # profession-only text that used to be here.
+        from game.reputation import determine_reputation, kills_total, deaths_total
+        reputation = determine_reputation(kills_total(player, save_state), deaths_total(save_state))
         f_prof = font(17, bold=True)
-        draw_text(surface, player.profession, f_prof, (210, 200, 235), header_cx, top + _PROFESSION_Y)
+        draw_text(surface, f"{reputation} {player.profession}", f_prof, (210, 200, 235), header_cx, top + _PROFESSION_Y)
 
         f = font(16, bold=True)
         draw_text(surface, f"Nivel {player.level}  (XP {player.xp}/{self._xp_next(player)})",
                   f, (230, 230, 240), header_cx, top + _LEVEL_Y)
         return cx
 
-    def _draw_stats(self, surface, player, top, forced=False):
-        cx = self._draw_header(surface, player, top)
+    def _draw_stats(self, surface, player, save_state, top, forced=False):
+        cx = self._draw_header(surface, player, save_state, top)
 
         f2 = font(14)
         s = player.stats
@@ -420,8 +428,8 @@ class Paperdoll:
             hint_color = SUBTEXT
         draw_text(surface, hint, f_hint, hint_color, cx, top + _HINT_Y)
 
-    def _draw_spells(self, surface, player, top):
-        self._draw_header(surface, player, top)
+    def _draw_spells(self, surface, player, save_state, top):
+        self._draw_header(surface, player, save_state, top)
 
         f_name = font(17, bold=True)
         f_body = font(14)
@@ -435,6 +443,12 @@ class Paperdoll:
             unlocked = meets_requirements(player.stats, spell_id)
             is_selected = player.selected_spell == spell_id
             status_color = (110, 230, 140) if unlocked else (220, 90, 90)
+
+            # Stage G4 - fixed left gutter, independent of the row's
+            # centered text block below (spell_cx), so it doesn't need to
+            # restructure that existing layout.
+            icon = pygame.transform.scale(create_spell_icon(spell_id), (28, 28))
+            surface.blit(icon, (self.px + 20, y - 4))
 
             draw_text(surface, f"{i+1}. {spell['name']}", f_name, (230, 225, 240),
                       spell_cx, y, shadow=False)

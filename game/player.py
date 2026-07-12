@@ -17,12 +17,18 @@ TILE = 48
 # used to be flat-color boxes + a 2-3 letter abbreviation.
 _HOTBAR_SLOT = 36
 _HOTBAR_GAP = 6
+# Stage G2: extra gap between the spell group and the item group, on top of
+# the normal _HOTBAR_GAP within each group - makes the "magias | itens"
+# split readable at a glance instead of one undifferentiated row of 6.
+_HOTBAR_GROUP_GAP = 16
 # Below the top-center "Inimigos: N" / exit-hint text (game/level.py draws
 # it at y=12) - the hotbar used to sit right on top of it.
 _HOTBAR_Y = 34
 _HOTBAR_KEYS = ["1", "2", "3", "4", "5", "6"]
-_SPELL_COLOR = {"fireball": (255, 120, 20), "frost_nova": (90, 180, 255), "healing_light": (255, 235, 190)}
-_ITEM_COLOR = {"health_potion": (200, 60, 60), "mana_potion": (60, 100, 210), "antidote": (70, 180, 90)}
+# Stage G1: slot background is always black (contrast for the icon, not a
+# per-spell/item tint) - the old _SPELL_COLOR/_ITEM_COLOR dicts are gone,
+# nothing else read them.
+_HOTBAR_BOX_COLOR = (15, 15, 18)
 
 
 def hotbar_slots():
@@ -30,15 +36,23 @@ def hotbar_slots():
     a fixed layout derived only from SPELL_ORDER/ITEMS and screen width, not
     from any Player instance, so GameplayState's tap handling and Player's
     own drawing always agree on the exact same rects without either side
-    needing to own the other's state."""
+    needing to own the other's state. Two groups (spells, items) separated
+    by _HOTBAR_GROUP_GAP (Stage G2) instead of one contiguous row."""
     from game.theme import SW
     from game.items import ITEMS
-    ids = [("spell", s) for s in SPELL_ORDER] + [("item", i) for i in ITEMS]
-    total_w = len(ids) * _HOTBAR_SLOT + (len(ids) - 1) * _HOTBAR_GAP
+    spell_ids = [("spell", s) for s in SPELL_ORDER]
+    item_ids = [("item", i) for i in ITEMS]
+    spell_w = len(spell_ids) * _HOTBAR_SLOT + (len(spell_ids) - 1) * _HOTBAR_GAP
+    item_w = len(item_ids) * _HOTBAR_SLOT + (len(item_ids) - 1) * _HOTBAR_GAP
+    total_w = spell_w + _HOTBAR_GROUP_GAP + item_w
     x0 = SW // 2 - total_w // 2
     slots = []
-    for i, (kind, key) in enumerate(ids):
+    for i, (kind, key) in enumerate(spell_ids):
         x = x0 + i * (_HOTBAR_SLOT + _HOTBAR_GAP)
+        slots.append((kind, key, pygame.Rect(x, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT)))
+    item_x0 = x0 + spell_w + _HOTBAR_GROUP_GAP
+    for i, (kind, key) in enumerate(item_ids):
+        x = item_x0 + i * (_HOTBAR_SLOT + _HOTBAR_GAP)
         slots.append((kind, key, pygame.Rect(x, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT)))
     return slots
 
@@ -120,6 +134,16 @@ class Player:
         # since it's tied to standing in a level rather than a
         # duration/tick-based debuff.
         self.weather_speed_mult = 1.0
+
+    @property
+    def display_name(self):
+        """Stage G7/G8: first letter capitalized, rest left as typed (not
+        `.capitalize()`, which would also lowercase the rest of the name) -
+        shared by the HUD title line and the paperdoll header so both
+        capitalize the same way instead of duplicating the rule."""
+        if not self.name:
+            return "Heroi"
+        return self.name[0].upper() + self.name[1:]
 
     @property
     def speed(self):
@@ -345,10 +369,11 @@ class Player:
             self._mana_bar = ProgressBar(160, 10, (0, 0, 50), (180, 180, 220), border_width=2)
             self._xp_bar = ProgressBar(160, 6, (40, 40, 40), (140, 140, 140), border_width=1)
 
-        # Stage F5: name - profession - reputation, above the bars. Pushes
-        # the whole dock down 14px to make room instead of overlapping it.
+        # Stage F5/G7: reputation + profession + name, above the bars.
+        # Pushes the whole dock down to make room for the bigger G7 font
+        # instead of overlapping it.
         self._draw_title_line(surface, save_state)
-        dock_y = 26
+        dock_y = 34
 
         hp_frac = max(0.0, self.hp / self.max_hp)
         self._hp_bar.draw(surface, 12, dock_y, hp_frac, (220, 40, 40))
@@ -369,12 +394,15 @@ class Player:
         self._draw_hotbar(surface)
 
     def _draw_title_line(self, surface, save_state):
-        from game.theme import font
+        # Stage G7: "Reputacao Profissao Nome", same style as the hero name
+        # in the paperdoll header (game/paperdoll.py's _draw_header - 24pt
+        # bold ACCENT_GOLD), 4px smaller.
+        from game.theme import font, ACCENT_GOLD
         from game.reputation import determine_reputation, kills_total, deaths_total
         reputation = determine_reputation(kills_total(self, save_state), deaths_total(save_state))
-        text = f"{self.name or 'Heroi'} - {self.profession} - {reputation}"
-        f = font(12, bold=True)
-        txt_surf = f.render(text, True, (225, 220, 210))
+        text = f"{reputation} {self.profession} {self.display_name}"
+        f = font(20, bold=True)
+        txt_surf = f.render(text, True, ACCENT_GOLD)
         shadow = f.render(text, True, (0, 0, 0))
         surface.blit(shadow, (13, 1))
         surface.blit(txt_surf, (12, 0))
@@ -390,18 +418,15 @@ class Player:
                 on_cooldown = self.spell_cooldowns.get(key, 0) > 0
                 affordable = self.mana >= SPELLS[key]["mana_cost"]
                 usable = not locked and not on_cooldown and affordable
-                color = _SPELL_COLOR[key]
                 icon = create_spell_icon(key)
                 selected = self.selected_spell == key
             else:
                 count = self.inventory.get(key, 0)
                 usable = count > 0
-                color = _ITEM_COLOR[key]
                 icon = create_potion_icon(key)
                 selected = False
 
-            box_color = color if usable else tuple(c // 3 for c in color)
-            pygame.draw.rect(surface, box_color, rect, border_radius=6)
+            pygame.draw.rect(surface, _HOTBAR_BOX_COLOR, rect, border_radius=6)
             pygame.draw.rect(surface, (230, 230, 235) if usable else (90, 90, 95), rect, 2, border_radius=6)
             if selected:
                 pygame.draw.rect(surface, ACCENT_GOLD, rect.inflate(4, 4), 2, border_radius=8)
@@ -427,10 +452,13 @@ class Player:
                 surface.blit(wipe, (rect.x, rect.bottom - wipe_h))
             elif kind == "item":
                 count = self.inventory.get(key, 0)
-                count_surf = f_count.render(str(count), True, (255, 255, 255))
+                # Stage G1: inverted from the old dark-bg/white-text badge -
+                # white bg/black text reads better against the now-black
+                # slot background than a same-tone dark badge did.
+                count_surf = f_count.render(str(count), True, (20, 20, 25))
                 cbg = pygame.Rect(rect.right - count_surf.get_width() - 4, rect.bottom - count_surf.get_height() - 2,
                                    count_surf.get_width() + 4, count_surf.get_height() + 2)
-                pygame.draw.rect(surface, (20, 20, 30), cbg, border_radius=3)
+                pygame.draw.rect(surface, (245, 245, 248), cbg, border_radius=3)
                 surface.blit(count_surf, (cbg.x + 2, cbg.y + 1))
 
     def _draw_status_chips(self, surface, y=58):

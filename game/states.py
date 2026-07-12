@@ -1,4 +1,5 @@
 import pygame
+import sys
 import math
 import time
 import random
@@ -13,7 +14,7 @@ from game.merchant import ItemsOverlay
 from game.debug_panel import DebugPanel
 from game.weather import WeatherSystem
 from game.assets import create_heart_sprite, create_mana_orb_sprite, create_logo_sprite, create_victory_hero_sprite
-from game.input_system import Action, FullscreenButton
+from game.input_system import Action, FullscreenButton, PaperdollButton, ItemsButton
 from game.audio import SoundButton
 from game.stats import POINTS_PER_LEVEL, MAX_LEVEL
 from game.spells import SPELLS, ORDER as SPELL_ORDER
@@ -677,21 +678,10 @@ class GameplayState:
         if self.input.consume_action(Action.DEV_PREV_LEVEL):
             self._dev_jump(-1)
 
-        # A forced level-up (see the pending_level_up handling in update())
-        # can't be dismissed by either key until every point is spent.
-        paperdoll_locked = self.level_up_forced and self.player.unspent_points > 0
         if self.input.consume_action(Action.PAPERDOLL):
-            if self.paperdoll_open:
-                if not paperdoll_locked:
-                    self.paperdoll_open = False
-                    self.level_up_forced = False
-            elif not self.paused and not self.items_open and not self.debug_panel_open:
-                self.paperdoll_open = True
+            self.toggle_paperdoll()
         if self.input.consume_action(Action.ITEMS):
-            if self.items_open:
-                self.items_open = False
-            elif not self.paused and not self.paperdoll_open and not self.debug_panel_open:
-                self.items_open = True
+            self.toggle_items()
         if self.input.consume_action(Action.DEBUG_PANEL):
             if not self.paused and not self.paperdoll_open and not self.items_open:
                 self.debug_panel_open = not self.debug_panel_open
@@ -701,11 +691,10 @@ class GameplayState:
             # Stage F2: ESC also closes whichever menu is open, same as
             # pressing the key that opened it, instead of only pausing.
             if self.input.consume_action(Action.PAUSE):
-                if self.paperdoll_open and not paperdoll_locked:
-                    self.paperdoll_open = False
-                    self.level_up_forced = False
+                if self.paperdoll_open:
+                    self.toggle_paperdoll()
                 elif self.items_open:
-                    self.items_open = False
+                    self.toggle_items()
             return
         if self.input.consume_action(Action.PAUSE):
             self.paused = not self.paused
@@ -745,6 +734,25 @@ class GameplayState:
         target = self.level_num + delta
         if target in LEVEL_MAPS:
             self.next_state = f"next:{target}"
+
+    def toggle_paperdoll(self):
+        """Shared by the C keypress (handle_event) and Stage G5's
+        PaperdollButton tap (GameStateManager.update()) - one place owning
+        the "only one overlay at a time" guard and the forced-level-up
+        lock, instead of duplicating it per input source."""
+        if self.paperdoll_open:
+            if not (self.level_up_forced and self.player.unspent_points > 0):
+                self.paperdoll_open = False
+                self.level_up_forced = False
+        elif not self.paused and not self.items_open and not self.debug_panel_open:
+            self.paperdoll_open = True
+
+    def toggle_items(self):
+        """Shared by the I keypress and Stage G5's ItemsButton tap."""
+        if self.items_open:
+            self.items_open = False
+        elif not self.paused and not self.paperdoll_open and not self.debug_panel_open:
+            self.items_open = True
 
     def _attempt_cast(self, spell_id):
         self.player.selected_spell = spell_id
@@ -1322,6 +1330,13 @@ class GameStateManager:
         self.fullscreen_button = FullscreenButton(SW - 94, 40)
         self._fullscreen_fallback = False  # só usado se pygame.display.is_fullscreen() não existir
 
+        # Stage G5: stacked below the sound/fullscreen row, same right
+        # edge (SW-40) as the mobile-only virtual pause button (which sits
+        # higher, at y=40) - only meaningful (and only drawn) during
+        # GameplayState, since paperdoll_open/items_open live there.
+        self.paperdoll_button = PaperdollButton(SW - 40, 100)
+        self.items_button = ItemsButton(SW - 40, 154)
+
         import game.save as save
         self.save_state = save.load() or save.new_game_state()
         self.audio.muted = self.save_state["settings"]["muted"]
@@ -1358,9 +1373,37 @@ class GameStateManager:
         return min(highest + 1, 12)
 
     def _is_fullscreen(self):
+        # Stage G6: on the web build, the real source of truth is the
+        # browser's own Fullscreen API, not pygame's SDL2-emscripten state
+        # (which is what didn't reflect reality in the first place - see
+        # [[project_fullscreen_bug]]).
+        if sys.platform == "emscripten":
+            import js
+            return bool(js.document.fullscreenElement)
         if hasattr(pygame.display, "is_fullscreen"):
             return pygame.display.is_fullscreen()
         return self._fullscreen_fallback
+
+    def _toggle_fullscreen(self):
+        # Stage G6: pygame.display.toggle_fullscreen() is confirmed broken
+        # in the pygbag/WASM build ([[project_fullscreen_bug]]) - tries the
+        # browser's native Fullscreen API there instead, via the same
+        # sys.platform=="emscripten" + `js` bridge game/save.py already uses
+        # for localStorage/document.title. A keypress (F11) is as direct a
+        # user gesture as a click, which the API requires. Desktop keeps
+        # the original pygame call unchanged.
+        if sys.platform == "emscripten":
+            import js
+            if js.document.fullscreenElement:
+                js.document.exitFullscreen()
+            else:
+                js.document.documentElement.requestFullscreen()
+            return
+        try:
+            pygame.display.toggle_fullscreen()
+            self._fullscreen_fallback = not self._fullscreen_fallback
+        except pygame.error:
+            pass
 
     def handle_event(self, event):
         result = self.state.handle_event(event)
@@ -1368,19 +1411,26 @@ class GameStateManager:
             self._transition(result)
 
     def update(self, dt):
-        if self.input.tapped_rect(self.sound_button.rect):
+        if self.input.tapped_rect(self.sound_button.rect) or self.input.consume_action(Action.MUTE):
             self.audio.toggle_mute()
             self.audio.play("menu_select")
             self.save_state["settings"]["muted"] = self.audio.muted
             self._persist()
 
-        if self.input.tapped_rect(self.fullscreen_button.rect):
-            try:
-                pygame.display.toggle_fullscreen()
-                self._fullscreen_fallback = not self._fullscreen_fallback
-            except pygame.error:
-                pass
+        if self.input.tapped_rect(self.fullscreen_button.rect) or self.input.consume_action(Action.FULLSCREEN):
+            self._toggle_fullscreen()
             self.audio.play("menu_select")
+
+        # Stage G5: only meaningful during actual gameplay - paperdoll_open/
+        # items_open live on GameplayState, so these buttons are a no-op
+        # (and hidden, see draw()) on every other screen.
+        if isinstance(self.state, GameplayState):
+            if self.input.tapped_rect(self.paperdoll_button.rect):
+                self.state.toggle_paperdoll()
+                self.audio.play("menu_select")
+            if self.input.tapped_rect(self.items_button.rect):
+                self.state.toggle_items()
+                self.audio.play("menu_select")
 
         self.state.update(dt)
 
@@ -1430,6 +1480,9 @@ class GameStateManager:
         self.state.draw()
         self.sound_button.draw(self.screen, self.audio.muted)
         self.fullscreen_button.draw(self.screen, self._is_fullscreen())
+        if isinstance(self.state, GameplayState):
+            self.paperdoll_button.draw(self.screen)
+            self.items_button.draw(self.screen)
 
     def _has_progress(self):
         # A death now zeroes the active tier's highest_level_cleared (see

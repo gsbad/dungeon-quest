@@ -31,6 +31,8 @@ class Action(Enum):
     DEV_NEXT_LEVEL = auto()
     DEV_PREV_LEVEL = auto()
     DEBUG_PANEL = auto()
+    FULLSCREEN = auto()
+    MUTE = auto()
 
 
 # Stage F4 - Help tab content. Single source of truth for player-facing
@@ -51,7 +53,8 @@ HELP_ENTRIES = [
     ("TAB", "Trocar de aba dentro de um menu"),
     ("ESC", "Pausar o jogo / fechar o menu aberto"),
     ("R", "Reiniciar (na tela de pausa ou de morte)"),
-    ("Toque no icone (tela)", "Tela cheia e Mudo - apenas mouse/toque, sem tecla"),
+    ("F11 / icone (tela)", "Tela cheia - tecla ou toque"),
+    ("F12 / icone (tela)", "Ativar/desativar audio - tecla ou toque"),
 ]
 
 
@@ -205,6 +208,80 @@ class FullscreenButton:
         surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
 
 
+def _draw_shortcut_badge(surface, rect, key_label):
+    """Same small rounded dark badge + white bold text as the hotbar's key
+    labels (game/player.py's key_surf/key_bg) - reused here (Stage G5) so
+    PaperdollButton/ItemsButton read as keyboard shortcuts the same way
+    hotbar slots do, not just touch targets."""
+    f = font(11, bold=True)
+    key_surf = f.render(key_label, True, (255, 255, 255))
+    key_bg = pygame.Rect(rect.x - 2, rect.y - 2, key_surf.get_width() + 4, key_surf.get_height() + 2)
+    pygame.draw.rect(surface, (20, 20, 30), key_bg, border_radius=3)
+    surface.blit(key_surf, (key_bg.x + 2, key_bg.y + 1))
+
+
+class PaperdollButton:
+    """Stage G5 - quick-access to the Paperdoll ("c") menu, same
+    translucent-circle + line-art glyph pattern as FullscreenButton/
+    SoundButton above (a shield, RPG shorthand for "character sheet"),
+    plus a "C" key badge."""
+
+    def __init__(self, cx, cy, radius=22):
+        self.cx = cx
+        self.cy = cy
+        self.radius = radius
+
+    @property
+    def rect(self):
+        d = self.radius * 2
+        return pygame.Rect(self.cx - self.radius, self.cy - self.radius, d, d)
+
+    def draw(self, surface):
+        d = self.radius * 2
+        buf = pygame.Surface((d, d), pygame.SRCALPHA)
+        pygame.draw.circle(buf, (25, 25, 35, 140), (self.radius, self.radius), self.radius)
+        pygame.draw.circle(buf, (230, 230, 245, 190), (self.radius, self.radius), self.radius, 2)
+
+        color = (235, 235, 245, 230)
+        r = self.radius
+        pts = [(r, r - 11), (r + 9, r - 7), (r + 9, r + 4), (r, r + 12), (r - 9, r + 4), (r - 9, r - 7)]
+        pygame.draw.polygon(buf, color, pts, 2)
+        pygame.draw.line(buf, color, (r, r - 9), (r, r + 9), 2)
+
+        surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
+        _draw_shortcut_badge(surface, self.rect, "C")
+
+
+class ItemsButton:
+    """Stage G5 - quick-access to the Items ("i") menu, same pattern as
+    PaperdollButton above (a backpack), plus an "I" key badge."""
+
+    def __init__(self, cx, cy, radius=22):
+        self.cx = cx
+        self.cy = cy
+        self.radius = radius
+
+    @property
+    def rect(self):
+        d = self.radius * 2
+        return pygame.Rect(self.cx - self.radius, self.cy - self.radius, d, d)
+
+    def draw(self, surface):
+        d = self.radius * 2
+        buf = pygame.Surface((d, d), pygame.SRCALPHA)
+        pygame.draw.circle(buf, (25, 25, 35, 140), (self.radius, self.radius), self.radius)
+        pygame.draw.circle(buf, (230, 230, 245, 190), (self.radius, self.radius), self.radius, 2)
+
+        color = (235, 235, 245, 230)
+        r = self.radius
+        pygame.draw.rect(buf, color, (r - 8, r - 6, 16, 16), 2, border_radius=4)
+        pygame.draw.rect(buf, color, (r - 4, r - 11, 8, 6), 2, border_radius=2)
+        pygame.draw.line(buf, color, (r - 8, r + 2), (r + 8, r + 2), 1)
+
+        surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
+        _draw_shortcut_badge(surface, self.rect, "I")
+
+
 class InputManager:
     """
     Single translation layer between raw pygame input (keyboard, mouse,
@@ -321,6 +398,10 @@ class InputManager:
                 self._press_action(Action.DEV_PREV_LEVEL)
             if event.key == pygame.K_F1:
                 self._press_action(Action.DEBUG_PANEL)
+            if event.key == pygame.K_F11:
+                self._press_action(Action.FULLSCREEN)
+            if event.key == pygame.K_F12:
+                self._press_action(Action.MUTE)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Deliberately doesn't set touch_active - a PC mouse click still

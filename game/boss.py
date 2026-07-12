@@ -8,6 +8,32 @@ from game.theme import font, TITLE_PAUSE
 from game.ui import ProgressBar
 from game.stats import StatBlock, mitigate
 
+def _draw_boss_hud_box(surface, screen_w, label_text, label_color, hud_bar, hp, max_hp, bar_color):
+    """Stage G3: black 80%-opacity box wrapping the boss name + HP bar,
+    anchored to the screen bottom (above the difficulty tag / "Fase N"
+    title stack drawn by GameplayState/Level - see game/level.py's
+    draw_hud_info) instead of floating unboxed at the top. Shared by Boss
+    and CacodemonBoss's near-identical draw_hud() so the box exists once,
+    not copy-pasted twice."""
+    screen_h = surface.get_height()
+    box_w = hud_bar.w + 40
+    box_h = 60
+    box_x = screen_w // 2 - box_w // 2
+    box_y = screen_h - 116
+    box = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+    box.fill((0, 0, 0, 204))
+    surface.blit(box, (box_x, box_y))
+
+    f = font(18, bold=True)
+    label = f.render(label_text, True, label_color)
+    surface.blit(label, (screen_w // 2 - label.get_width() // 2, box_y + 8))
+
+    bar_x = screen_w // 2 - hud_bar.w // 2
+    bar_y = box_y + 34
+    frac = max(0, hp / max_hp)
+    hud_bar.draw(surface, bar_x, bar_y, frac, bar_color)
+
+
 class Projectile:
     def __init__(self, x, y, vx, vy, damage=1, color=(255,100,0),
                  status_effect=None, status_chance=0.0, dtype="magic"):
@@ -413,16 +439,12 @@ class Boss:
         self.hp_bar.draw(surface, bx, by, frac, color)
 
     def draw_hud(self, surface, screen_w):
-        """Big boss HP bar at top of screen"""
-        f = font(18, bold=True)
-        label = f.render(self.name.upper() if self.phase==1 else "⚡ ENRAIVECIDO!", True,
-                          TITLE_PAUSE if self.phase==1 else (255,150,50))
-        bx = screen_w//2 - self.hud_bar.w//2
-        by = 16
-        frac = max(0, self.hp/self.max_hp)
-        clr = (160,0,220) if self.phase==1 else (255,80,0)
-        self.hud_bar.draw(surface, bx, by, frac, clr)
-        surface.blit(label, (screen_w//2 - label.get_width()//2, by+20))
+        """Boss HP bar + name, boxed, at the bottom of the screen (Stage G3)."""
+        label_text = self.name.upper() if self.phase == 1 else "⚡ ENRAIVECIDO!"
+        label_color = TITLE_PAUSE if self.phase == 1 else (255, 150, 50)
+        bar_color = (160, 0, 220) if self.phase == 1 else (255, 80, 0)
+        _draw_boss_hud_box(surface, screen_w, label_text, label_color,
+                            self.hud_bar, self.hp, self.max_hp, bar_color)
 
 
 # ─── Cacodemon Boss (Secret Level) ─────────────────────────────────────────────
@@ -625,11 +647,6 @@ class CacodemonBoss:
             p.draw(surface, cam_x, cam_y)
 
     def draw_hud(self, surface, screen_w):
-        """Big boss HP bar at top of screen"""
-        f = font(18, bold=True)
-        label = f.render("CACODEMON INFERNAL", True, (255, 100, 0))
-        bx = screen_w//2 - self.hud_bar.w//2
-        by = 16
-        frac = max(0, self.hp/self.max_hp)
-        self.hud_bar.draw(surface, bx, by, frac, (255, 100, 0))
-        surface.blit(label, (screen_w//2 - label.get_width()//2, by+20))
+        """Boss HP bar + name, boxed, at the bottom of the screen (Stage G3)."""
+        _draw_boss_hud_box(surface, screen_w, "CACODEMON INFERNAL", (255, 100, 0),
+                            self.hud_bar, self.hp, self.max_hp, (255, 100, 0))
