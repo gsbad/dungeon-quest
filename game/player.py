@@ -3,7 +3,7 @@ import math
 from game.assets import create_player_sprite, create_projectile_sprite
 from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL
 from game.status_effects import StatusEffectCarrier
-from game.professions import determine_profession
+from game.professions import determine_profession, TINTS
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements
 
 TILE = 48
@@ -75,6 +75,7 @@ class Player:
             "right_atk": create_player_sprite("right", True),
         }
         self.slash_sprite = create_projectile_sprite("slash")
+        self._tinted_sprite_cache = {}
 
     @property
     def speed(self):
@@ -238,6 +239,25 @@ class Player:
                 else:
                     self.y = wall.top - self.height
 
+    def _tinted_sprite(self, key):
+        # Same tint-by-multiply as paperdoll.py's portrait, applied to the
+        # actual walking sprite so profession is visible in-run, not just
+        # on the paperdoll. Cached per (key, profession) - accumulates at
+        # most 8 sprites x every profession the player has ever had this
+        # run, trivial for pygame.Surface objects this small.
+        cache_key = (key, self.profession)
+        cached = self._tinted_sprite_cache.get(cache_key)
+        if cached is None:
+            tint = TINTS.get(self.profession, (255, 255, 255))
+            base = self.sprites[key]
+            tinted = base.copy()
+            overlay = pygame.Surface(base.get_size(), pygame.SRCALPHA)
+            overlay.fill((*tint, 255))
+            tinted.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            self._tinted_sprite_cache[cache_key] = tinted
+            cached = tinted
+        return cached
+
     def draw(self, surface, cam_x, cam_y):
         # Flash when invincible
         if self.invincible and int(self.flash_timer * 8) % 2 == 0:
@@ -247,10 +267,10 @@ class Player:
         if self.attacking:
             key = self.direction + "_atk"
 
-        sprite = self.sprites[key]
+        sprite = self._tinted_sprite(key)
         # Flip left
         if self.direction == "left":
-            sprite = pygame.transform.flip(self.sprites.get("right_atk" if self.attacking else "right"), True, False)
+            sprite = pygame.transform.flip(self._tinted_sprite("right_atk" if self.attacking else "right"), True, False)
 
         sx = int(self.x - cam_x)
         sy = int(self.y - cam_y)
