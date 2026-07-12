@@ -79,6 +79,17 @@ Até esta rodada, as 16 profissões eram a mesma silhueta (a do Aventureiro) com
 
 `Player`/`Paperdoll` deixaram de tingir uma sprite fixa: `Player._get_sprite()` cacheia por `(direction+attacking, profession)` e reconstrói quando a profissão muda (respec já dispara `refresh_profession()`); `Paperdoll._portrait_for()` chama `create_player_sprite("down", False, profession)` direto. `TINTS` (`game/professions.py`) fica no código (não referenciado por nada hoje) como paleta de destaque de UI pra uso futuro, mas parou de colorir sprite.
 
+## Reputação (Stage F5)
+
+`game/reputation.py` — título exibido ao lado do nome/profissão na HUD (`Player._draw_title_line()`) e no cabeçalho do paperdoll, inspirado no par fama/carisma de Ultima Online. **Totalmente derivado** de contadores que já existem no save (mesmo raciocínio de `profession` — nada novo pra manter sincronizado):
+
+- **Kills** (`kills_total(player, save_state)`): soma `player.kills`/`player.boss_kills` da run atual (ainda não sincronizados) **+** `save_state["counters"]["kills"]`/`["boss_kills"]` já persistidos (`game/save.py`'s `sync_counters()` faz esse merge no fim da fase). Some sobre **todas** as chaves dos dois dicts — um mob comum, um boss, ou (só em debug) o bucket sintético `"debug"` contam igual.
+- **Mortes** (`deaths_total(save_state)`): lê `save_state["counters"]["deaths"]` direto (int simples, incrementado em `game/states.py`'s `GameStateManager.update()` — `self.save_state["counters"]["deaths"] += 1` — só na transição real `"game_over"`, isto é, quando o HP do jogador chega a 0; morte de boss/matar inimigos não conta como morte do jogador, só o inverso).
+- **Pontuação**: `score = kills_total - deaths*3` — cada morte custa o equivalente a 3 kills, punição real sem exigir uma run inteira de grind pra recuperar.
+- **Tiers** (`REPUTATION_TIERS`, ordem crescente por `score` mínimo): Novato (0) → Combatente (25) → Veterano (75) → Herói (150) → Lenda Viva (300). `score < 0` (mais mortes do que o kill count sustenta) retorna o título **"Amaldiçoado"** (`CURSED_TITLE`) em vez de ficar preso em "Novato" — uma run ruim tem que parecer visivelmente pior, não só "sem progresso".
+
+**Testando via painel de debug (`F1`):** linhas "Kills totais" (passo 10, escreve em `counters["kills"]["debug"]`) e "Mortes totais" (passo 1, escreve em `counters["deaths"]`) — cada uma mostra o total resultante **e** o título de reputação junto, pra não precisar alternar pra HUD. Verificado ponta-a-ponta (contador de kills, contador de mortes, e o título calculado) com um `save_state` real via `game.save.new_game_state()` — incrementar mortes não mexe em kills e vice-versa, e o título vira "Amaldiçoado" corretamente quando o placar fica negativo.
+
 ## XP e nível
 
 `xp_to_next(L) = round(20·L^1.4)`. Nível máximo 30. `POINTS_PER_LEVEL = 4` pontos de atributo por level-up (ver seção "Correções de escopo" abaixo — a implementação inicial usou 3 sem confirmação, corrigido nesta sessão).
@@ -125,6 +136,8 @@ Itens (`game/items.py`):
 - Antídoto — 20g, cura Veneno/Lentidão/Fraqueza instantaneamente.
 
 Cura em *fração* do máximo atual (não valor fixo) — mantém as poções relevantes conforme VIG/INT sobem, mesma convenção já usada pro coração-pickup.
+
+**Overlay "Itens" (`game/merchant.py`'s `ItemsOverlay`, tecla `I`):** "seus itens" (usar, topo) + "loja" (comprar, embaixo) na mesma tela — mesmo padrão do Paperdoll (tela cheia, congela o jogo). Compra é persistida na hora (`save.sync_economy`/`save.save`), mesmo peso de "ação deliberada" que o toggle de mute já tinha, não só no checkpoint de saída de fase. Navegação 100% por teclado (W/S percorre a lista única usar-depois-comprar na mesma ordem em que aparece na tela, ESPAÇO age conforme a linha) pelo mesmo motivo do Paperdoll — clique de mouse não confiável no build pygbag/navegador (ver "Bugs reais encontrados" abaixo).
 
 ## Magias (Stage B2)
 
@@ -226,6 +239,8 @@ As 4 salas de boss (fases 4/8/12/13) também deixaram de ser o mesmo retângulo 
 
 - **`CacodemonBoss.update()` nunca checava colisão de projétil com o jogador** — o boss da fase secreta não causava dano nenhum desde antes desta rodada de features. Corrigido ao ligar o gancho de debuff de Fogo nesse boss.
 - **Clique de mouse desalinhado no build pygbag/navegador** (som/tela cheia/comprar não respondem onde desenhados) — 6 tentativas de fix falharam (ver memória do projeto). Toque real e teclado não são afetados. Deixado de lado por decisão do usuário; não re-tentar sem um diagnóstico novo (console JS do navegador, nunca verificado até agora).
+- **Boss "piscava" com um retângulo translúcido mesmo quando o golpe do herói errava, de qualquer distância.** `GameplayState.update()` (`game/states.py`) chamava `boss.take_damage(dmg, ...)` **incondicionalmente** sempre que `player.attacking` era `True` — `dmg` só virava 0 quando o golpe não acertava (`atk_rect.colliderect(boss.rect)` falso), mas `Boss.take_damage()`/`CacodemonBoss.take_damage()` sempre ligam `hit_flash` e criam partículas de acerto, não importa o valor de `amount`. Corrigido: só chama `take_damage()` dentro do `if atk_rect.colliderect(boss.rect):`.
+- **O próprio flash de "tomou dano" pintava um quadrado/losango translúcido em volta do boss inteiro, não só a silhueta.** `Boss.draw()`/`CacodemonBoss.draw()`/`Enemy.draw()` pintam o flash branco (ou vermelho, no windup do orc) borrando uma superfície branca por cima do sprite com `pygame.BLEND_RGBA_ADD` — esse blend soma o canal **alfa** também, então uma margem transparente da sprite (alfa 0) mais um overlay de alfa 200 vira alfa ~200 (translúcido), pintando o retângulo/losango inteiro do canvas em vez de só o personagem. Passou despercebido com o rig genérico antigo (preenchia quase todo o canvas), mas ficou bem visível com os rigs individualizados (props assimétricos como o tacape do orc ou os tentáculos do Rei das Sombras deixam bem mais margem transparente). Corrigido trocando pra `pygame.BLEND_RGB_ADD` nos 3 lugares (`game/boss.py` x2, `game/enemy.py` x1) — soma só RGB, alfa do destino fica intocado.
 
 ## Navegação por teclado no Paperdoll e no menu de Itens
 

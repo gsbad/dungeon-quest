@@ -411,7 +411,15 @@ class Boss:
             white = pygame.Surface(sprite.get_size(), pygame.SRCALPHA)
             white.fill((255, 255, 255, 200))
             sprite = sprite.copy()
-            sprite.blit(white, (0,0), special_flags=pygame.BLEND_RGBA_ADD)
+            # BLEND_RGB_ADD (not RGBA_ADD) - RGBA_ADD also adds the alpha
+            # channel, so a transparent margin pixel (alpha=0) plus this
+            # overlay's alpha=200 became a translucent white square around
+            # the whole sprite canvas instead of just tinting the visible
+            # silhouette - very noticeable on the individualized rigs,
+            # which have a lot more transparent margin than the old
+            # rig. RGB_ADD only touches color channels, leaving alpha (and
+            # therefore the sprite's actual silhouette) untouched.
+            sprite.blit(white, (0,0), special_flags=pygame.BLEND_RGB_ADD)
 
         # Charge windup tell (orc_warlord) - a red pulse during the 0.6s
         # wind-up gives the player a fair warning before the dash commits.
@@ -419,7 +427,7 @@ class Boss:
             red = pygame.Surface(sprite.get_size(), pygame.SRCALPHA)
             red.fill((255, 40, 40, 130))
             sprite = sprite.copy()
-            sprite.blit(red, (0,0), special_flags=pygame.BLEND_RGBA_ADD)
+            sprite.blit(red, (0,0), special_flags=pygame.BLEND_RGB_ADD)
 
         # Phase 2 pulsing aura
         if self.phase == 2:
@@ -592,9 +600,14 @@ class CacodemonBoss:
         demon_surf = self.sprite
         if self.hit_flash > 0.06:
             demo_flash = pygame.Surface(demon_surf.get_size(), pygame.SRCALPHA)
-            demo_flash.fill((255, 255, 255, 128))
+            demo_flash.fill((255, 255, 255))
             demon_surf = demon_surf.copy()
-            demon_surf.blit(demo_flash, (0, 0))
+            # BLEND_RGB_ADD, not a plain alpha blit - a plain blit composites
+            # this overlay's alpha over the destination's, so a transparent
+            # margin pixel (alpha=0) would still end up translucent white
+            # (same bug as Boss.draw()'s hit_flash - see its comment).
+            # RGB_ADD only touches color channels, leaving alpha untouched.
+            demon_surf.blit(demo_flash, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
 
         # Sprite canvas (96x96) is a bit larger than the hitbox (80x80) -
         # center it over the hitbox instead of top-left aligning, so the

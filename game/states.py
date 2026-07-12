@@ -890,10 +890,14 @@ class GameplayState:
         if self.boss:
             if self.player.attacking:
                 atk_rect = self.player.get_attack_rect()
-                hit_boss = atk_rect.colliderect(self.boss.rect)
-                dmg, is_crit = self.player.stats.roll_physical() if hit_boss else (0, False)
-                self.boss.take_damage(dmg, dtype="physical", crit=is_crit)
-                if hit_boss:
+                # take_damage() used to be called unconditionally here (with
+                # dmg=0 on a miss) - Boss/CacodemonBoss.take_damage() always
+                # sets hit_flash + spawns particles regardless of amount, so
+                # every swing flashed the boss even from across the map,
+                # never actually connecting. Only call it on an actual hit.
+                if atk_rect.colliderect(self.boss.rect):
+                    dmg, is_crit = self.player.stats.roll_physical()
+                    self.boss.take_damage(dmg, dtype="physical", crit=is_crit)
                     self.camera.shake(5, 0.12)
                     self.camera.zoom_pulse(0.05, 0.15)
             self.boss.update(dt, self.player, self.level.walls)

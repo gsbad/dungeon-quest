@@ -535,7 +535,11 @@ class Enemy:
             white = pygame.Surface(sprite.get_size(), pygame.SRCALPHA)
             white.fill((255, 255, 255, 180))
             sprite = sprite.copy()
-            sprite.blit(white, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+            # BLEND_RGB_ADD (not RGBA_ADD) - see game/boss.py's Boss.draw()
+            # for why: RGBA_ADD also adds alpha, turning the sprite's
+            # transparent margin into a translucent white box instead of
+            # just tinting the visible silhouette.
+            sprite.blit(white, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
 
         for proj in self.projectiles:
             proj.draw(surface, cam_x, cam_y)
