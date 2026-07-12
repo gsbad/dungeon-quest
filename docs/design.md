@@ -34,26 +34,50 @@ Algoritmo:
 
 ### As 16 profissões
 
-| Profissão | Base (atributo(s) dominante(s)) | Tint atual (`TINTS`) |
-|---|---|---|
-| Aventureiro | nenhum (< 20 pontos gastos no total) | branco |
-| Guerreiro | FOR pura | vermelho |
-| Assassino | DES pura | cinza-azulado |
-| Mago | INT pura | azul |
-| Feiticeiro | SAB pura | roxo |
-| Cavaleiro | VIG pura | dourado |
-| Duelista | FOR + DES | laranja |
-| Cavaleiro Arcano | FOR + INT | azul claro |
-| Paladino | FOR + SAB | dourado pálido |
-| Campeão | FOR + VIG | vermelho vivo |
-| Monge | DES + INT | verde-água |
-| Xamã | DES + SAB | verde claro |
-| Ranger | DES + VIG | verde |
-| Arcanista | INT + SAB | violeta |
-| Druida | INT + VIG | verde |
-| Templário | SAB + VIG | dourado pálido |
+| Profissão | Base (atributo(s) dominante(s)) |
+|---|---|
+| Aventureiro | nenhum (< 20 pontos gastos no total) |
+| Guerreiro | FOR pura |
+| Assassino | DES pura |
+| Mago | INT pura |
+| Feiticeiro | SAB pura |
+| Cavaleiro | VIG pura |
+| Duelista | FOR + DES |
+| Cavaleiro Arcano | FOR + INT |
+| Paladino | FOR + SAB |
+| Campeão | FOR + VIG |
+| Monge | DES + INT |
+| Xamã | DES + SAB |
+| Ranger | DES + VIG |
+| Arcanista | INT + SAB |
+| Druida | INT + VIG |
+| Templário | SAB + VIG |
 
 "Pura" = o atributo com mais pontos gastos tem pelo menos o dobro do segundo colocado (`spent[p2]/spent[p1] < 0.5`); caso contrário é a híbrida do par top-2. Empate de pontos gastos é resolvido pela ordem fixa FOR > DES > INT > SAB > VIG (`_PRIORITY`, `game/professions.py`). Sorte (SOR) não entra nessa conta — gastar pontos nela não empurra pra nenhuma profissão específica, de propósito (não existe uma profissão "Sortudo").
+
+### Individualização de sprites por profissão
+
+Até esta rodada, as 16 profissões eram a mesma silhueta (a do Aventureiro) com uma cor multiplicada por cima (`TINTS`, aplicado tanto no sprite do jogador em jogo quanto no retrato do paperdoll) — exatamente o problema que já tinha sido corrigido pra bosses e mobs comuns, só que ainda pendente pro herói (o próprio comentário de `TINTS` já dizia "Stage C5 will swap this for real per-profession spritesheets"). Corrigido: `create_player_sprite(direction, attacking, profession=None)` (`game/assets.py`) agora despacha pra um rig próprio por profissão (`PLAYER_SPRITES`/`_PLAYER_RIG_PAINTERS`, mesmo padrão `ENEMY_SPRITES`/`BOSS_SPRITES` já usado) — `profession=None`/`"Aventureiro"` cai no desenho original, inalterado. As 15 profissões reais têm silhueta, capacete/adereço de cabeça e arma próprios (nunca só recoloração), agrupadas em 4 famílias de corpo que compartilham só o bloco de torso/pernas (`_draw_body_heavy_armor`/`_draw_body_light`/`_draw_body_robed`/`_draw_body_monk`):
+
+| Profissão | Família | Arma/prop | Cabeça |
+|---|---|---|---|
+| Guerreiro | armadura pesada | espada larga + escudo redondo | elmo de aço simples |
+| Cavaleiro | armadura pesada | espada + escudo torre | elmo com asas |
+| Campeão | armadura pesada | martelo de guerra (2 mãos, sem escudo) | elmo com chifres |
+| Paladino | armadura pesada | maça com brilho + escudo com cruz | elmo alado dourado |
+| Templário | armadura pesada | espada + escudo torre com cruz | grande elmo fechado (fresta no lugar dos olhos) |
+| Cavaleiro Arcano | armadura pesada | espada com brilho azul | elmo com gema |
+| Assassino | leve/couro | adagas gêmeas cruzadas | capuz cobrindo o rosto (olhos brilhantes) |
+| Duelista | leve/couro | rapieira + adaga de parada | chapéu emplumado |
+| Ranger | leve/couro | arco (retesado ao atacar) + aljava | capuz leve |
+| Mago | robe | cajado com orbe brilhante | chapéu pontudo |
+| Feiticeiro | robe | orbe flutuante brilhante | capuz (sem chapéu) |
+| Arcanista | robe | grimório aberto + varinha | diadema/circlet |
+| Xamã | robe | totem com pena pendurada | cocar de penas |
+| Druida | robe | cajado com brilho | coroa de folhas |
+| Monge | único (sem arma) | punho brilhante (faixas) | bandana |
+
+`Player`/`Paperdoll` deixaram de tingir uma sprite fixa: `Player._get_sprite()` cacheia por `(direction+attacking, profession)` e reconstrói quando a profissão muda (respec já dispara `refresh_profession()`); `Paperdoll._portrait_for()` chama `create_player_sprite("down", False, profession)` direto. `TINTS` (`game/professions.py`) fica no código (não referenciado por nada hoje) como paleta de destaque de UI pra uso futuro, mas parou de colorir sprite.
 
 ## XP e nível
 

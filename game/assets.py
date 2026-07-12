@@ -17,9 +17,10 @@ def draw_pixel_art(surface, pixels, scale=1):
         pygame.draw.rect(surface, color, (x*scale, y*scale, scale, scale))
 
 
-def create_player_sprite(direction="down", attacking=False):
-    SC = 3
-    s = pygame.Surface((16*SC, 16*SC), pygame.SRCALPHA)
+def _paint_adventurer(s, SC, direction, attacking):
+    """Original/default look - Aventureiro (no profession build yet), and
+    the fallback for any profession not in PLAYER_SPRITES. Untouched from
+    before the per-profession individualization pass below."""
     # Body (tunic - green)
     body = [
         (5,6),(6,6),(7,6),(8,6),(9,6),(10,6),
@@ -43,14 +44,7 @@ def create_player_sprite(direction="down", attacking=False):
            (3,2),(12,2)]
     for (x,y) in hat:
         pygame.draw.rect(s, (34,120,34), (x*SC,y*SC,SC,SC))
-    # Eyes
-    if direction == "down":
-        pygame.draw.rect(s, BLACK, (6*SC,4*SC,SC,SC))
-        pygame.draw.rect(s, BLACK, (9*SC,4*SC,SC,SC))
-    elif direction == "up":
-        pass  # back of head
-    else:
-        pygame.draw.rect(s, BLACK, (8*SC,4*SC,SC,SC))
+    _draw_player_eyes(s, SC, direction)
     # Legs
     legs = [(5,11),(6,11),(9,11),(10,11),
             (5,12),(6,12),(9,12),(10,12),
@@ -63,38 +57,481 @@ def create_player_sprite(direction="down", attacking=False):
     # a staircase of squares - same mixed rect-grid/polygon technique the
     # boss rigs use for props (game/assets.py's _paint_orc_warlord's club).
     if attacking:
-        hilt = (11*SC, 7*SC)
-        tip = (16*SC - 1, 2)
-        dx, dy = tip[0] - hilt[0], tip[1] - hilt[1]
-        length = math.hypot(dx, dy)
-        ux, uy = dx / length, dy / length      # unit vector along the blade
-        px, py = -uy, ux                        # perpendicular unit vector
-
-        blade_w = 3.5
-        blade = [
-            (hilt[0] + px*blade_w, hilt[1] + py*blade_w),
-            (hilt[0] - px*blade_w, hilt[1] - py*blade_w),
-            tip,
-        ]
-        pygame.draw.polygon(s, (225, 228, 235), blade)
-        pygame.draw.polygon(s, (140, 145, 158), blade, 1)
-        pygame.draw.line(s, (255, 255, 255),
-                          (hilt[0] + ux*2, hilt[1] + uy*2),
-                          (tip[0] - ux*2, tip[1] - uy*2), 1)
-
-        guard_len = 4.5
-        pygame.draw.line(s, GOLD,
-                          (hilt[0] + px*guard_len, hilt[1] + py*guard_len),
-                          (hilt[0] - px*guard_len, hilt[1] - py*guard_len), 2)
-
-        grip_end = (hilt[0] - ux*4, hilt[1] - uy*4)
-        pygame.draw.line(s, (90, 55, 20), hilt, grip_end, 3)
-        pygame.draw.circle(s, GOLD, (round(grip_end[0]), round(grip_end[1])), 2)
+        hilt = _weapon_hilt(SC)
+        _draw_blade(s, hilt, _weapon_tip(SC), 3.5, (225, 228, 235), (140, 145, 158))
+        ux, uy, px, py = _blade_vectors(hilt, _weapon_tip(SC))
+        _draw_crossguard(s, hilt, px, py, 4.5, GOLD)
+        _draw_grip(s, hilt, ux, uy, 4, (90, 55, 20), GOLD)
     else:
         # Shield on side
         pygame.draw.rect(s, BLUE, (3*SC,7*SC,SC*2,SC*3))
         pygame.draw.rect(s, GOLD, (3*SC,8*SC,SC*2,SC))
+
+
+# ─── Shared humanoid geometry + weapon/prop helpers (profession rigs) ──────
+# Same 16x16 grid / SC=3 canvas as _paint_adventurer above - every
+# profession rig below shares this budget so nothing needs a new blit size
+# anywhere else (Player/Paperdoll blit at the same fixed offset regardless
+# of which profession's sprite comes back).
+
+def _weapon_hilt(SC):
+    return (11*SC, 7*SC)
+
+
+def _weapon_tip(SC, reach=1.0):
+    """reach<1 = a shorter, "at rest" version of the same weapon angle -
+    used for two-handed weapons that don't fit a shield in the idle pose
+    (Cavaleiro's lance, Campeao's warhammer) instead of a second geometry."""
+    full = (16*SC - 1, 2)
+    hilt = _weapon_hilt(SC)
+    return (hilt[0] + (full[0]-hilt[0])*reach, hilt[1] + (full[1]-hilt[1])*reach)
+
+
+def _blade_vectors(hilt, tip):
+    dx, dy = tip[0] - hilt[0], tip[1] - hilt[1]
+    length = math.hypot(dx, dy)
+    ux, uy = dx / length, dy / length
+    return ux, uy, -uy, ux
+
+
+def _draw_blade(s, hilt, tip, blade_w, blade_color, edge_color, highlight=True):
+    ux, uy, px, py = _blade_vectors(hilt, tip)
+    blade = [
+        (hilt[0] + px*blade_w, hilt[1] + py*blade_w),
+        (hilt[0] - px*blade_w, hilt[1] - py*blade_w),
+        tip,
+    ]
+    pygame.draw.polygon(s, blade_color, blade)
+    pygame.draw.polygon(s, edge_color, blade, 1)
+    if highlight:
+        pygame.draw.line(s, WHITE, (hilt[0]+ux*2, hilt[1]+uy*2), (tip[0]-ux*2, tip[1]-uy*2), 1)
+
+
+def _draw_crossguard(s, hilt, px, py, length, color, width=2):
+    pygame.draw.line(s, color,
+                      (hilt[0]+px*length, hilt[1]+py*length),
+                      (hilt[0]-px*length, hilt[1]-py*length), width)
+
+
+def _draw_grip(s, hilt, ux, uy, length, grip_color, pommel_color=None, pommel_r=2):
+    grip_end = (hilt[0]-ux*length, hilt[1]-uy*length)
+    pygame.draw.line(s, grip_color, hilt, grip_end, 3)
+    if pommel_color:
+        pygame.draw.circle(s, pommel_color, (round(grip_end[0]), round(grip_end[1])), pommel_r)
+    return grip_end
+
+
+def _draw_shield(s, SC, color, trim, y=7, h=3, emblem=None):
+    pygame.draw.rect(s, color, (3*SC, y*SC, SC*2, SC*h))
+    pygame.draw.rect(s, trim, (3*SC, (y+1)*SC, SC*2, SC))
+    if emblem == "cross":
+        pygame.draw.rect(s, trim, (3*SC + SC//2, y*SC, 2, SC*h))
+        pygame.draw.rect(s, trim, (3*SC, y*SC + SC, SC*2, 2))
+
+
+def _draw_staff(s, SC, shaft_color, orb_color, reach=1.0, glow=False):
+    top = _weapon_tip(SC, reach)
+    hilt = _weapon_hilt(SC)
+    pygame.draw.line(s, shaft_color, hilt, top, 2)
+    r = 3 if glow else 2
+    pygame.draw.circle(s, orb_color, (round(top[0]), round(top[1])), r)
+    if glow:
+        glow_s = pygame.Surface((r*6, r*6), pygame.SRCALPHA)
+        pygame.draw.circle(glow_s, (*orb_color, 90), (r*3, r*3), r*3)
+        s.blit(glow_s, (round(top[0])-r*3, round(top[1])-r*3))
+
+
+def _draw_bow(s, SC, color, drawn=False):
+    if drawn:
+        rect = (10*SC, 3*SC, 5*SC, 8*SC)
+        pygame.draw.arc(s, color, rect, -1.2, 1.2, 2)
+        pygame.draw.line(s, (230, 230, 230), (12*SC, 4*SC), (9*SC, 7*SC), 1)
+        pygame.draw.line(s, (230, 230, 230), (12*SC, 10*SC), (9*SC, 7*SC), 1)
+        pygame.draw.line(s, (90, 60, 30), (9*SC, 7*SC), (2*SC, 7*SC), 1)
+    else:
+        rect = (10*SC, 6*SC, 3*SC, 7*SC)
+        pygame.draw.arc(s, color, rect, -1.4, 1.4, 2)
+        pygame.draw.line(s, (230, 230, 230), (10*SC+1, 6*SC+1), (10*SC+1, 12*SC), 1)
+
+
+def _draw_player_eyes(s, SC, direction, color=BLACK):
+    if direction == "down":
+        pygame.draw.rect(s, color, (6*SC,4*SC,SC,SC))
+        pygame.draw.rect(s, color, (9*SC,4*SC,SC,SC))
+    elif direction == "up":
+        pass  # back of head
+    else:
+        pygame.draw.rect(s, color, (8*SC,4*SC,SC,SC))
+
+
+def _draw_humanoid_head(s, SC, skin=(220,170,110)):
+    head = [(5,2),(6,2),(7,2),(8,2),(9,2),(10,2),
+            (4,3),(5,3),(6,3),(7,3),(8,3),(9,3),(10,3),(11,3),
+            (4,4),(5,4),(6,4),(7,4),(8,4),(9,4),(10,4),(11,4),
+            (4,5),(5,5),(6,5),(7,5),(8,5),(9,5),(10,5),(11,5)]
+    for (x,y) in head:
+        pygame.draw.rect(s, skin, (x*SC,y*SC,SC,SC))
+
+
+def _draw_body_heavy_armor(s, SC, body, leg_color=None):
+    """Bulkier torso (1 col wider each side than light/robed) - Guerreiro/
+    Cavaleiro/Campeao/Paladino/Templario/Cavaleiro Arcano."""
+    torso = [(x,y) for y in range(6,11) for x in range(4,12)]
+    for (x,y) in torso:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    legs = [(5,11),(6,11),(9,11),(10,11),(5,12),(6,12),(9,12),(10,12),
+            (5,13),(6,13),(9,13),(10,13)]
+    for (x,y) in legs:
+        pygame.draw.rect(s, leg_color or _shade(body, 0.8), (x*SC,y*SC,SC,SC))
+
+
+def _draw_body_light(s, SC, body):
+    """Slimmer torso - Assassino/Duelista/Ranger."""
+    torso = [(5,6),(6,6),(7,6),(8,6),(9,6),(10,6),
+              (4,7),(5,7),(6,7),(7,7),(8,7),(9,7),(10,7),(11,7),
+              (4,8),(5,8),(6,8),(7,8),(8,8),(9,8),(10,8),(11,8),
+              (4,9),(5,9),(6,9),(7,9),(8,9),(9,9),(10,9),(11,9),
+              (5,10),(6,10),(7,10),(8,10),(9,10),(10,10)]
+    for (x,y) in torso:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    legs = [(5,11),(6,11),(9,11),(10,11),(5,12),(6,12),(9,12),(10,12),
+            (5,13),(6,13),(9,13),(10,13)]
+    darker = _shade(body, 0.7)
+    for (x,y) in legs:
+        pygame.draw.rect(s, darker, (x*SC,y*SC,SC,SC))
+
+
+def _draw_body_robed(s, SC, body):
+    """Flared trapezoid robe instead of separate legs - Mago/Feiticeiro/
+    Arcanista/Xama/Druida - same technique as the common-enemy "robed"
+    rig (game/assets.py's _paint_robed), same 16x16 canvas."""
+    for y in range(6, 14):
+        half = (y - 6) // 2 + 2
+        for x in range(8 - half, 8 + half):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+
+
+def _draw_body_monk(s, SC, body):
+    """Light wraps, no armor - Monge."""
+    torso = [(x,y) for y in range(6,11) for x in range(4,12)]
+    for (x,y) in torso:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    legs = [(5,11),(6,11),(9,11),(10,11),(5,12),(6,12),(9,12),(10,12)]
+    for (x,y) in legs:
+        pygame.draw.rect(s, (220,170,110), (x*SC,y*SC,SC,SC))  # bare shins
+
+
+def create_player_sprite(direction="down", attacking=False, profession=None):
+    SC = 3
+    s = pygame.Surface((16*SC, 16*SC), pygame.SRCALPHA)
+    defn = PLAYER_SPRITES.get(profession)
+    if defn is None:
+        _paint_adventurer(s, SC, direction, attacking)
+    else:
+        _PLAYER_RIG_PAINTERS[profession](s, SC, direction, attacking, defn["body"], defn["accent"])
     return s
+
+
+# ─── Per-profession hero rigs (individualization pass) ─────────────────────
+# game/professions.py's TINTS used to be the only per-profession visual -
+# a color multiply over this exact same Aventureiro silhouette. Each of the
+# 15 real professions (everything but Aventureiro, which keeps the original
+# look - it's "no build yet", not a class) now gets its own silhouette:
+# distinct body family (armor/leather/robe/wraps), headgear, and weapon/prop,
+# not just a recolor. Reuses the shared helpers above (_draw_body_*,
+# _draw_blade/_draw_shield/_draw_staff/_draw_bow, _draw_humanoid_head/eyes).
+
+_HELM_BLOCK = [(5,0),(6,0),(7,0),(8,0),(9,0),(10,0),
+               (4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),(11,1),(3,2),(12,2)]
+
+
+def _draw_helm(s, SC, color):
+    for (x,y) in _HELM_BLOCK:
+        pygame.draw.rect(s, color, (x*SC,y*SC,SC,SC))
+
+
+def _draw_wings(s, SC, color):
+    pygame.draw.polygon(s, color, [(3*SC,1*SC),(0,0),(3*SC,2*SC)])
+    pygame.draw.polygon(s, color, [(12*SC,1*SC),(15*SC,0),(12*SC,2*SC)])
+
+
+def _draw_horns(s, SC, color):
+    pygame.draw.polygon(s, color, [(4*SC,1*SC),(3*SC,-3),(6*SC,1*SC)])
+    pygame.draw.polygon(s, color, [(9*SC,1*SC),(12*SC,-3),(11*SC,1*SC)])
+
+
+# ── Heavy armor family: Guerreiro, Cavaleiro, Campeao, Paladino, Templario,
+# Cavaleiro Arcano - bulkier torso (_draw_body_heavy_armor), differ by
+# weapon + headgear + palette only.
+
+def _paint_guerreiro(s, SC, direction, attacking, body, accent):
+    _draw_humanoid_head(s, SC)
+    _draw_body_heavy_armor(s, SC, body)
+    _draw_helm(s, SC, accent)
+    _draw_player_eyes(s, SC, direction)
+    if attacking:
+        hilt, tip = _weapon_hilt(SC), _weapon_tip(SC)
+        _draw_blade(s, hilt, tip, 3.5, (225,228,235), (140,145,158))
+        ux, uy, px, py = _blade_vectors(hilt, tip)
+        _draw_crossguard(s, hilt, px, py, 5, GOLD)
+        _draw_grip(s, hilt, ux, uy, 4, (90,55,20), GOLD)
+    else:
+        _draw_shield(s, SC, accent, _shade(accent, 0.6))
+
+
+def _paint_cavaleiro(s, SC, direction, attacking, body, accent):
+    _draw_humanoid_head(s, SC)
+    _draw_body_heavy_armor(s, SC, body)
+    _draw_helm(s, SC, accent)
+    _draw_wings(s, SC, accent)
+    _draw_player_eyes(s, SC, direction)
+    if attacking:
+        hilt, tip = _weapon_hilt(SC), _weapon_tip(SC)
+        _draw_blade(s, hilt, tip, 2.2, (220,220,230), (150,150,160))
+        ux, uy, px, py = _blade_vectors(hilt, tip)
+        _draw_grip(s, hilt, ux, uy, 4, (90,55,20), accent)
+    else:
+        _draw_shield(s, SC, accent, _shade(accent, 0.7), h=4)
+
+
+def _paint_campeao(s, SC, direction, attacking, body, accent):
+    _draw_humanoid_head(s, SC)
+    _draw_body_heavy_armor(s, SC, body)
+    _draw_helm(s, SC, accent)
+    _draw_horns(s, SC, accent)
+    _draw_player_eyes(s, SC, direction)
+    reach = 1.0 if attacking else 0.55
+    hilt, tip = _weapon_hilt(SC), _weapon_tip(SC, reach)
+    ux, uy, px, py = _blade_vectors(hilt, tip)
+    pygame.draw.line(s, (90,55,20), hilt, tip, 2)
+    head_w = 4 if attacking else 3
+    hammer = [
+        (tip[0]+px*head_w-ux*head_w, tip[1]+py*head_w-uy*head_w),
+        (tip[0]-px*head_w-ux*head_w, tip[1]-py*head_w-uy*head_w),
+        (tip[0]-px*head_w+ux*head_w, tip[1]-py*head_w+uy*head_w),
+        (tip[0]+px*head_w+ux*head_w, tip[1]+py*head_w+uy*head_w),
+    ]
+    pygame.draw.polygon(s, (90,90,95), hammer)
+    pygame.draw.polygon(s, (50,50,55), hammer, 1)
+
+
+def _paint_paladino(s, SC, direction, attacking, body, accent):
+    _draw_humanoid_head(s, SC)
+    _draw_body_heavy_armor(s, SC, body)
+    _draw_helm(s, SC, accent)
+    _draw_wings(s, SC, accent)
+    _draw_player_eyes(s, SC, direction)
+    if attacking:
+        hilt, tip = _weapon_hilt(SC), _weapon_tip(SC, 0.8)
+        ux, uy, px, py = _blade_vectors(hilt, tip)
+        pygame.draw.line(s, (90,55,20), hilt, tip, 2)
+        pygame.draw.circle(s, accent, (round(tip[0]), round(tip[1])), 3)
+        for a in (0, math.pi/2, math.pi, 3*math.pi/2):
+            spike = (tip[0]+math.cos(a)*4, tip[1]+math.sin(a)*4)
+            pygame.draw.line(s, accent, tip, spike, 1)
+    else:
+        _draw_shield(s, SC, body, accent, emblem="cross")
+
+
+def _paint_templario(s, SC, direction, attacking, body, accent):
+    _draw_body_heavy_armor(s, SC, body)
+    # Great helm fully encloses the head (rows 0-5, matching
+    # _draw_humanoid_head's own rows) - no skin peeking out underneath,
+    # just a horizontal eye slit instead of visible eyes.
+    great_helm = [(x,y) for y in range(0,6) for x in range(4,12)]
+    for (x,y) in great_helm:
+        pygame.draw.rect(s, _shade(body, 1.15), (x*SC,y*SC,SC,SC))
+    pygame.draw.rect(s, BLACK, (5*SC, round(3.5*SC), SC*6, 2))
+    if attacking:
+        hilt, tip = _weapon_hilt(SC), _weapon_tip(SC)
+        _draw_blade(s, hilt, tip, 3, (225,228,235), (140,145,158))
+        ux, uy, px, py = _blade_vectors(hilt, tip)
+        _draw_crossguard(s, hilt, px, py, 5, accent)
+        _draw_grip(s, hilt, ux, uy, 4, (90,55,20), accent)
+    else:
+        _draw_shield(s, SC, body, accent, h=4, emblem="cross")
+
+
+def _paint_cavaleiro_arcano(s, SC, direction, attacking, body, accent):
+    _draw_humanoid_head(s, SC)
+    _draw_body_heavy_armor(s, SC, body)
+    _draw_helm(s, SC, _shade(body, 1.3))
+    pygame.draw.rect(s, accent, (7*SC+1, 1*SC, 2, 2))  # gem
+    _draw_player_eyes(s, SC, direction)
+    if attacking:
+        hilt, tip = _weapon_hilt(SC), _weapon_tip(SC)
+        _draw_blade(s, hilt, tip, 3, accent, (60,90,160))
+        ux, uy, px, py = _blade_vectors(hilt, tip)
+        _draw_grip(s, hilt, ux, uy, 4, (40,40,60), accent)
+    else:
+        _draw_shield(s, SC, body, accent)
+
+
+# ── Light/leather family: Assassino, Duelista, Ranger - slimmer torso.
+
+def _paint_assassino(s, SC, direction, attacking, body, accent):
+    _draw_body_light(s, SC, body)
+    hood = [(4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),(11,1),
+            (5,2),(6,2),(7,2),(8,2),(9,2),(10,2),
+            (5,3),(6,3),(9,3),(10,3),(5,4),(10,4)]
+    for (x,y) in hood:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    for (x,y) in [(6,4),(7,4),(8,4),(9,4)]:
+        pygame.draw.rect(s, (60,20,20), (x*SC,y*SC,SC,SC))  # shadowed face
+    _draw_player_eyes(s, SC, direction, color=accent)
+    if attacking:
+        hilt = _weapon_hilt(SC)
+        tip = _weapon_tip(SC, 0.6)
+        _draw_blade(s, hilt, tip, 1.6, (220,220,225), (120,120,130))
+        hilt2 = (5*SC, 8*SC)
+        tip2 = (2*SC, 5*SC)
+        _draw_blade(s, hilt2, tip2, 1.6, (220,220,225), (120,120,130))
+    else:
+        pygame.draw.line(s, (90,20,20), (3*SC,8*SC), (3*SC,11*SC), 2)  # sheathed dagger
+
+
+def _paint_duelista(s, SC, direction, attacking, body, accent):
+    _draw_body_light(s, SC, body)
+    hat = [(4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),(11,1),(3,2),(12,2)]
+    for (x,y) in hat:
+        pygame.draw.rect(s, (40,30,30), (x*SC,y*SC,SC,SC))
+    pygame.draw.line(s, accent, (11*SC,1*SC), (15*SC,-2), 2)  # plume
+    _draw_player_eyes(s, SC, direction)
+    if attacking:
+        hilt, tip = _weapon_hilt(SC), _weapon_tip(SC)
+        _draw_blade(s, hilt, tip, 1.4, (225,228,235), (150,150,160))
+        ux, uy, px, py = _blade_vectors(hilt, tip)
+        _draw_grip(s, hilt, ux, uy, 3, accent, GOLD, 1)
+    else:
+        pygame.draw.line(s, (200,200,210), (3*SC,10*SC), (3*SC,6*SC), 2)  # parrying dagger
+
+
+def _paint_ranger(s, SC, direction, attacking, body, accent):
+    _draw_body_light(s, SC, body)
+    hood = [(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),(4,2),(11,2)]
+    for (x,y) in hood:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    _draw_player_eyes(s, SC, direction)
+    _draw_bow(s, SC, accent, drawn=attacking)
+    if not attacking:
+        pygame.draw.rect(s, (120,80,40), (11*SC, 6*SC, SC, SC*3))  # quiver
+
+
+# ── Robed family: Mago, Feiticeiro, Arcanista, Xama, Druida.
+
+def _paint_mago(s, SC, direction, attacking, body, accent):
+    _draw_body_robed(s, SC, body)
+    _draw_humanoid_head(s, SC)
+    pygame.draw.polygon(s, body, [(8*SC,-2*SC),(4*SC,2*SC),(12*SC,2*SC)])
+    _draw_player_eyes(s, SC, direction)
+    _draw_staff(s, SC, (110,80,40), accent, reach=1.0 if attacking else 0.6, glow=attacking)
+
+
+def _paint_feiticeiro(s, SC, direction, attacking, body, accent):
+    _draw_body_robed(s, SC, body)
+    _draw_humanoid_head(s, SC)
+    hood = [(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),(4,2),(11,2)]
+    for (x,y) in hood:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    _draw_player_eyes(s, SC, direction, color=accent)
+    orb_pos = _weapon_tip(SC, 0.8 if attacking else 0.45)
+    r = 3 if attacking else 2
+    pygame.draw.circle(s, accent, (round(orb_pos[0]), round(orb_pos[1])), r)
+    if attacking:
+        glow = pygame.Surface((r*8, r*8), pygame.SRCALPHA)
+        pygame.draw.circle(glow, (*accent, 90), (r*4, r*4), r*4)
+        s.blit(glow, (round(orb_pos[0])-r*4, round(orb_pos[1])-r*4))
+
+
+def _paint_arcanista(s, SC, direction, attacking, body, accent):
+    _draw_body_robed(s, SC, body)
+    _draw_humanoid_head(s, SC)
+    pygame.draw.rect(s, accent, (5*SC, 1*SC, SC*6, 2))  # circlet
+    pygame.draw.circle(s, accent, (8*SC, round(1.5*SC)), 2)
+    _draw_player_eyes(s, SC, direction)
+    if attacking:
+        pygame.draw.rect(s, (230,220,200), (10*SC, 7*SC, SC*3, SC*2))  # open tome
+        pygame.draw.line(s, (150,110,60), (10*SC, 8*SC), (13*SC, 8*SC), 1)
+        pygame.draw.line(s, accent, (11*SC,7*SC), (15*SC,3*SC), 2)  # wand
+    else:
+        pygame.draw.rect(s, (150,110,60), (11*SC, 8*SC, SC*2, SC*2))  # closed tome
+
+
+def _paint_xama(s, SC, direction, attacking, body, accent):
+    _draw_body_robed(s, SC, body)
+    _draw_humanoid_head(s, SC)
+    for a in (-0.9, -0.3, 0.3, 0.9):
+        tip = (8*SC + math.sin(a)*5*SC, 0)
+        pygame.draw.polygon(s, accent, [(8*SC,2*SC), (tip[0]-2,tip[1]), (tip[0]+2,tip[1])])
+    _draw_player_eyes(s, SC, direction)
+    top = _weapon_tip(SC, 1.0 if attacking else 0.6)
+    hilt = _weapon_hilt(SC)
+    pygame.draw.line(s, (110,80,40), hilt, top, 2)
+    pygame.draw.polygon(s, accent, [(top[0]-3,top[1]+4),(top[0],top[1]-3),(top[0]+3,top[1]+4)])
+    pygame.draw.line(s, accent, top, (top[0]-4, top[1]+8), 1)  # hanging feather
+
+
+def _paint_druida(s, SC, direction, attacking, body, accent):
+    _draw_body_robed(s, SC, body)
+    _draw_humanoid_head(s, SC)
+    for (x,y) in [(4,2),(6,1),(8,1),(10,1),(12,2)]:
+        pygame.draw.polygon(s, accent, [(x*SC,y*SC),((x+1)*SC,max(0,(y-1)*SC)),((x+2)*SC,y*SC)])
+    _draw_player_eyes(s, SC, direction)
+    _draw_staff(s, SC, (90,65,30), accent, reach=1.0 if attacking else 0.6, glow=attacking)
+
+
+# ── Monk (no weapon).
+
+def _paint_monge(s, SC, direction, attacking, body, accent):
+    _draw_body_monk(s, SC, body)
+    _draw_humanoid_head(s, SC)
+    pygame.draw.rect(s, accent, (5*SC, 1*SC, SC*6, 1))  # bandana
+    _draw_player_eyes(s, SC, direction)
+    fist_color = accent if attacking else _shade(accent, 0.7)
+    fx, fy = (13*SC, 6*SC) if attacking else (11*SC, 9*SC)
+    pygame.draw.circle(s, (220,170,110), (fx, fy), 3)
+    pygame.draw.circle(s, fist_color, (fx, fy), 3, 1)
+    if attacking:
+        glow = pygame.Surface((16,16), pygame.SRCALPHA)
+        pygame.draw.circle(glow, (*accent, 100), (8,8), 8)
+        s.blit(glow, (fx-8, fy-8))
+
+
+PLAYER_SPRITES = {
+    "Guerreiro":        {"body": (150, 40, 40),  "accent": (180, 180, 190)},
+    "Cavaleiro":        {"body": (150, 130, 60), "accent": (225, 215, 165)},
+    "Campeao":          {"body": (110, 20, 20),  "accent": (90, 90, 95)},
+    "Paladino":         {"body": (225, 210, 150),"accent": (255, 215, 60)},
+    "Templario":        {"body": (200, 190, 150),"accent": (200, 40, 40)},
+    "Cavaleiro Arcano": {"body": (60, 70, 110),  "accent": (110, 190, 255)},
+    "Assassino":        {"body": (35, 35, 45),   "accent": (150, 30, 30)},
+    "Duelista":         {"body": (180, 60, 30),  "accent": (255, 215, 60)},
+    "Ranger":           {"body": (60, 90, 50),   "accent": (120, 80, 40)},
+    "Mago":             {"body": (50, 70, 160),  "accent": (255, 220, 120)},
+    "Feiticeiro":       {"body": (110, 40, 150), "accent": (220, 120, 255)},
+    "Arcanista":        {"body": (90, 50, 140),  "accent": (205, 175, 255)},
+    "Xama":             {"body": (90, 110, 60),  "accent": (210, 180, 110)},
+    "Druida":           {"body": (50, 110, 60),  "accent": (150, 200, 90)},
+    "Monge":            {"body": (200, 170, 130),"accent": (255, 225, 140)},
+}
+
+_PLAYER_RIG_PAINTERS = {
+    "Guerreiro": _paint_guerreiro,
+    "Cavaleiro": _paint_cavaleiro,
+    "Campeao": _paint_campeao,
+    "Paladino": _paint_paladino,
+    "Templario": _paint_templario,
+    "Cavaleiro Arcano": _paint_cavaleiro_arcano,
+    "Assassino": _paint_assassino,
+    "Duelista": _paint_duelista,
+    "Ranger": _paint_ranger,
+    "Mago": _paint_mago,
+    "Feiticeiro": _paint_feiticeiro,
+    "Arcanista": _paint_arcanista,
+    "Xama": _paint_xama,
+    "Druida": _paint_druida,
+    "Monge": _paint_monge,
+}
 
 
 # Per-etype palette + which of the 3 hand-drawn rigs to paint it with

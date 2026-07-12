@@ -43,9 +43,12 @@ HYBRID = {
     frozenset({"wisdom", "vigor"}): "Templario",
 }
 
-# Tint applied to the player's procedural sprite for the paperdoll portrait
-# (Stage C5 will swap this for real per-profession spritesheets - the
-# portrait's *layout* doesn't change, only where the image comes from).
+# Used to be a color multiply applied over one shared sprite (both the
+# in-run Player and the paperdoll portrait) - superseded by real per-
+# profession rigs (game/assets.py's PLAYER_SPRITES/create_player_sprite),
+# so nothing tints with this anymore. Kept as a per-profession accent
+# color in case UI ever wants one (e.g. coloring the profession name in a
+# HUD/label) - not currently read anywhere.
 TINTS = {
     ADVENTURER: (255, 255, 255),
     "Guerreiro": (255, 90, 90),

@@ -6,7 +6,6 @@ from game.assets import (
     create_player_sprite, create_attribute_icon, create_level_thumbnail,
     create_debuff_icon, create_spell_icon,
 )
-from game.professions import TINTS
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
 from game.input_system import Action, HELP_ENTRIES
 from game.stats import mitigate
@@ -162,22 +161,19 @@ class Paperdoll:
             btn_x = self.px + _PANEL_W // 2 - 55
             self.select_buttons[spell_id] = pygame.Rect(btn_x, y + 66, 110, 26)
 
-        # Base sprite is 48x48 (16px canvas at 3x scale) - 2x again to fill
-        # the portrait box. Regular (not smooth) scale keeps the pixel-art
-        # edges crisp instead of blurring them.
-        base_sprite = create_player_sprite("down", False)
-        self._base_portrait = pygame.transform.scale(base_sprite, (_PORTRAIT_SIZE, _PORTRAIT_SIZE))
         self._portrait_cache = {}
         self._bestiary_sprite_cache = {}
 
     def _portrait_for(self, profession):
+        # Each profession is its own rig now (game/assets.py's
+        # create_player_sprite(..., profession=...)) - no more shared base
+        # sprite + color multiply. Base sprite is 48x48 (16px canvas at 3x
+        # scale) - 2x again to fill the portrait box; regular (not smooth)
+        # scale keeps the pixel-art edges crisp instead of blurring them.
         if profession not in self._portrait_cache:
-            tint = TINTS.get(profession, (255, 255, 255))
-            tinted = self._base_portrait.copy()
-            overlay = pygame.Surface((_PORTRAIT_SIZE, _PORTRAIT_SIZE), pygame.SRCALPHA)
-            overlay.fill((*tint, 255))
-            tinted.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-            self._portrait_cache[profession] = tinted
+            sprite = create_player_sprite("down", False, profession)
+            self._portrait_cache[profession] = pygame.transform.scale(
+                sprite, (_PORTRAIT_SIZE, _PORTRAIT_SIZE))
         return self._portrait_cache[profession]
 
     def _bestiary_sprite_for(self, key):
