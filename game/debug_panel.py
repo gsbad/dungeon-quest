@@ -28,11 +28,14 @@ from game.items import ITEMS
 from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER
 from game.affixes import make_paragon, make_champion
 from game.stats import MAX_LEVEL
+from game.reputation import kills_total, deaths_total, determine_reputation
 import game.save as save
 
 ATTR_STEP = 5
 GOLD_STEP = 50
 XP_CHUNK = 500
+KILLS_STEP = 10
+DEATHS_STEP = 1
 
 ATTR_ROWS = [
     ("strength", "FOR"), ("dexterity", "DES"), ("intelligence", "INT"),
@@ -81,6 +84,8 @@ class DebugPanel:
         rows.append(self._level_row())
         rows.append(self._points_row())
         rows.append(self._gold_row())
+        rows.append(self._kills_row())
+        rows.append(self._deaths_row())
         rows.append(self._xp_trigger_row())
         for item_id in ITEMS:
             rows.append(self._item_row(item_id))
@@ -135,6 +140,37 @@ class DebugPanel:
             return f"{gs.player.gold}g"
 
         return {"label": f"Ouro (passo {GOLD_STEP})", "kind": "adjust", "adjust": adjust, "text": text}
+
+    def _kills_row(self):
+        # Debug lever for game/reputation.py - kills_total() sums
+        # player.kills (in-run) + save_state.counters.kills/boss_kills
+        # (persisted) over ALL keys, so a synthetic "debug" bucket bumps the
+        # total without needing a real enemy kill. Shows the resulting
+        # reputation title inline so testing doesn't need a trip to the HUD.
+        def adjust(gs, d):
+            counters = gs.save_state["counters"]
+            counters["kills"]["debug"] = max(0, counters["kills"].get("debug", 0) + d * KILLS_STEP)
+            save.save(gs.save_state)
+
+        def text(gs):
+            total = kills_total(gs.player, gs.save_state)
+            rep = determine_reputation(total, deaths_total(gs.save_state))
+            return f"{total} ({rep})"
+
+        return {"label": f"Kills totais (passo {KILLS_STEP})", "kind": "adjust", "adjust": adjust, "text": text}
+
+    def _deaths_row(self):
+        def adjust(gs, d):
+            counters = gs.save_state["counters"]
+            counters["deaths"] = max(0, counters["deaths"] + d * DEATHS_STEP)
+            save.save(gs.save_state)
+
+        def text(gs):
+            deaths = deaths_total(gs.save_state)
+            rep = determine_reputation(kills_total(gs.player, gs.save_state), deaths)
+            return f"{deaths} ({rep})"
+
+        return {"label": "Mortes totais", "kind": "adjust", "adjust": adjust, "text": text}
 
     def _xp_trigger_row(self):
         def fire(gs):

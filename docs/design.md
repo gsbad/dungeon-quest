@@ -89,7 +89,7 @@ Cura em *fração* do máximo atual (não valor fixo) — mantém as poções re
 | Nova de Gelo | Dano em área + Lentidão | 12 mana | — | INT 20, SAB 15 | O efeito "slow" já existente |
 | Luz Curativa | Cura 25% da vida máxima | 15 mana | 10s | SAB 25 | Mesma fórmula de fração das poções |
 
-Magia "desbloqueada" = atende aos requisitos de atributo no momento — não é uma flag persistida (mesmo raciocínio de `profession` não estar no save). Conjuração: teclado 1/2/3 conjura direto; celular seleciona a magia na aba "Magias" do paperdoll e dispara com um botão dedicado.
+Magia "desbloqueada" = atende aos requisitos de atributo no momento — não é uma flag persistida (mesmo raciocínio de `profession` não estar no save). Conjuração: teclado **F** (Bola de Fogo) / **Q** (Nova de Gelo) / **R** (Luz Curativa) conjura direto — trocado de 1/2/3 pra ficar mais perto do teclado de movimento (WASD); `R` também continua reiniciando na tela de pausa/morte (`Action.RESTART`), sem colisão real entre os dois usos porque cada `Action` só é consumida no branch certo (pausado vs. em jogo) e `InputManager.update()` limpa qualquer ação não consumida a cada frame. Celular seleciona a magia na aba "Magias" do paperdoll e dispara com um botão dedicado. A aba Magias mostra a tecla de cada magia (`F`/`Q`/`R`, `game/paperdoll.py`'s `SPELL_KEYS`) em vez de um número de lista, pra não ficar desatualizada.
 
 ## Status effects (debuffs)
 
@@ -192,6 +192,7 @@ Implementação: `InputManager` (`game/input_system.py`) ganhou `Action.MENU_LEF
 ## Correções de escopo aplicadas depois da primeira implementação
 
 - **Pontos de atributo por level-up: 3 → 4.** O usuário especificou 4 desde o início; a implementação inicial usou 3 sem confirmação. Corrigido nesta sessão, com migração de save (ver `save-schema.md`).
+- **Sprite de ataque não parecia uma espada.** A pose "attacking" de `create_player_sprite()` (`game/assets.py`) desenhava só 4 pixels soltos na diagonal, e `Player.draw()` (`game/player.py`) ainda cobria a área de alcance do golpe com um retângulo translúcido (alpha 80/255) por cima — o resultado lido como uma mancha clara de baixa opacidade, não uma arma. Substituído por uma espada de verdade (lâmina + guarda + cabo + pomo, desenhada com `pygame.draw.polygon`/`line` em espaço de pixel em vez do grid `x*SC`, mesma técnica já usada nos acessórios dos rigs de boss) e o retângulo translúcido foi removido — a espada por si só já comunica o ataque. `get_attack_rect()` (a hitbox real do golpe) não mudou, só o desenho.
 
 ## Dificuldade (Stage B5)
 
@@ -231,9 +232,11 @@ Nenhum dos 3 afixos de fase se aplica em salas de boss (arena de boss já é tes
 
 Overlay de desenvolvedor, tecla `F1` (livre, confirmado por grep completo do teclado antes de escolher) — só teclado, só PC, sem botão mobile, mesmo precedente das teclas `M`/`N` de salto de fase (ferramenta de teste, não feature de jogador). Reusa exatamente o idioma de navegação do Paperdoll/Itens: W/S move um cursor com brilho pulsante, A/D ajusta uma linha, ESPAÇO aciona um "trigger". Entra no mesmo grupo de exclusão mútua que Paperdoll/Itens (C/I) — no máximo um overlay aberto por vez.
 
-19 linhas, 2 tipos:
-- **Ajuste** (atributos ±5, nível ±1, pontos livres ±1, ouro ±50, os 3 itens ±1, dificuldade atual — circula livre pelas 5, ignorando o desbloqueio sequencial, que é o próprio propósito da ferramenta).
+21 linhas, 2 tipos:
+- **Ajuste** (atributos ±5, nível ±1, pontos livres ±1, ouro ±50, **kills totais ±10, mortes totais ±1** — ver abaixo —, os 3 itens ±1, dificuldade atual — circula livre pelas 5, ignorando o desbloqueio sequencial, que é o próprio propósito da ferramenta).
 - **Trigger** (adicionar 500 XP via `gain_xp` — caminho real de nivelamento, não um set cru; desbloquear todas as dificuldades; forçar Paragon/Campeão num inimigo comum aleatório da fase; matar todos os inimigos da fase; Modo Deus; one-hit no chefe atual).
+
+**Kills/mortes totais (linhas novas, pra testar `game/reputation.py` sem precisar grindar):** `game/reputation.py`'s `kills_total()` já soma **qualquer** chave dentro de `save_state["counters"]["kills"]`/`["boss_kills"]` (mais o que ainda não foi sincronizado da run atual) — a linha de kills só incrementa/decrementa um bucket sintético `counters["kills"]["debug"]`, sem precisar simular uma morte de inimigo de verdade. A linha de mortes ajusta `counters["deaths"]` (um int simples) direto. As duas mostram o total resultante **e** o título de reputação que ele produz (`determine_reputation()`) na mesma linha, pra não precisar alternar pra o HUD só pra conferir o efeito de cada ajuste.
 
 **Achados que mudaram o design (auditoria antes de implementar):**
 - `player.level` não afeta nenhuma fórmula de combate (só XP-pra-próximo/regra anti-farm/rótulo do HUD) — o rótulo da linha deixa isso explícito, pra não parecer bugado.

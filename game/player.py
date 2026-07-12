@@ -11,7 +11,7 @@ from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missin
 
 TILE = 48
 
-# Stage E2/E3 hotbar - 3 spell slots (keys 1/2/3, already cast this way)
+# Stage E2/E3 hotbar - 3 spell slots (keys F/Q/R, already cast this way)
 # plus 3 item slots (keys 4/5/6, new). Slot background tint + a real pixel
 # icon (Stage F1, game/assets.py's create_spell_icon/create_potion_icon) -
 # used to be flat-color boxes + a 2-3 letter abbreviation.
@@ -24,7 +24,7 @@ _HOTBAR_GROUP_GAP = 16
 # Below the top-center "Inimigos: N" / exit-hint text (game/level.py draws
 # it at y=12) - the hotbar used to sit right on top of it.
 _HOTBAR_Y = 34
-_HOTBAR_KEYS = ["1", "2", "3", "4", "5", "6"]
+_HOTBAR_KEYS = ["F", "Q", "R", "4", "5", "6"]
 # Stage G1: slot background is always black (contrast for the icon, not a
 # per-spell/item tint) - the old _SPELL_COLOR/_ITEM_COLOR dicts are gone,
 # nothing else read them.
@@ -350,13 +350,6 @@ class Player:
         sx = int(self.x - cam_x)
         sy = int(self.y - cam_y)
         surface.blit(sprite, (sx - 8, sy - 12))
-
-        # Draw attack hitbox visual
-        if self.attacking:
-            ar = self.get_attack_rect()
-            slash_surf = pygame.Surface((ar.width, ar.height), pygame.SRCALPHA)
-            slash_surf.fill((255, 255, 200, 80))
-            surface.blit(slash_surf, (ar.x - cam_x, ar.y - cam_y))
 
     def draw_hud(self, surface, save_state=None):
         # HP/mana/XP bars - stats.py's bigger hp range (see Stage A3) no

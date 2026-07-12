@@ -1,3 +1,4 @@
+import math
 import pygame
 from game.theme import (
     GREEN, DARK_GREEN, BROWN, DARK_BROWN, SAND, STONE, DARK_STONE, GOLD,
@@ -56,12 +57,39 @@ def create_player_sprite(direction="down", attacking=False):
             (5,13),(6,13),(9,13),(10,13)]
     for (x,y) in legs:
         pygame.draw.rect(s, (80,40,10), (x*SC,y*SC,SC,SC))
-    # Sword (attacking)
+    # Sword (attacking) - a proper blade+crossguard+grip+pommel, replacing
+    # the old 4-pixel diagonal stub. Drawn in raw pixel space (not the
+    # x*SC grid) so the blade reads as one clean diagonal shape instead of
+    # a staircase of squares - same mixed rect-grid/polygon technique the
+    # boss rigs use for props (game/assets.py's _paint_orc_warlord's club).
     if attacking:
-        sword = [(12,5),(13,4),(14,3),(15,2)]
-        for (x,y) in sword:
-            pygame.draw.rect(s, (200,200,220), (x*SC,y*SC,SC,SC))
-        pygame.draw.rect(s, GOLD, (11*SC,6*SC,SC,SC))
+        hilt = (11*SC, 7*SC)
+        tip = (16*SC - 1, 2)
+        dx, dy = tip[0] - hilt[0], tip[1] - hilt[1]
+        length = math.hypot(dx, dy)
+        ux, uy = dx / length, dy / length      # unit vector along the blade
+        px, py = -uy, ux                        # perpendicular unit vector
+
+        blade_w = 3.5
+        blade = [
+            (hilt[0] + px*blade_w, hilt[1] + py*blade_w),
+            (hilt[0] - px*blade_w, hilt[1] - py*blade_w),
+            tip,
+        ]
+        pygame.draw.polygon(s, (225, 228, 235), blade)
+        pygame.draw.polygon(s, (140, 145, 158), blade, 1)
+        pygame.draw.line(s, (255, 255, 255),
+                          (hilt[0] + ux*2, hilt[1] + uy*2),
+                          (tip[0] - ux*2, tip[1] - uy*2), 1)
+
+        guard_len = 4.5
+        pygame.draw.line(s, GOLD,
+                          (hilt[0] + px*guard_len, hilt[1] + py*guard_len),
+                          (hilt[0] - px*guard_len, hilt[1] - py*guard_len), 2)
+
+        grip_end = (hilt[0] - ux*4, hilt[1] - uy*4)
+        pygame.draw.line(s, (90, 55, 20), hilt, grip_end, 3)
+        pygame.draw.circle(s, GOLD, (round(grip_end[0]), round(grip_end[1])), 2)
     else:
         # Shield on side
         pygame.draw.rect(s, BLUE, (3*SC,7*SC,SC*2,SC*3))

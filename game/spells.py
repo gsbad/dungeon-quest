@@ -39,7 +39,7 @@ SPELLS = {
 }
 SPELLS["healing_light"]["req"] = {"wisdom": 25}
 
-ORDER = ["fireball", "frost_nova", "healing_light"]  # keys 1/2/3, in this order
+ORDER = ["fireball", "frost_nova", "healing_light"]  # keys F/Q/R, in this order
 
 _ATTR_LABEL = {"strength": "FOR", "dexterity": "DES", "intelligence": "INT", "wisdom": "SAB", "vigor": "VIG"}
 

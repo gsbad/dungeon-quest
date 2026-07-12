@@ -46,13 +46,14 @@ class Action(Enum):
 HELP_ENTRIES = [
     ("WASD / Setas", "Mover o personagem"),
     ("ESPACO", "Atacar corpo a corpo"),
-    ("1 / 2 / 3", "Conjurar magia (slots do hotbar)"),
+    ("F", "Conjurar Bola de Fogo"),
+    ("Q", "Conjurar Nova de Gelo"),
+    ("R", "Conjurar Luz Curativa / Reiniciar (na tela de pausa ou de morte)"),
     ("4 / 5 / 6", "Usar item (slots do hotbar)"),
     ("C", "Abrir/fechar o menu Personagem"),
     ("I", "Abrir/fechar o menu Itens"),
     ("TAB", "Trocar de aba dentro de um menu"),
     ("ESC", "Pausar o jogo / fechar o menu aberto"),
-    ("R", "Reiniciar (na tela de pausa ou de morte)"),
     ("F11 / icone (tela)", "Tela cheia - tecla ou toque"),
     ("F12 / icone (tela)", "Ativar/desativar audio - tecla ou toque"),
 ]
@@ -376,16 +377,21 @@ class InputManager:
                 self._press_action(Action.PAUSE)
             if event.key == pygame.K_r:
                 self._press_action(Action.RESTART)
+                # Same physical key also casts Luz Curativa (SPELL_ORDER[2])
+                # during gameplay - no collision with RESTART above, since
+                # that's only consumed while paused (game/states.py) and
+                # CAST_3 only while not paused; unconsumed actions are
+                # cleared every frame (InputManager.update()), so pressing R
+                # while paused can't leak into a stray heal cast on unpause.
+                self._press_action(Action.CAST_3)
             if event.key == pygame.K_c:
                 self._press_action(Action.PAPERDOLL)
             if event.key == pygame.K_i:
                 self._press_action(Action.ITEMS)
-            if event.key == pygame.K_1:
+            if event.key == pygame.K_f:
                 self._press_action(Action.CAST_1)
-            if event.key == pygame.K_2:
+            if event.key == pygame.K_q:
                 self._press_action(Action.CAST_2)
-            if event.key == pygame.K_3:
-                self._press_action(Action.CAST_3)
             if event.key == pygame.K_4:
                 self._press_action(Action.USE_1)
             if event.key == pygame.K_5:

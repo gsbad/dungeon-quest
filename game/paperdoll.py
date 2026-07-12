@@ -21,6 +21,10 @@ ATLAS_ORDER = sorted(LEVEL_MAPS.keys())
 
 BESTIARY_ORDER = MOB_IDS + BOSS_IDS
 
+# Keyboard hotkey shown per SPELL_ORDER slot in the Magias tab below - must
+# match game/input_system.py's KEYDOWN bindings (K_f/K_q/K_r -> CAST_1/2/3).
+SPELL_KEYS = ["F", "Q", "R"]
+
 # (StatBlock field name, on-screen label). Order matches the plan's
 # STR/DEX/INT/WIS/VIG/SOR convention.
 ATTRS = [
@@ -456,7 +460,7 @@ class Paperdoll:
             icon = pygame.transform.scale(create_spell_icon(spell_id), (28, 28))
             surface.blit(icon, (self.px + 20, y - 4))
 
-            draw_text(surface, f"{i+1}. {spell['name']}", f_name, (230, 225, 240),
+            draw_text(surface, f"{SPELL_KEYS[i]} - {spell['name']}", f_name, (230, 225, 240),
                       spell_cx, y, shadow=False)
             draw_text(surface, spell["description"], f_body, (195, 195, 210),
                       spell_cx, y + 22, shadow=False)
