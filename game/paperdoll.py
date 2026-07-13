@@ -4,8 +4,9 @@ from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BOR
 from game.ui import Panel, draw_text
 from game.assets import (
     create_player_sprite, create_attribute_icon, create_level_thumbnail,
-    create_debuff_icon, create_spell_icon,
+    create_debuff_icon, create_spell_icon, create_trophy_icon,
 )
+from game.achievements import ACHIEVEMENTS, check_unlocks
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
 from game.input_system import Action, HELP_ENTRIES
 from game.stats import mitigate
@@ -63,7 +64,13 @@ _ATTR_LINE_H = 32
 _HINT_Y = _ATTR_START_Y + _ATTR_LINE_H * len(ATTRS) + 12
 _PANEL_H = _CONTENT_TOP + _HINT_Y + 26
 
-_TAB_ORDER = ["stats", "spells", "bestiary", "atlas", "help"]
+_TAB_ORDER = ["stats", "spells", "bestiary", "atlas", "achievements", "help"]
+
+# Achievements tab (Stage H5) - a simple vertical list (not a grid like
+# Bestiary/Atlas, since each entry needs a full-width name+description line,
+# not just an icon) of every ACHIEVEMENTS entry, greyed out until unlocked.
+_ACHIEVEMENTS_START_Y = 8
+_ACHIEVEMENTS_ROW_H = 32
 
 # Atlas tab (Stage F3) - a grid of level thumbnails (same shape as the
 # Bestiary grid above) over a detail panel for the selected level. 13
@@ -314,7 +321,7 @@ class Paperdoll:
 
         f_tab = font(15 if len(_TAB_ORDER) <= 3 else 11, bold=True)
         tab_labels = {"stats": "STATUS", "spells": "MAGIAS", "bestiary": "BESTIARIO",
-                      "atlas": "ATLAS", "help": "AJUDA"}
+                      "atlas": "ATLAS", "achievements": "CONQUISTAS", "help": "AJUDA"}
         for tab_id, rect in self.tab_buttons.items():
             active = tab_id == self.active_tab
             pygame.draw.rect(surface, (90, 60, 140) if active else (45, 40, 60), rect, border_radius=6)
@@ -331,6 +338,8 @@ class Paperdoll:
             self._draw_bestiary(surface, player, save_state, content_top)
         elif self.active_tab == "atlas":
             self._draw_atlas(surface, save_state, content_top)
+        elif self.active_tab == "achievements":
+            self._draw_achievements(surface, save_state, content_top)
         elif self.active_tab == "help":
             self._draw_help(surface, content_top)
 
@@ -612,6 +621,37 @@ class Paperdoll:
 
         f_hint = font(14)
         draw_text(surface, "TAB troca aba | setas navegam | C/ESC - Fechar", f_hint, SUBTEXT,
+                  cx, self.py + _PANEL_H - 30)
+
+    def _draw_achievements(self, surface, save_state, top):
+        cx = self.px + _PANEL_W // 2
+        unlocked = check_unlocks(save_state) if save_state else set()
+
+        f_name = font(14, bold=True)
+        f_desc = font(11)
+        icon_size = 22
+        icon_x = self.px + 20
+        text_x = icon_x + icon_size + 10
+        desc_max_w = self.px + _PANEL_W - 20 - text_x
+
+        y = top + _ACHIEVEMENTS_START_Y
+        for ach in ACHIEVEMENTS:
+            is_unlocked = ach["id"] in unlocked
+            icon = pygame.transform.scale(create_trophy_icon(ach["tier"], locked=not is_unlocked),
+                                           (icon_size, icon_size))
+            surface.blit(icon, (icon_x, y))
+
+            name_color = ACCENT_GOLD if is_unlocked else (110, 110, 120)
+            draw_text(surface, ach["name"], f_name, name_color, text_x, y - 2, shadow=False, align="left")
+
+            desc_color = (195, 195, 210) if is_unlocked else (90, 90, 100)
+            desc_line = self._wrap_text(ach["description"], f_desc, desc_max_w)[0]
+            draw_text(surface, desc_line, f_desc, desc_color, text_x, y + 15, shadow=False, align="left")
+
+            y += _ACHIEVEMENTS_ROW_H
+
+        f_hint = font(14)
+        draw_text(surface, "TAB troca aba | C/ESC - Fechar", f_hint, SUBTEXT,
                   cx, self.py + _PANEL_H - 30)
 
     def _draw_help(self, surface, top):

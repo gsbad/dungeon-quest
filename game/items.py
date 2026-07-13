@@ -9,10 +9,12 @@ the stackable things that live in player.inventory.
 """
 
 ITEMS = {
-    "health_potion": {"name": "Pocao de Vida", "price": 15, "heal_hp_frac": 0.5},
-    "mana_potion":   {"name": "Pocao de Mana", "price": 12, "heal_mana_frac": 0.6},
-    "antidote":      {"name": "Antidoto",      "price": 20, "cures": frozenset({"poison", "slow", "weakness"})},
+    "health_potion": {"name": "Pocao de Vida", "price": 30, "heal_hp_frac": 0.5},
+    "mana_potion":   {"name": "Pocao de Mana", "price": 24, "heal_mana_frac": 0.6},
+    "antidote":      {"name": "Antidoto",      "price": 40, "cures": frozenset({"poison", "slow", "weakness"})},
 }
+
+MAX_STOCK = 50
 
 
 def use_item(player, item_id):
@@ -34,9 +36,12 @@ def use_item(player, item_id):
 
 
 def buy_item(player, item_id):
-    """Returns False if the player can't afford it, without side effects."""
+    """Returns False if the player can't afford it or already holds the max
+    stack (MAX_STOCK), without side effects."""
     price = ITEMS[item_id]["price"]
     if player.gold < price:
+        return False
+    if player.inventory.get(item_id, 0) >= MAX_STOCK:
         return False
     player.gold -= price
     player.inventory[item_id] = player.inventory.get(item_id, 0) + 1

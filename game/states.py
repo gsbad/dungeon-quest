@@ -13,7 +13,10 @@ from game.paperdoll import Paperdoll
 from game.merchant import ItemsOverlay
 from game.debug_panel import DebugPanel
 from game.weather import WeatherSystem
-from game.assets import create_heart_sprite, create_mana_orb_sprite, create_logo_sprite, create_victory_hero_sprite
+from game.assets import (
+    create_heart_sprite, create_mana_orb_sprite, create_logo_sprite,
+    create_victory_hero_sprite, create_player_sprite,
+)
 from game.input_system import Action, FullscreenButton, PaperdollButton, ItemsButton
 from game.audio import SoundButton
 from game.stats import POINTS_PER_LEVEL, MAX_LEVEL
@@ -39,10 +42,10 @@ from game.ui import draw_text, TextButton, Panel, ProgressBar
 # special case - CacodemonBoss has no phase concept, so its factory just
 # ignores the argument.
 BOSS_REGISTRY = {
-    "orc_warlord": (lambda x, y, ef=0.5: Boss(x, y, boss_id="orc_warlord", enrage_frac=ef), 48, 80),
-    "necromancer": (lambda x, y, ef=0.5: Boss(x, y, boss_id="necromancer", enrage_frac=ef), 48, 80),
-    "shadow_king": (lambda x, y, ef=0.5: Boss(x, y, boss_id="shadow_king", enrage_frac=ef), 48, 80),
-    "cacodemon": (lambda x, y, ef=0.5: CacodemonBoss(x, y), 40, 100),
+    "orc_warlord": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="orc_warlord", enrage_frac=ef, audio_mgr=am), 48, 80),
+    "necromancer": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="necromancer", enrage_frac=ef, audio_mgr=am), 48, 80),
+    "shadow_king": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="shadow_king", enrage_frac=ef, audio_mgr=am), 48, 80),
+    "cacodemon": (lambda x, y, ef=0.5, am=None: CacodemonBoss(x, y, audio_mgr=am), 40, 100),
 }
 
 
@@ -113,6 +116,20 @@ class MenuState:
         ]
         self.controls_panel = Panel(320, 160, PANEL_FILL, PANEL_BORDER)
 
+        # Stage H5/H6 - a row of profession portraits where the old credits
+        # line used to be. Same create_player_sprite(...)+transform.scale
+        # pattern as game/paperdoll.py's _portrait_for() (kept separate,
+        # not shared, since Paperdoll's cache is keyed to a Paperdoll
+        # instance's lifetime, MenuState's to its own).
+        self._portrait_professions = [
+            "Guerreiro", "Mago", "Paladino", "Campeao",
+            "Cavaleiro Arcano", "Assassino", "Templario",
+        ]
+        self._portraits = [
+            pygame.transform.scale(create_player_sprite("down", False, prof), (48, 48))
+            for prof in self._portrait_professions
+        ]
+
     def handle_event(self, event):
         if self.input.consume_action(Action.MENU_UP):
             self.selected = (self.selected - 1) % len(self.options)
@@ -149,8 +166,14 @@ class MenuState:
         f_title = font(64, bold=True)
         draw_text(self.screen, "DUNGEON QUEST", f_title, TITLE_MENU, SW//2, 90)
 
-        f_sub = font(20)
-        draw_text(self.screen, "Criado por Gustavo Sa - RU 361193", f_sub, SUBTEXT, SW//2, 175)
+        # Stage H5/H6 - profession portrait row where the credits line used
+        # to be, same open vertical gap between the title and the controls
+        # panel.
+        gap = 10
+        row_w = len(self._portraits) * 48 + (len(self._portraits) - 1) * gap
+        x0 = SW // 2 - row_w // 2
+        for i, portrait in enumerate(self._portraits):
+            self.screen.blit(portrait, (x0 + i * (48 + gap), 155))
 
         # Controls box
         self.controls_panel.draw(self.screen, (SW//2-160, 220))
@@ -183,7 +206,7 @@ class MenuState:
 
         # Version
         f_tiny = font(12)
-        v = f_tiny.render("Linguagem de Programacao Aplicada - UNINTER 2026", True, (80,80,100))
+        v = f_tiny.render("Criado por Gustavo Sa", True, (80,80,100))
         self.screen.blit(v, (SW//2 - v.get_width()//2, SH - 24))
 
 
@@ -540,7 +563,8 @@ class GameplayState:
         self.difficulty = DIFFICULTIES[self.difficulty_id]
         hastened_mult = 1.25 if "hastened" in self.difficulty["level_affixes"] else 1.0
 
-        self.level = Level(level_num, extra_speed_mult=hastened_mult, ml_bonus=self.difficulty["ml_bonus"])
+        self.level = Level(level_num, extra_speed_mult=hastened_mult, ml_bonus=self.difficulty["ml_bonus"],
+                           audio_mgr=audio_mgr)
         self.camera = Camera(SW, SH, self.level.width, self.level.height)
 
         # Stage F3 (Atlas tab): record this level as seen, permanently -
@@ -580,7 +604,7 @@ class GameplayState:
         boss_key = self.level.data.get("boss")
         if boss_key:
             boss_factory, spawn_dx, spawn_y = BOSS_REGISTRY[boss_key]
-            self.boss = boss_factory(SW//2 - spawn_dx, spawn_y, self.difficulty["boss_enrage_frac"])
+            self.boss = boss_factory(SW//2 - spawn_dx, spawn_y, self.difficulty["boss_enrage_frac"], audio_mgr)
         # Enemies spawned by a boss's "summon" pattern (necromancer, Stage
         # D6) - tracked separately from self.level.enemies just to cap how
         # many of THIS boss's adds can be alive at once; the enemies
@@ -722,6 +746,11 @@ class GameplayState:
 
     def _handle_hotbar_taps(self):
         for kind, key, rect in hotbar_slots():
+            # Neither slot kind is drawn on touch (see Player._draw_hotbar) -
+            # the spell_buttons/item_buttons rows handle that input instead,
+            # so skip the now-invisible tap targets to match.
+            if self.input.touch_active:
+                continue
             if not self.input.tapped_rect(rect):
                 continue
             if kind == "spell":
@@ -910,7 +939,8 @@ class GameplayState:
                 self.boss_summons = [e for e in self.boss_summons if e.alive]
                 free_slots = max(0, 3 - len(self.boss_summons))
                 for sx, sy in self.boss.pending_summons[:free_slots]:
-                    summon = Enemy(sx, sy, "skeleton", ml=20 + self.difficulty["ml_bonus"])
+                    summon = Enemy(sx, sy, "skeleton", ml=20 + self.difficulty["ml_bonus"],
+                                    level_num=self.level_num, audio_mgr=self.audio)
                     summon.aggro_range *= self.weather.visibility_multiplier
                     self.level.enemies.append(summon)
                     self.boss_summons.append(summon)
@@ -959,8 +989,23 @@ class GameplayState:
                 )
             boss_key = self.level.data.get("boss")
             self.player.boss_kills[boss_key] = self.player.boss_kills.get(boss_key, 0) + 1
-        if self.boss and not self.boss.alive:
-            self.next_state = self.level.data["victory"]
+
+            # Stage H1 fix: this used to be `if self.boss and not self.boss.alive:`
+            # with no one-shot guard, re-running every single frame after the
+            # boss died. That (a) permanently clobbered next_state back to
+            # None on levels 4/8 (which use "next", not "victory" - only the
+            # campaign-final levels 12/13 have a real "victory" value) and
+            # (b) stomped any other source of next_state (e.g. the M/N dev
+            # skip keys) set later in the same frame, since GameplayState's
+            # own update() always runs after handle_event(). Reusing the
+            # boss_was_alive guard above makes this fire exactly once, on
+            # the death frame, like the xp/gold credit right above it.
+            victory_result = self.level.data.get("victory")
+            next_lvl = self.level.data.get("next")
+            if victory_result:
+                self.next_state = victory_result
+            elif next_lvl is not None:
+                self.next_state = f"next:{next_lvl}"
 
         # Screen shake feedback when the player takes damage (from boss or
         # regular enemies alike - both paths run above, so a simple hp diff
@@ -975,9 +1020,11 @@ class GameplayState:
             # Persisted immediately (not just at level-exit) so a level
             # gained mid-run survives a closed tab/browser crash.
             import game.save as save
+            import game.net as net
             save.sync_character(self.save_state, self.player)
             save.sync_economy(self.save_state, self.player)
             save.save(self.save_state)
+            net.trigger_sync(self.save_state)
         if self.player.pending_level_up > 0:
             # Stage F2: open the stats tab immediately and lock it until the
             # new points are spent, instead of relying on the toast alone.
@@ -1041,7 +1088,7 @@ class GameplayState:
         self.weather.draw(self.screen)
 
         # HUD
-        self.player.draw_hud(self.screen, self.save_state)
+        self.player.draw_hud(self.screen, self.save_state, touch_active=self.input.touch_active)
         self.level.draw_hud_info(self.screen)
 
         # Difficulty tag + active level affixes (Stage B5) - just above the
@@ -1209,7 +1256,11 @@ class VictoryState:
         # just unlocked (first clear of this tier only, not on replays).
         self.secret_unlocked = secret_unlocked
         self.unlocked_next = unlocked_next
-        self.menu_button = TextButton("[ ENTER ] - Menu Principal", SW//2, 420)
+        # The primary action always drives straight into level 1 of whatever
+        # tier is now current (next tier if one was just unlocked, same tier
+        # otherwise) via GameStateManager's existing "CONTINUAR" branch/
+        # _continue_level() - no extra trip through the main menu.
+        self.continue_button = TextButton("[ ENTER ] - Continuar", SW//2, 420)
         secret_label = "[ ESPACO ] - Nivel Secreto" if secret_unlocked else "Nivel Secreto - vença o Inferno para desbloquear"
         self.secret_button = TextButton(secret_label, SW//2, 500, pad_y=10)
 
@@ -1223,10 +1274,10 @@ class VictoryState:
                 return "secret"
         if self.input.consume_action(Action.CONFIRM):
             self.audio.play("menu_select")
-            return "menu"
-        if self.input.tapped_rect(self.menu_button.rect):
+            return "CONTINUAR"
+        if self.input.tapped_rect(self.continue_button.rect):
             self.audio.play("menu_select")
-            return "menu"
+            return "CONTINUAR"
         return None
 
     def update(self, dt):
@@ -1258,11 +1309,15 @@ class VictoryState:
         draw_text(self.screen, "O Rei das Sombras foi derrotado!", f2, (220,220,180), SW//2, 235)
         draw_text(self.screen, "A paz voltou as terras do reino.", f2, (200,200,160), SW//2, 268)
 
-        f3 = font(18)
-        draw_text(self.screen, "Parabens, heroi!", f3, (180,255,180), SW//2, 330)
+        f3 = font(18, bold=True) if self.unlocked_next else font(18)
+        if self.unlocked_next:
+            draw_text(self.screen, f"Parabens, voce desbloqueou o modo {self.unlocked_next}!",
+                      f3, ACCENT_GOLD, SW//2, 330)
+        else:
+            draw_text(self.screen, "Parabens, heroi!", f3, (180,255,180), SW//2, 330)
 
         f4 = font(20, bold=True)
-        self.menu_button.draw(self.screen, f4, (200,200,220))
+        self.continue_button.draw(self.screen, f4, (200,200,220))
 
         # Show total play time
         mins = int(self.elapsed // 60)
@@ -1271,18 +1326,13 @@ class VictoryState:
         ftime = font(18)
         draw_text(self.screen, time_str, ftime, (180,220,180), SW//2, 460)
 
-        if self.unlocked_next:
-            f_unlock = font(17, bold=True)
-            draw_text(self.screen, f"Dificuldade desbloqueada: {self.unlocked_next}!",
-                      f_unlock, ACCENT_GOLD, SW//2, 485)
-
         # Instructions
         f_ins = font(16)
         secret_color = (180,200,180) if self.secret_unlocked else (110,100,100)
         self.secret_button.draw(self.screen, f_ins, secret_color)
 
         f5 = font(14)
-        draw_text(self.screen, "Linguagem de Programacao Aplicada - UNINTER 2026",
+        draw_text(self.screen, "Criado por Gustavo Sa",
                   f5, (80,80,120), SW//2, SH-24)
 
 
@@ -1376,6 +1426,12 @@ class GameStateManager:
         self.state = MenuState(screen, input_mgr, audio_mgr, has_save=self._has_progress())
         self.player = None
         self.play_time = 0.0
+        # Stage H7 - tracks whether the title theme is the thing currently
+        # looping, so update() can start/stop it exactly on the transition
+        # edge (MenuState<->anything else) instead of needing every single
+        # _transition() branch that leaves/enters the menu to remember to
+        # call play_music/stop_music itself.
+        self._menu_music_playing = False
         # Set right before a "victory" transition if that clear was the
         # *first* clear of the active tier (Stage B5) - lets VictoryState
         # show "dificuldade desbloqueada" only once, not on every replay.
@@ -1443,6 +1499,16 @@ class GameStateManager:
             self._transition(result)
 
     def update(self, dt):
+        # Stage H7: title theme plays exactly while MenuState is current,
+        # nothing else needs to know about it.
+        on_menu = isinstance(self.state, MenuState)
+        if on_menu and not self._menu_music_playing:
+            self.audio.play_music("title_theme")
+            self._menu_music_playing = True
+        elif not on_menu and self._menu_music_playing:
+            self.audio.stop_music()
+            self._menu_music_playing = False
+
         if self.input.tapped_rect(self.sound_button.rect) or self.input.consume_action(Action.MUTE):
             self.audio.toggle_mute()
             self.audio.play("menu_select")
@@ -1500,6 +1566,8 @@ class GameStateManager:
                 save.sync_counters(self.save_state, self.player)
                 save.sync_economy(self.save_state, self.player)
                 self._persist()
+                import game.net as net
+                net.trigger_sync(self.save_state)
                 self._transition(ns)
 
         if isinstance(self.state, TransitionState):
@@ -1553,6 +1621,12 @@ class GameStateManager:
             fresh["settings"]["muted"] = self.save_state["settings"]["muted"]
             self.save_state = fresh
             self._persist()  # wipe must survive an immediate quit
+            # A deliberate reset needs to reach the cloud copy too, or the
+            # next login on this account would silently resurrect the old
+            # character via the very merge logic that's supposed to protect
+            # progress from being lost.
+            import game.net as net
+            net.trigger_sync(self.save_state)
             self.player = None
             # has_progress() is now False -> menu shows "Novo Jogo" again,
             # same character-creation entry point as any other fresh save;

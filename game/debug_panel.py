@@ -29,7 +29,9 @@ from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER
 from game.affixes import make_paragon, make_champion
 from game.stats import MAX_LEVEL
 from game.reputation import kills_total, deaths_total, determine_reputation
+from game.professions import PURE, HYBRID, ADVENTURER, BASE_ATTR
 import game.save as save
+import game.net as net
 
 ATTR_STEP = 5
 GOLD_STEP = 50
@@ -42,21 +44,54 @@ ATTR_ROWS = [
     ("wisdom", "SAB"), ("vigor", "VIG"),
 ]
 
+# Stage H8 - the 16 professions in a stable cycling order (Aventureiro +
+# 5 PURE + 10 HYBRID), each mapped to an attribute recipe that
+# game.professions.determine_profession() will read back as that exact
+# profession - profession itself has no settable field (see
+# game/professions.py's module docstring), so "activating" one from here
+# means applying the attribute combination it's derived from.
+PROFESSION_ORDER = [ADVENTURER] + list(PURE.values()) + list(HYBRID.values())
+_PROFESSION_ATTRS = ["strength", "dexterity", "intelligence", "wisdom", "vigor"]
+
+
+def _profession_recipe(name):
+    if name == ADVENTURER:
+        return {}
+    for attr, pname in PURE.items():
+        if pname == name:
+            # Comfortably over the ratio-gate (2nd highest must be < half
+            # the highest) since every other priority attr stays at baseline.
+            return {attr: BASE_ATTR + 30}
+    for pair, pname in HYBRID.items():
+        if pname == name:
+            a, b = pair
+            # Equal split clears both the >=20-spent floor and the "not
+            # ratio-gated to PURE" check (spent[a] == spent[b]).
+            return {a: BASE_ATTR + 25, b: BASE_ATTR + 25}
+    return {}
+
+
 _PANEL_W = 460
 _PY = 20
 _TITLE_Y = 18
 _ROWS_START_Y = 60
-_ROW_H = 24
+# Stage I2/I6 added a 23rd row (login/sync status) to a panel that was
+# already right at SH's edge with the old 24px rows (60 + 23*24 + 40 + PY(20)
+# = 672, well past SH=600 - the new row rendered off-screen). 20px keeps
+# every row on-screen with margin (60 + 23*20 + 40 + 20 = 580).
+_ROW_H = 20
 
 
 def _persist_character(gs):
     save.sync_character(gs.save_state, gs.player)
     save.save(gs.save_state)
+    net.trigger_sync(gs.save_state)
 
 
 def _persist_economy(gs):
     save.sync_economy(gs.save_state, gs.player)
     save.save(gs.save_state)
+    net.trigger_sync(gs.save_state)
 
 
 def _full_heal(gs):
@@ -81,6 +116,7 @@ class DebugPanel:
         rows = []
         for attr, label in ATTR_ROWS:
             rows.append(self._attr_row(attr, label))
+        rows.append(self._profession_row())
         rows.append(self._level_row())
         rows.append(self._points_row())
         rows.append(self._gold_row())
@@ -96,6 +132,7 @@ class DebugPanel:
         rows.append(self._kill_all_row())
         rows.append(self._god_mode_row())
         rows.append(self._one_hit_boss_row())
+        rows.append(self._login_status_row())
         return rows
 
     def _attr_row(self, attr, label):
@@ -110,6 +147,24 @@ class DebugPanel:
             return str(int(getattr(gs.player.stats, attr)))
 
         return {"label": f"{label} (passo {ATTR_STEP})", "kind": "adjust", "adjust": adjust, "text": text}
+
+    def _profession_row(self):
+        def adjust(gs, d):
+            current = gs.player.profession if gs.player.profession in PROFESSION_ORDER else ADVENTURER
+            idx = PROFESSION_ORDER.index(current)
+            target = PROFESSION_ORDER[(idx + d) % len(PROFESSION_ORDER)]
+            for attr in _PROFESSION_ATTRS:
+                setattr(gs.player.stats, attr, BASE_ATTR)
+            for attr, value in _profession_recipe(target).items():
+                setattr(gs.player.stats, attr, value)
+            gs.player.refresh_profession()
+            _full_heal(gs)
+            _persist_character(gs)
+
+        def text(gs):
+            return gs.player.profession
+
+        return {"label": "Profissao (forcar)", "kind": "adjust", "adjust": adjust, "text": text}
 
     def _level_row(self):
         def adjust(gs, d):
@@ -267,6 +322,27 @@ class DebugPanel:
 
         return {"label": "One-hit no chefe atual", "kind": "trigger", "fire": fire}
 
+    def _login_status_row(self):
+        # Stage I2 spike: read-only proof that Google login -> backend JWT ->
+        # localStorage -> game/net.py's js bridge round-trip actually worked,
+        # without wiring any real cloud-sync UI yet. No adjust/fire action -
+        # ESPACO is a harmless no-op here, same shape as _god_mode_row's
+        # trigger+text combo.
+        def fire(gs):
+            pass
+
+        def text(gs):
+            email = net.get_email()
+            who = email if email else "desconectado"
+            status = net.get_last_sync_status()
+            combined = f"{who} | {status}"
+            # Short form for the row itself (shares its line with the
+            # label) - the cursor-selected hint line at the panel's bottom
+            # shows the untruncated version, see draw()'s _hint_text().
+            return combined if len(combined) <= 38 else combined[:35] + "..."
+
+        return {"label": "Login/Sync (Stage I2/I6)", "kind": "trigger", "fire": fire, "text": text}
+
     # ------------------------------------------------------------- state
     def consume_difficulty_dirty(self):
         dirty, self._difficulty_dirty = self._difficulty_dirty, False
@@ -328,6 +404,32 @@ class DebugPanel:
             if value_surf is not None:
                 surface.blit(value_surf, (self.px + _PANEL_W - 22 - value_surf.get_width(), y))
 
-        f_hint = font(13)
-        draw_text(surface, "W/S seleciona | A/D ajusta | ESPACO aciona | F1 - Fechar",
-                  f_hint, SUBTEXT, self.px + _PANEL_W // 2, self.py + self._panel_h - 24)
+        # Stage I6 debugging: the login/sync row's own value text is
+        # truncated to fit next to its label - when the cursor sits on that
+        # row, show the FULL untruncated status here instead of the normal
+        # control hint, wrapped to the panel width, so a real error message
+        # is readable in-game without needing browser DevTools at all.
+        if self.cursor == len(self._rows) - 1:
+            email = net.get_email()
+            who = email if email else "desconectado"
+            full_status = f"{who} | {net.get_last_sync_status()}"
+            f_hint = font(12)
+            words = full_status.split(" ")
+            lines, cur = [], ""
+            for w in words:
+                trial = f"{cur} {w}".strip()
+                if f_hint.size(trial)[0] > _PANEL_W - 30 and cur:
+                    lines.append(cur)
+                    cur = w
+                else:
+                    cur = trial
+            if cur:
+                lines.append(cur)
+            lines = lines[:3]
+            base_y = self.py + self._panel_h - 14 - (len(lines) - 1) * 14
+            for i, line in enumerate(lines):
+                draw_text(surface, line, f_hint, SUBTEXT, self.px + _PANEL_W // 2, base_y + i * 14)
+        else:
+            f_hint = font(13)
+            draw_text(surface, "W/S seleciona | A/D ajusta | ESPACO aciona | F1 - Fechar",
+                      f_hint, SUBTEXT, self.px + _PANEL_W // 2, self.py + self._panel_h - 24)

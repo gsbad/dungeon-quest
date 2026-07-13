@@ -16,7 +16,7 @@ SPELLS = {
         "name": "Bola de Fogo",
         "description": "Projetil de fogo em linha reta.",
         "mana_cost": 8,
-        "cooldown": 3.0,
+        "cooldown": 2.0,
         "req": {"intelligence": 15},
         "spell_base": 12,
     },
@@ -24,15 +24,18 @@ SPELLS = {
         "name": "Nova de Gelo",
         "description": "Dano em area + Lentidao ao redor do jogador.",
         "mana_cost": 12,
-        "cooldown": 5.0,
+        "cooldown": 3.0,
         "req": {"intelligence": 20, "wisdom": 15},
-        "spell_base": 8,
+        # Stage H3: bumped above fireball's spell_base (12) - it's still an
+        # AoE hit, so it's meant to out-damage the single-target bolt now
+        # that both have the same short cooldown.
+        "spell_base": 14,
     },
     "healing_light": {
         "name": "Luz Curativa",
-        "description": "Cura 25% da vida maxima. Recarga de 10s.",
+        "description": "Cura 25% da vida maxima. Recarga de 7s.",
         "mana_cost": 15,
-        "cooldown": 10.0,
+        "cooldown": 7.0,
         "req": {},  # falls back to the generic wisdom req below
         "heal_frac": 0.25,
     },

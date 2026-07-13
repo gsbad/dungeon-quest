@@ -392,6 +392,7 @@ def _paint_assassino(s, SC, direction, attacking, body, accent):
 
 def _paint_duelista(s, SC, direction, attacking, body, accent):
     _draw_body_light(s, SC, body)
+    _draw_humanoid_head(s, SC)
     hat = [(4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),(11,1),(3,2),(12,2)]
     for (x,y) in hat:
         pygame.draw.rect(s, (40,30,30), (x*SC,y*SC,SC,SC))
@@ -408,6 +409,7 @@ def _paint_duelista(s, SC, direction, attacking, body, accent):
 
 def _paint_ranger(s, SC, direction, attacking, body, accent):
     _draw_body_light(s, SC, body)
+    _draw_humanoid_head(s, SC)
     hood = [(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),(4,2),(11,2)]
     for (x,y) in hood:
         pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
@@ -1357,6 +1359,76 @@ def create_spell_icon(spell_id):
         pygame.draw.line(s, gold, (13, 3), (3, 13), 1)
         pygame.draw.circle(s, bright, (8, 8), 2)
     _SPELL_ICON_CACHE[spell_id] = s
+    return s
+
+
+_SWORD_ICON_CACHE = None
+
+
+def create_sword_icon():
+    """Diagonal blade + crossguard + hilt, same 16x16 SRCALPHA/manual-rect
+    style as create_spell_icon - used by the mobile ATK button instead of
+    a text label (Stage H3)."""
+    global _SWORD_ICON_CACHE
+    if _SWORD_ICON_CACHE is not None:
+        return _SWORD_ICON_CACHE
+    s = pygame.Surface((16, 16), pygame.SRCALPHA)
+    blade = (225, 228, 235)
+    edge = (150, 150, 160)
+    guard = (200, 160, 40)
+    grip = (90, 60, 30)
+    for i in range(9):
+        x, y = 2 + i, 2 + i
+        pygame.draw.rect(s, blade, (x, y, 2, 2))
+    pygame.draw.line(s, edge, (2, 3), (10, 11), 1)
+    pygame.draw.rect(s, guard, (8, 9, 4, 2))
+    pygame.draw.rect(s, grip, (11, 11, 2, 2))
+    pygame.draw.rect(s, grip, (12, 12, 2, 2))
+    pygame.draw.rect(s, (230, 200, 90), (13, 13, 2, 2))
+    _SWORD_ICON_CACHE = s
+    return s
+
+
+_TROPHY_ICON_CACHE = {}
+_TROPHY_TIER_COLORS = {
+    "bronze": (180, 110, 60),
+    "silver": (190, 195, 205),
+    "gold": (255, 205, 60),
+    "special": (230, 60, 50),
+}
+
+
+def create_trophy_icon(tier, locked=False):
+    """Pixel-art trophy for the Conquistas tab (Stage H5), colored by tier.
+    `locked` returns a desaturated grey silhouette instead - same "greyed
+    out until discovered" convention as the Atlas/Bestiary tabs."""
+    cache_key = (tier, locked)
+    if cache_key in _TROPHY_ICON_CACHE:
+        return _TROPHY_ICON_CACHE[cache_key]
+    s = pygame.Surface((16, 16), pygame.SRCALPHA)
+    color = (90, 90, 95) if locked else _TROPHY_TIER_COLORS.get(tier, (200, 200, 200))
+    shine = (60, 60, 65) if locked else _shade(color, 1.3)
+
+    cup_rows = {
+        2: (5, 10), 3: (4, 11), 4: (4, 11), 5: (5, 10), 6: (6, 9), 7: (6, 9),
+    }
+    for y, (x0, x1) in cup_rows.items():
+        pygame.draw.rect(s, color, (x0, y, x1 - x0 + 1, 1))
+    pygame.draw.rect(s, color, (6, 8, 4, 2))   # stem
+    pygame.draw.rect(s, color, (5, 10, 6, 1))  # base plate
+    pygame.draw.rect(s, color, (4, 11, 8, 1))  # base foot
+    # handles
+    pygame.draw.rect(s, color, (2, 3, 2, 1))
+    pygame.draw.rect(s, color, (2, 3, 1, 3))
+    pygame.draw.rect(s, color, (2, 5, 2, 1))
+    pygame.draw.rect(s, color, (12, 3, 2, 1))
+    pygame.draw.rect(s, color, (13, 3, 1, 3))
+    pygame.draw.rect(s, color, (12, 5, 2, 1))
+    if not locked:
+        pygame.draw.rect(s, shine, (6, 3, 1, 2))  # highlight glint
+    if tier == "special" and not locked:
+        pygame.draw.rect(s, (255, 230, 120), (7, 0, 2, 2))  # star above the cup
+    _TROPHY_ICON_CACHE[cache_key] = s
     return s
 
 

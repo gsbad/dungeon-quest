@@ -200,26 +200,155 @@ function show_infobox() {
     <link rel="icon" type="image/png" href="favicon.png" sizes="16x16">
 
     <style>
-        #status {
-            display: inline-block;
-            vertical-align: top;
-            margin-top: 20px;
-            margin-left: 30px;
-            font-weight: bold;
-            color: rgb(120, 120, 120);
+        /* CUSTOM (Stage H6): loading-screen identity, matching game/theme.py's
+           palette (dark purple panel, gold accent, purple border/title) so the
+           page doesn't read as a generic pygbag scaffold before the canvas
+           takes over. Deliberately does not touch canvas.emscripten (below)
+           or the fitCanvas()/updateLogicalMouse() script (end of file) - those
+           fix real mouse-alignment/aspect-ratio bugs and are unrelated to this
+           screen's look. */
+        :root {
+            --dq-bg-0: #0b0714;
+            --dq-bg-1: #1a0f2e;
+            --dq-panel: rgba(20, 10, 40, 0.92);
+            --dq-border: #7850c8;
+            --dq-gold: #ffdc64;
+            --dq-title: #dca0ff;
+            --dq-subtext: #b4b4dc;
         }
 
+        #dq-brand {
+            display: block;
+            text-align: center;
+            margin: 14vh auto 18px;
+            font-family: Georgia, 'Trebuchet MS', serif;
+        }
+
+        #dq-brand .dq-title {
+            margin: 0;
+            font-size: 42px;
+            font-weight: bold;
+            letter-spacing: 4px;
+            color: var(--dq-title);
+            text-shadow: 0 0 18px rgba(220, 160, 255, 0.55), 0 2px 0 #000;
+        }
+
+        #dq-brand .dq-subtitle {
+            margin: 6px 0 0;
+            font-size: 14px;
+            letter-spacing: 2px;
+            color: var(--dq-subtext);
+            text-transform: uppercase;
+        }
+
+        #status {
+            display: block;
+            margin: 4px auto 14px;
+            font-family: 'Trebuchet MS', Arial, sans-serif;
+            font-weight: bold;
+            font-size: 13px;
+            letter-spacing: 1px;
+            color: var(--dq-subtext);
+            text-align: center;
+        }
+
+        /* CUSTOM (Stage I2): persistent login bar, a sibling of #transfer and
+           #canvas rather than living inside #transfer - #transfer gets hidden
+           almost immediately by pygbag's own bootstrap (see custom_site() at
+           the top of this file), well before the player would ever get a
+           chance to click a login button placed there. Fixed position so it
+           survives both the loading screen and gameplay, unaffected by the
+           canvas's own draw loop. */
+        #dq-auth-bar {
+            position: fixed;
+            top: 8px;
+            right: 8px;
+            z-index: 100000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: var(--dq-panel);
+            border: 1px solid var(--dq-border);
+            border-radius: 8px;
+            font-family: 'Trebuchet MS', Arial, sans-serif;
+        }
+
+        #dq-auth-status {
+            font-size: 12px;
+            color: var(--dq-subtext);
+            white-space: nowrap;
+        }
+
+        #dq-signout {
+            font-size: 11px;
+            font-family: inherit;
+            color: var(--dq-subtext);
+            background: transparent;
+            border: 1px solid var(--dq-border);
+            border-radius: 5px;
+            padding: 2px 8px;
+            cursor: pointer;
+        }
+        #dq-signout:hover {
+            color: var(--dq-gold);
+            border-color: var(--dq-gold);
+        }
+
+        /* CUSTOM (Stage H6): reset native <progress> chrome so the gold/purple
+           gradient fill below is what actually renders, in every engine -
+           Chromium/WebKit and Firefox use different pseudo-elements, and
+           `appearance: none` alone leaves old Edge/IE using the plain
+           background-color/color properties as track/fill, so those are set
+           too as a harmless fallback. */
         #progress {
-            height: 20px;
-            width: 300px;
+            display: block;
+            margin: 0 auto;
+            height: 22px;
+            width: 320px;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            border: 2px solid var(--dq-border);
+            border-radius: 11px;
+            background-color: #150c26;
+            color: var(--dq-gold);
+            overflow: hidden;
+            box-shadow: 0 0 12px rgba(120, 80, 200, 0.5), inset 0 1px 3px rgba(0,0,0,0.6);
+        }
+        #progress::-webkit-progress-bar {
+            background-color: #150c26;
+            border-radius: 9px;
+        }
+        #progress::-webkit-progress-value {
+            border-radius: 9px;
+            background: linear-gradient(90deg, #c89a3c, var(--dq-gold), #c89a3c);
+            background-size: 200% 100%;
+            animation: dq-shimmer 1.6s linear infinite;
+            transition: width 0.2s ease-out;
+        }
+        #progress::-moz-progress-bar {
+            border-radius: 9px;
+            background: linear-gradient(90deg, #c89a3c, var(--dq-gold), #c89a3c);
+            background-size: 200% 100%;
+            animation: dq-shimmer 1.6s linear infinite;
+        }
+        @keyframes dq-shimmer {
+            0%   { background-position: 0% 0; }
+            100% { background-position: -200% 0; }
         }
 
         #infobox {
             position: fixed; /* center relative to viewport */
-            background: green;
-            color: blue;
+            background: var(--dq-panel);
+            color: var(--dq-gold);
+            font-family: 'Trebuchet MS', Arial, sans-serif;
             font-weight: bold;
-            padding: 12px 24px;
+            font-size: 14px;
+            border: 2px solid var(--dq-border);
+            border-radius: 10px;
+            padding: 14px 28px;
+            box-shadow: 0 0 24px rgba(120, 80, 200, 0.5);
  /*           display: none; */
             z-index: 999999;
         }
@@ -259,7 +388,8 @@ function show_infobox() {
             font-family: arial;
             margin: 0;
             padding: none;
-            background-color:powderblue;
+            background: radial-gradient(ellipse at center, var(--dq-bg-1) 0%, var(--dq-bg-0) 75%);
+            min-height: 100vh;
         }
 
         .topright{
@@ -305,12 +435,111 @@ function show_infobox() {
 
     <script src="{{cookiecutter.cdn}}/browserfs.min.js"></script>
 
+    <!-- CUSTOM (Stage I2): Google Identity Services - OAuth happens entirely
+         here in the HTML page, never inside the Pyodide/WASM canvas sandbox
+         (confirmed no public example of OAuth working inside pygbag's WASM
+         sandbox - see project memory). game/net.py only ever reads the JWT
+         this produces, via the same js-bridge pattern game/save.py already
+         uses for localStorage. -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script>
+        // Stage I2 Google Cloud Console checklist done 2026-07-12 - Web
+        // application client, authorized origin http://localhost:8000.
+        window.DQ_GOOGLE_CLIENT_ID = "570460627729-jleq8h59see1kdhre4aeh5q07t9l6jif.apps.googleusercontent.com";
+        // DQ_API_BASE: single place the backend origin lives, mirroring the
+        // dqMouseLogicalX/Y globals below - Stage I9 flips this to the
+        // deployed HTTPS URL, nothing else in this file or in game/net.py
+        // should hardcode a backend URL.
+        window.DQ_API_BASE = "http://localhost:8090";
+    </script>
+
 </head>
 
 <body>
 
+    <!-- CUSTOM (Stage I2): login bar, a sibling of #transfer/#canvas, not a
+         child of #transfer - #transfer is hidden almost immediately by
+         pygbag's own bootstrap (see custom_site() near the top of this
+         file), so anything placed inside it (an earlier stub comment here
+         suggested that) would barely be visible before disappearing. This
+         bar stays up through loading and gameplay alike. -->
+    <div id="dq-auth-bar">
+        <span id="dq-auth-status">Nao conectado</span>
+        <!-- data-client_id is set from window.DQ_GOOGLE_CLIENT_ID by the
+             script below, not hardcoded here. -->
+        <div id="g_id_onload"
+             data-callback="dqHandleCredential"
+             data-auto_select="true"></div>
+        <div class="g_id_signin" id="dq-google-btn" data-type="standard" data-size="small" data-shape="pill"></div>
+        <button id="dq-signout" hidden>Sair</button>
+    </div>
+
+    <script>
+        // g_id_onload's data-client_id can't read window.DQ_GOOGLE_CLIENT_ID
+        // directly (it's a static HTML attribute) - set it here instead of
+        // hardcoding the Client ID a second time in this file.
+        document.getElementById("g_id_onload").setAttribute("data-client_id", window.DQ_GOOGLE_CLIENT_ID);
+
+        function dqSetStatus(text) {
+            document.getElementById("dq-auth-status").textContent = text;
+        }
+
+        function dqApplySession(jwt, email) {
+            dqSetStatus(email ? ("Conectado: " + email) : "Conectado");
+            document.getElementById("dq-google-btn").hidden = true;
+            document.getElementById("dq-signout").hidden = false;
+        }
+
+        // Google's credential callback (data-callback above). Same pattern
+        // game/save.py already uses for the save blob: localStorage is the
+        // single source of truth, not a window global that dies on reload -
+        // game/net.py (Python side) reads "dungeon_quest_jwt" straight out
+        // of localStorage, it never touches a window global at all.
+        async function dqHandleCredential(response) {
+            try {
+                const res = await fetch(window.DQ_API_BASE + "/auth/google", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id_token: response.credential }),
+                });
+                if (!res.ok) {
+                    dqSetStatus("Falha no login");
+                    return;
+                }
+                const data = await res.json();
+                localStorage.setItem("dungeon_quest_jwt", data.jwt);
+                localStorage.setItem("dungeon_quest_email", data.email);
+                dqApplySession(data.jwt, data.email);
+            } catch (e) {
+                console.warn("dqHandleCredential failed:", e);
+                dqSetStatus("Backend indisponivel");
+            }
+        }
+
+        document.getElementById("dq-signout").addEventListener("click", () => {
+            localStorage.removeItem("dungeon_quest_jwt");
+            localStorage.removeItem("dungeon_quest_email");
+            dqSetStatus("Nao conectado");
+            document.getElementById("dq-google-btn").hidden = false;
+            document.getElementById("dq-signout").hidden = true;
+        });
+
+        // Returning visitor: a JWT already in localStorage from a previous
+        // page load means the player is still "logged in" without touching
+        // the Google button again.
+        (function dqRestoreSession() {
+            const jwt = localStorage.getItem("dungeon_quest_jwt");
+            const email = localStorage.getItem("dungeon_quest_email");
+            if (jwt) dqApplySession(jwt, email);
+        })();
+    </script>
+
     <div id="transfer" align=center>
 <!--        <div class="spinner" id='spinner'></div> -->
+        <div id="dq-brand">
+            <p class="dq-title">DUNGEON QUEST</p>
+            <p class="dq-subtitle">Preparando a masmorra...</p>
+        </div>
         <div class="emscripten" id="status">Downloading...</div>
         <div class="emscripten">
             <progress value="0" max="100" id="progress"></progress>

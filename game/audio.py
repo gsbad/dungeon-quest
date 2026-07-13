@@ -73,8 +73,15 @@ class AudioManager:
         self.sfx_volume = 0.6
         self.music_volume = 0.5
         self._sounds = {}
+        # Stage H7: a dedicated channel for the looping title-screen theme,
+        # reserved via set_reserved() so pygame's automatic channel
+        # allocation for one-shot SFX (play()) never steals or gets stolen
+        # by it - the two systems can't collide.
+        self._music_channel = None
         if self.enabled:
             self._build_sounds()
+            pygame.mixer.set_reserved(1)
+            self._music_channel = pygame.mixer.Channel(0)
 
     def _build_sounds(self):
         sr = pygame.mixer.get_init()[0]
@@ -105,6 +112,75 @@ class AudioManager:
             _tone_samples(262, 0.30, "square", 0.5, sr),
         )
 
+        # Stage H7 - one distinct attack cue per common mob archetype
+        # (game/enemy.py's ENEMY_FLAVOR keys) and per boss (game/boss.py's
+        # BOSS_PATTERNS keys), so combat reads as "something specific just
+        # hit/shot at you" instead of the single generic `attack` sfx above
+        # (which stays as the player's own swing). Same synthesis
+        # primitives as everything above, just more of them - negligible
+        # extra boot-time cost, no extra shipped bytes either way.
+        # etypes match game/enemy.py's ENEMY_FLAVOR keys as of the
+        # "individualization pass" (20 common mobs, per-level rosters) -
+        # skeleton/goblin/dark_knight are the original 3 (still spawn on
+        # levels 1-3), the rest replaced swamp_troll/cursed_mage/
+        # crypt_wraith/ash_fiend/royal_guard one-for-one per level slot.
+        self._sounds["attack_skeleton"] = _build_sound(_tone_samples(330, 0.08, "square", 0.4, sr))
+        self._sounds["attack_goblin"] = _build_sound(_sweep_samples(500, 750, 0.06, 0.4, sr))
+        self._sounds["attack_dark_knight"] = _build_sound(_sweep_samples(320, 160, 0.1, 0.5, sr))
+        # Level 5 - Pantano Sombrio
+        self._sounds["attack_aranha"] = _build_sound(
+            _tone_samples(700, 0.03, "square", 0.35, sr),
+            _tone_samples(650, 0.03, "square", 0.35, sr),
+        )
+        self._sounds["attack_serpente"] = _build_sound(_sweep_samples(600, 900, 0.08, 0.4, sr))
+        self._sounds["attack_treant"] = _build_sound(_tone_samples(140, 0.18, "square", 0.5, sr))
+        # Level 6 - Torre Amaldicoada
+        self._sounds["attack_troll"] = _build_sound(_tone_samples(110, 0.16, "square", 0.5, sr))
+        self._sounds["attack_death_knight"] = _build_sound(_sweep_samples(280, 150, 0.1, 0.5, sr))
+        # Level 7 - Cripta Perdida
+        self._sounds["attack_zumbi"] = _build_sound(_sweep_samples(200, 120, 0.2, 0.45, sr))
+        self._sounds["attack_verme"] = _build_sound(_tone_samples(90, 0.1, "square", 0.4, sr))
+        self._sounds["attack_imp"] = _build_sound(_sweep_samples(700, 1000, 0.06, 0.4, sr))
+        # Level 9 - Salao dos Ecos
+        self._sounds["attack_dark_horse"] = _build_sound(_sweep_samples(400, 250, 0.08, 0.45, sr))
+        self._sounds["attack_acolito"] = _build_sound(_sweep_samples(350, 700, 0.14, 0.4, sr))
+        self._sounds["attack_feiticeira"] = _build_sound(_sweep_samples(500, 950, 0.12, 0.4, sr))
+        # Level 10 - Abismo de Cinzas
+        self._sounds["attack_fire_hound"] = _build_sound(
+            _tone_samples(550, 0.04, "square", 0.4, sr),
+            _tone_samples(480, 0.04, "square", 0.4, sr),
+        )
+        self._sounds["attack_ogro"] = _build_sound(_tone_samples(80, 0.22, "square", 0.6, sr))
+        self._sounds["attack_elemental_pedra"] = _build_sound(_tone_samples(70, 0.25, "square", 0.5, sr))
+        # Level 11 - Corredor Final
+        self._sounds["attack_chimera"] = _build_sound(
+            _tone_samples(120, 0.1, "square", 0.5, sr),
+            _tone_samples(400, 0.12, "sine", 0.4, sr),
+        )
+        self._sounds["attack_lyzardman"] = _build_sound(_sweep_samples(450, 300, 0.07, 0.45, sr))
+        self._sounds["attack_dark_skeleton"] = _build_sound(_sweep_samples(320, 190, 0.08, 0.5, sr))
+
+        self._sounds["attack_orc_warlord"] = _build_sound(_tone_samples(90, 0.2, "square", 0.6, sr))
+        self._sounds["attack_necromancer"] = _build_sound(_sweep_samples(200, 100, 0.25, 0.5, sr))
+        self._sounds["attack_shadow_king"] = _build_sound(
+            _tone_samples(150, 0.1, "square", 0.5, sr),
+            _tone_samples(500, 0.15, "sine", 0.5, sr),
+        )
+        self._sounds["attack_cacodemon"] = _build_sound(
+            _tone_samples(130, 0.12, "square", 0.6, sr),
+            _sweep_samples(200, 100, 0.1, 0.5, sr),
+        )
+
+        # Stage H7 - a short looping title-screen theme. No music file
+        # exists (or ever will, per this project's "everything generated
+        # in code" rule - see the class docstring) so this is a synthesized
+        # melody played on a loop (play_music()) rather than
+        # pygame.mixer.music, which expects a real file/stream.
+        notes = [523, 587, 659, 784, 659, 587, 523, 392]
+        self._sounds["title_theme"] = _build_sound(
+            *[_tone_samples(n, 0.28, "sine", 0.35, sr) for n in notes]
+        )
+
     def play(self, name):
         if not self.enabled or self.muted:
             return
@@ -113,8 +189,23 @@ class AudioManager:
             snd.set_volume(self.sfx_volume)
             snd.play()
 
+    def play_music(self, name):
+        if not self.enabled or self._music_channel is None:
+            return
+        snd = self._sounds.get(name)
+        if snd is None:
+            return
+        self._music_channel.set_volume(0.0 if self.muted else self.music_volume)
+        self._music_channel.play(snd, loops=-1)
+
+    def stop_music(self):
+        if self._music_channel is not None:
+            self._music_channel.stop()
+
     def toggle_mute(self):
         self.muted = not self.muted
+        if self._music_channel is not None and self._music_channel.get_busy():
+            self._music_channel.set_volume(0.0 if self.muted else self.music_volume)
 
 
 class SoundButton:

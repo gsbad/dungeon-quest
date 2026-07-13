@@ -278,11 +278,14 @@ class GoldDrop:
 
 
 class Enemy:
-    def __init__(self, x, y, etype="skeleton", speed_multiplier=1.0, ml=1, level_num=1):
+    def __init__(self, x, y, etype="skeleton", speed_multiplier=1.0, ml=1, level_num=1, audio_mgr=None):
         self.x = float(x)
         self.y = float(y)
         self.etype = etype
         self.ml = ml
+        # Stage H7: optional - only Level-spawned/summoned enemies pass one
+        # in; None is safe everywhere audio is played (guarded).
+        self.audio = audio_mgr
         # Stage F7: which stage this mob spawned in - gates flavor["ranged"]
         # below (level_num >= 3), independent of `ml` (monster level, which
         # already diverges per difficulty tier and isn't 1:1 with the stage
@@ -433,6 +436,8 @@ class Enemy:
             elif self.attack_cooldown <= 0 and dist < self.attack_range:
                 dmg, is_crit = self.stats.roll_physical()
                 player.take_damage(dmg, dtype="physical")
+                if self.audio:
+                    self.audio.play(f"attack_{self.etype}")
                 melee_status = self.flavor.get("melee_status")
                 if melee_status:
                     effect_id, chance = melee_status
@@ -462,6 +467,8 @@ class Enemy:
         a multi-shot shape via flavor["ranged_shape"], same
         spread/circle-burst techniques game/boss.py's Boss already uses for
         its own patterns, just aimed from an Enemy instead."""
+        if self.audio:
+            self.audio.play(f"attack_{self.etype}")
         ranged = self.flavor["ranged"]
         cx = self.x + self.width / 2
         cy = self.y + self.height / 2

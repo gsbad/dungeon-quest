@@ -463,8 +463,11 @@ LEVEL_MAPS = {
 
 
 class Level:
-    def __init__(self, level_num, extra_speed_mult=1.0, ml_bonus=0):
+    def __init__(self, level_num, extra_speed_mult=1.0, ml_bonus=0, audio_mgr=None):
         self.level_num = level_num
+        # Stage H7: forwarded to every spawned Enemy so mob attacks can play
+        # their own sound (see game/audio.py's attack_{etype} sounds).
+        self.audio = audio_mgr
         self.data = LEVEL_MAPS[level_num]
         self.layout = self.data["layout"]
         self.rows = len(self.layout)
@@ -547,7 +550,7 @@ class Level:
                     spawn_x = spawn_col * TILE
                     spawn_y = spawn_row * TILE
                     self.enemies.append(Enemy(spawn_x + 8, spawn_y + 8, etype, speed_multiplier=speed_mul,
-                                               ml=monster_level, level_num=self.level_num))
+                                               ml=monster_level, level_num=self.level_num, audio_mgr=self.audio))
                     self._used_enemy_tiles.add((spawn_col, spawn_row))
 
         if self.data["exit"]:
@@ -702,5 +705,7 @@ class Level:
             txt = f.render(f"Inimigos: {len(living)}", True, (255,100,100))
             surface.blit(txt, (surface.get_width()//2 - txt.get_width()//2, 12))
         elif self.exit_open:
-            txt = f.render("⬆ Encontre a Saida!", True, (100, 255, 180))
+            # Stage H4: same tofu-box glyph bug as boss.py's ENRAIVECIDO -
+            # pygame's default font has no U+2B06 glyph.
+            txt = f.render("Encontre a Saida!", True, (100, 255, 180))
             surface.blit(txt, (surface.get_width()//2 - txt.get_width()//2, 12))

@@ -2,6 +2,8 @@ import math
 import pygame
 from enum import Enum, auto
 from game.theme import font
+from game.assets import create_spell_icon, create_sword_icon, create_potion_icon
+from game.items import ITEMS
 
 TAP_MAX_DURATION = 0.35
 TAP_MAX_MOVEMENT = 18
@@ -125,14 +127,16 @@ class VirtualJoystick:
 
 
 class VirtualButton:
-    """Round tap button. `label` is drawn centered; `action` is fired once on press."""
+    """Round tap button. Draws an `icon` surface centered if given, otherwise
+    falls back to rendering `label` as text. `action` is fired once on press."""
 
-    def __init__(self, cx, cy, radius, label, action):
+    def __init__(self, cx, cy, radius, label, action, icon=None):
         self.cx = cx
         self.cy = cy
         self.radius = radius
         self.label = label
         self.action = action
+        self.icon = icon
         self.pointer_id = None
         self.press_flash = 0.0
         self._font = None
@@ -164,6 +168,12 @@ class VirtualButton:
         pygame.draw.circle(buf, color, (self.radius, self.radius), self.radius)
         pygame.draw.circle(buf, (255, 255, 255, 170), (self.radius, self.radius), self.radius, 3)
         surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
+
+        if self.icon is not None:
+            size = int(self.radius * 1.4)
+            scaled = pygame.transform.scale(self.icon, (size, size))
+            surface.blit(scaled, (self.cx - size // 2, self.cy - size // 2))
+            return
 
         if self._font is None:
             self._font = font(20)
@@ -308,14 +318,53 @@ class InputManager:
         self._time = 0.0
 
         self.joystick = VirtualJoystick(100, screen_h - 120, radius=70, knob_radius=32)
-        self.attack_button = VirtualButton(screen_w - 90, screen_h - 100, 48, "ATK", Action.ATTACK)
+        self.attack_button = VirtualButton(screen_w - 90, screen_h - 100, 48, "ATK", Action.ATTACK,
+                                            icon=create_sword_icon())
         self.pause_button = VirtualButton(screen_w - 40, 40, 26, "II", Action.PAUSE)
-        self.paperdoll_button = VirtualButton(screen_w // 2, screen_h - 110, 30, "C", Action.PAPERDOLL)
-        self.items_button = VirtualButton(screen_w - 200, screen_h - 110, 28, "I", Action.ITEMS)
-        # Selecting *which* spell happens on the paperdoll's spell tab
-        # (Stage B2) - this button just fires whatever's currently selected,
-        # same split as the plan's "1 botao conjurar" for mobile.
-        self.cast_button = VirtualButton(screen_w - 90, screen_h - 230, 36, "MAG", Action.CAST_SELECTED)
+        # Stage H3: the corner PaperdollButton/ItemsButton (states.py) already
+        # cover "C"/"I" on both mobile and desktop, so the touch-only "C"/"I"
+        # VirtualButtons that used to sit between the joystick and ATK were
+        # pure duplicates - removed to free up that space for the spell arc.
+        #
+        # 3 buttons in an arc around the attack button (one per spell, same
+        # radius the old single "MAG" button had) instead of a single
+        # cast-whatever's-selected button - each one fires its spell's own
+        # Action.CAST_n directly, same binding as the F/Q/R keyboard keys.
+        atk = self.attack_button
+        spell_btn_radius = 36
+        arc_distance = atk.radius + 14 + spell_btn_radius
+        arc_angles_deg = [180, 135, 90]  # left, up-left, up (y-down screen coords)
+        cast_actions = [Action.CAST_1, Action.CAST_2, Action.CAST_3]
+        from game.spells import ORDER as SPELL_ORDER
+        self.spell_buttons = []
+        for angle_deg, action, spell_id in zip(arc_angles_deg, cast_actions, SPELL_ORDER):
+            rad = math.radians(angle_deg)
+            bx = atk.cx + math.cos(rad) * arc_distance
+            by = atk.cy - math.sin(rad) * arc_distance
+            btn = VirtualButton(bx, by, spell_btn_radius, "", action,
+                                 icon=create_spell_icon(spell_id))
+            self.spell_buttons.append(btn)
+
+        # A row of 3 direct-use item buttons, centered in the open gap
+        # between the joystick and the spell arc - same "fire the action
+        # directly, no menu detour" idea as the spell arc, one per
+        # Action.USE_n/ITEMS entry. These replace the item hotbar slots
+        # (game/player.py's hotbar_slots(), "item" kind) on the touch HUD:
+        # game/states.py only draws those top-of-screen slots when
+        # `not self.input.touch_active`, so a mobile player only ever sees
+        # this row, never both.
+        item_btn_radius = 32
+        item_btn_gap = 16
+        item_spacing = item_btn_radius * 2 + item_btn_gap
+        item_actions = [Action.USE_1, Action.USE_2, Action.USE_3]
+        item_cy = atk.cy
+        item_cx0 = screen_w // 2
+        self.item_buttons = []
+        for i, (action, item_id) in enumerate(zip(item_actions, ITEMS)):
+            bx = item_cx0 + (i - 1) * item_spacing
+            btn = VirtualButton(bx, item_cy, item_btn_radius, "", action,
+                                 icon=create_potion_icon(item_id))
+            self.item_buttons.append(btn)
 
     # ------------------------------------------------------------------ actions
     def _press_action(self, action):
@@ -446,18 +495,20 @@ class InputManager:
             self.pause_button.press(pid)
             self._press_action(Action.PAUSE)
             claimed = "pause"
-        elif self.paperdoll_button.contains(x, y):
-            self.paperdoll_button.press(pid)
-            self._press_action(Action.PAPERDOLL)
-            claimed = "paperdoll"
-        elif self.items_button.contains(x, y):
-            self.items_button.press(pid)
-            self._press_action(Action.ITEMS)
-            claimed = "items"
-        elif self.cast_button.contains(x, y):
-            self.cast_button.press(pid)
-            self._press_action(Action.CAST_SELECTED)
-            claimed = "cast"
+        else:
+            for i, btn in enumerate(self.spell_buttons):
+                if btn.contains(x, y):
+                    btn.press(pid)
+                    self._press_action(btn.action)
+                    claimed = ("spell", i)
+                    break
+            else:
+                for i, btn in enumerate(self.item_buttons):
+                    if btn.contains(x, y):
+                        btn.press(pid)
+                        self._press_action(btn.action)
+                        claimed = ("item", i)
+                        break
 
         self._pointers[pid] = {
             "x": x, "y": y,
@@ -478,18 +529,17 @@ class InputManager:
         p = self._pointers.pop(pid, None)
         if p is None:
             return
-        if p["claimed"] == "joystick":
+        claimed = p["claimed"]
+        if claimed == "joystick":
             self.joystick.release(pid)
-        elif p["claimed"] == "attack":
+        elif claimed == "attack":
             self.attack_button.release(pid)
-        elif p["claimed"] == "pause":
+        elif claimed == "pause":
             self.pause_button.release(pid)
-        elif p["claimed"] == "paperdoll":
-            self.paperdoll_button.release(pid)
-        elif p["claimed"] == "items":
-            self.items_button.release(pid)
-        elif p["claimed"] == "cast":
-            self.cast_button.release(pid)
+        elif isinstance(claimed, tuple) and claimed[0] == "spell":
+            self.spell_buttons[claimed[1]].release(pid)
+        elif isinstance(claimed, tuple) and claimed[0] == "item":
+            self.item_buttons[claimed[1]].release(pid)
         else:
             dist = math.hypot(p["x"] - p["start_x"], p["y"] - p["start_y"])
             duration = self._time - p["start_t"]
@@ -501,9 +551,10 @@ class InputManager:
         self._time += dt
         self.attack_button.update(dt)
         self.pause_button.update(dt)
-        self.paperdoll_button.update(dt)
-        self.items_button.update(dt)
-        self.cast_button.update(dt)
+        for btn in self.spell_buttons:
+            btn.update(dt)
+        for btn in self.item_buttons:
+            btn.update(dt)
         # Anything not consumed by a state this frame is stale - drop it so it
         # can't leak into a different screen after a state transition.
         self._actions.clear()
@@ -515,6 +566,7 @@ class InputManager:
         self.joystick.draw(surface)
         self.attack_button.draw(surface)
         self.pause_button.draw(surface)
-        self.paperdoll_button.draw(surface)
-        self.items_button.draw(surface)
-        self.cast_button.draw(surface)
+        for btn in self.spell_buttons:
+            btn.draw(surface)
+        for btn in self.item_buttons:
+            btn.draw(surface)

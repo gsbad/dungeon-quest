@@ -15,6 +15,7 @@ could drift out of sync with the attributes that actually define it.
 import sys
 import os
 import json
+import copy
 
 from game.player import Player
 from game.professions import determine_profession
@@ -187,3 +188,81 @@ def sync_counters(state, player):
     for boss_key, n in player.boss_kills.items():
         counters["boss_kills"][boss_key] = counters["boss_kills"].get(boss_key, 0) + n
     player.boss_kills = {}
+
+
+_SYNCED_AT_KEY = "dungeon_quest_synced_at"
+
+
+def get_synced_at():
+    """The server `updated_at` this client last successfully synced against -
+    sync plumbing, not game state, so it lives in its own localStorage key
+    (same pattern as the JWT in game/net.py) rather than inside the
+    SAVE_VERSION-migrated blob. 0.0 (never synced) if absent/native."""
+    if sys.platform != "emscripten":
+        return 0.0
+    import js
+    val = js.localStorage.getItem(_SYNCED_AT_KEY)
+    return float(val) if val else 0.0
+
+
+def set_synced_at(updated_at):
+    if sys.platform != "emscripten":
+        return
+    import js
+    js.localStorage.setItem(_SYNCED_AT_KEY, str(updated_at))
+
+
+def merge_states(local, remote, local_synced_at, remote_updated_at):
+    """local, remote: full save dicts, both already migrated to SAVE_VERSION.
+    local_synced_at: the remote `updated_at` this client had at its last
+    successful sync (get_synced_at()).
+    remote_updated_at: the `updated_at` GET /save just returned alongside
+    `remote`.
+
+    Returns a merged dict, ready to both persist locally (save()) and PUT
+    back to the server.
+
+    Two merge policies, matching what sync_counters() already established
+    for kills/boss_kills (additive/never-regress) vs. what sync_economy()
+    already established for gold/inventory (flat overwrite):
+
+    - character/gold/inventory/settings/current_difficulty: whichever side
+      wrote more recently than our last known sync point wins wholesale. If
+      the server has moved forward since we last synced (another device
+      wrote), the server's version wins; otherwise our own local edits (made
+      since that same sync point) win. This is last-write-wins using the
+      server's clock as the single source of truth, instead of trusting two
+      devices' independent clocks against each other.
+    - counters/progression's monotonic fields: always max/union-merge
+      regardless of timestamp - safe in both directions, generalizes
+      sync_counters()'s "kills/boss_kills never regress" policy to every
+      monotonic field in the schema. playtime_s uses max (not sum)
+      deliberately: two devices can't be reliably summed without session
+      boundaries neither device knows about, and max never fabricates play
+      time that didn't happen - same never-regress/don't-overclaim spirit as
+      kills/deaths.
+    """
+    merged = copy.deepcopy(local)
+
+    if remote_updated_at > local_synced_at:
+        merged["character"] = remote["character"]
+        merged["gold"] = remote["gold"]
+        merged["inventory"] = remote["inventory"]
+        merged["settings"] = remote["settings"]
+        merged["progression"]["current_difficulty"] = remote["progression"]["current_difficulty"]
+
+    c, rc = merged["counters"], remote["counters"]
+    for etype, n in rc["kills"].items():
+        c["kills"][etype] = max(c["kills"].get(etype, 0), n)
+    for bkey, n in rc["boss_kills"].items():
+        c["boss_kills"][bkey] = max(c["boss_kills"].get(bkey, 0), n)
+    c["deaths"] = max(c["deaths"], rc["deaths"])
+    c["playtime_s"] = max(c["playtime_s"], rc["playtime_s"])
+
+    p, rp = merged["progression"], remote["progression"]
+    p["levels_seen"] = sorted(set(p["levels_seen"]) | set(rp["levels_seen"]))
+    p["cleared_difficulties"] = sorted(set(p["cleared_difficulties"]) | set(rp["cleared_difficulties"]))
+    for tier, lvl in rp["highest_level_cleared"].items():
+        p["highest_level_cleared"][tier] = max(p["highest_level_cleared"].get(tier, 0), lvl)
+
+    return merged

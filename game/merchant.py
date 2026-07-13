@@ -2,7 +2,7 @@ import math
 import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
 from game.ui import Panel, draw_text
-from game.items import ITEMS, use_item, buy_item
+from game.items import ITEMS, MAX_STOCK, use_item, buy_item
 from game.assets import create_potion_icon
 from game.input_system import Action
 
@@ -59,8 +59,10 @@ class ItemsOverlay:
                 use_item(player, item_id)
             elif buy_item(player, item_id) and save_state is not None:
                 import game.save as save
+                import game.net as net
                 save.sync_economy(save_state, player)
                 save.save(save_state)
+                net.trigger_sync(save_state)
 
     def handle_tap(self, input_mgr, player, save_state=None):
         for item_id, rect in self.use_buttons.items():
@@ -74,8 +76,10 @@ class ItemsOverlay:
                 # tier of importance as the mute-toggle immediate-persist.
                 if buy_item(player, item_id) and save_state is not None:
                     import game.save as save
+                    import game.net as net
                     save.sync_economy(save_state, player)
                     save.save(save_state)
+                    net.trigger_sync(save_state)
                 return
 
     def draw(self, surface, player):
@@ -123,15 +127,18 @@ class ItemsOverlay:
         for i, item_id in enumerate(ITEMS):
             y = self.py + _LOJA_START_Y + i * _ROW_H
             item = ITEMS[item_id]
+            owned = player.inventory.get(item_id, 0)
+            at_cap = owned >= MAX_STOCK
             surface.blit(create_potion_icon(item_id), (self.px + 20, y - 16))
-            draw_text(surface, f"{item['name']} - {item['price']}g", f_row, (215, 215, 225),
-                      label_cx, y - 8, shadow=False)
+            draw_text(surface, f"{item['name']} - {item['price']}g ({owned}/{MAX_STOCK})", f_row,
+                      (215, 215, 225), label_cx, y - 8, shadow=False)
 
             rect = self.buy_buttons[item_id]
-            can_buy = player.gold >= item["price"]
+            can_buy = player.gold >= item["price"] and not at_cap
             pygame.draw.rect(surface, (150, 110, 20) if can_buy else (50, 50, 50), rect, border_radius=6)
             pygame.draw.rect(surface, (200, 200, 210), rect, 1, border_radius=6)
-            draw_text(surface, "Comprar", fb, (255, 255, 255) if can_buy else (120, 120, 120),
+            label = "Max" if at_cap else "Comprar"
+            draw_text(surface, label, fb, (255, 255, 255) if can_buy else (120, 120, 120),
                       rect.centerx, rect.y + 5, shadow=False)
 
         f_hint = font(14)

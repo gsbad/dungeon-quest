@@ -101,7 +101,8 @@ class Boss:
     name, and palette differ per boss_id (game/stats.py's BOSS_ARCHETYPES) -
     same "one rig, palette-swapped" idea already used for Paragon."""
 
-    def __init__(self, x, y, boss_id="shadow_king", enrage_frac=0.5):
+    def __init__(self, x, y, boss_id="shadow_king", enrage_frac=0.5, audio_mgr=None):
+        self.audio = audio_mgr
         from game.stats import BOSS_ARCHETYPES
         archetype = BOSS_ARCHETYPES[boss_id]
         self.boss_id = boss_id
@@ -379,6 +380,8 @@ class Boss:
         self.attack_timer -= dt
         if self.attack_timer <= 0:
             self.attack_timer = self.attack_interval
+            if self.audio:
+                self.audio.play(f"attack_{self.boss_id}")
             pattern = random.choice(BOSS_PATTERNS[self.boss_id][self.phase])
             if pattern == "circle":
                 self._pattern_circle()
@@ -448,7 +451,9 @@ class Boss:
 
     def draw_hud(self, surface, screen_w):
         """Boss HP bar + name, boxed, at the bottom of the screen (Stage G3)."""
-        label_text = self.name.upper() if self.phase == 1 else "⚡ ENRAIVECIDO!"
+        # Stage H4: pygame's default embedded font (game/theme.py's font(),
+        # Font(None, size)) has no glyph for U+26A1 - rendered as a tofu box.
+        label_text = self.name.upper() if self.phase == 1 else "ENRAIVECIDO!"
         label_color = TITLE_PAUSE if self.phase == 1 else (255, 150, 50)
         bar_color = (160, 0, 220) if self.phase == 1 else (255, 80, 0)
         _draw_boss_hud_box(surface, screen_w, label_text, label_color,
@@ -458,7 +463,8 @@ class Boss:
 # ─── Cacodemon Boss (Secret Level) ─────────────────────────────────────────────
 class CacodemonBoss:
     """Infernal demon boss inspired by DOOM's Cacodemon"""
-    def __init__(self, x, y):
+    def __init__(self, x, y, audio_mgr=None):
+        self.audio = audio_mgr
         self.x = float(x)
         self.y = float(y)
         self.width = 80
@@ -550,6 +556,8 @@ class CacodemonBoss:
         self.attack_timer -= dt
         if self.attack_timer <= 0:
             self.attack_timer = self.attack_interval
+            if self.audio:
+                self.audio.play("attack_cacodemon")
             self._shoot_at_player(player)
 
         # Update projectiles - and check them against the player. This boss

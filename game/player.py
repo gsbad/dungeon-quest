@@ -342,7 +342,7 @@ class Player:
         sy = int(self.y - cam_y)
         surface.blit(sprite, (sx - 8, sy - 12))
 
-    def draw_hud(self, surface, save_state=None):
+    def draw_hud(self, surface, save_state=None, touch_active=False):
         # HP/mana/XP bars - stats.py's bigger hp range (see Stage A3) no
         # longer maps cleanly onto discrete heart icons, so it's bars like
         # bosses already use.
@@ -357,7 +357,7 @@ class Player:
         # Pushes the whole dock down to make room for the bigger G7 font
         # instead of overlapping it.
         self._draw_title_line(surface, save_state)
-        dock_y = 34
+        dock_y = 42
 
         hp_frac = max(0.0, self.hp / self.max_hp)
         self._hp_bar.draw(surface, 12, dock_y, hp_frac, (220, 40, 40))
@@ -375,28 +375,36 @@ class Player:
         surface.blit(gold_txt, (178, dock_y + 20))
 
         self._draw_status_chips(surface, dock_y + 46)
-        self._draw_hotbar(surface)
+        self._draw_hotbar(surface, touch_active)
 
     def _draw_title_line(self, surface, save_state):
         # Stage G7: "Reputacao Profissao Nome", same style as the hero name
         # in the paperdoll header (game/paperdoll.py's _draw_header - 24pt
-        # bold ACCENT_GOLD), 4px smaller.
+        # bold ACCENT_GOLD), 2px smaller. Nudged a few px off the top edge
+        # (Stage H11) - it used to sit flush at y=0.
         from game.theme import font, ACCENT_GOLD
         from game.reputation import determine_reputation, kills_total, deaths_total
         reputation = determine_reputation(kills_total(self, save_state), deaths_total(save_state))
         text = f"{reputation} {self.profession} {self.display_name}"
-        f = font(20, bold=True)
+        f = font(22, bold=True)
         txt_surf = f.render(text, True, ACCENT_GOLD)
         shadow = f.render(text, True, (0, 0, 0))
-        surface.blit(shadow, (13, 1))
-        surface.blit(txt_surf, (12, 0))
+        surface.blit(shadow, (13, 7))
+        surface.blit(txt_surf, (12, 6))
 
-    def _draw_hotbar(self, surface):
+    def _draw_hotbar(self, surface, touch_active=False):
         from game.theme import font, ACCENT_GOLD
         from game.items import ITEMS
         f_key = font(11, bold=True)
         f_count = font(11, bold=True)
         for i, (kind, key, rect) in enumerate(hotbar_slots()):
+            # Stage H10: on touch devices, both spell casting and item use
+            # have their own dedicated button rows next to the joystick
+            # (game/input_system.py's spell_buttons/item_buttons), so the
+            # top hotbar slots for both kinds would just be smaller,
+            # harder-to-tap duplicates - skip drawing them entirely.
+            if touch_active:
+                continue
             if kind == "spell":
                 locked = bool(missing_requirements(self.stats, key))
                 on_cooldown = self.spell_cooldowns.get(key, 0) > 0
