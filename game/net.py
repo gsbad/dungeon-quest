@@ -20,6 +20,7 @@ Two real constraints shape this module:
 import asyncio
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -148,7 +149,16 @@ async def _fetch_json_emscripten(path, method, jwt, body):
         # progress between polls.
         step = "xhr:polling readyState"
         _last_sync_status = step
+        # Stage I7: offline-first means a backend that's down/unreachable
+        # must never cost the game more than a bounded, silent failure - a
+        # hung TCP connection (as opposed to an immediate connection-refused,
+        # which already resolves readyState==4/status==0 fast) would
+        # otherwise poll forever with no upper bound.
+        deadline = time.monotonic() + 8.0
         while xhr.readyState != 4:
+            if time.monotonic() > deadline:
+                xhr.abort()
+                raise RuntimeError("XHR timed out after 8s")
             await asyncio.sleep(0)
         _last_sync_status = "xhr:readyState reached 4"
 
