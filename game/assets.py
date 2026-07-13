@@ -1493,6 +1493,12 @@ def create_debuff_icon(effect_id):
     if effect_id in _DEBUFF_ICON_CACHE:
         return _DEBUFF_ICON_CACHE[effect_id]
     s = pygame.Surface((14, 14), pygame.SRCALPHA)
+    # Stage J5: solid black plate behind the glyph - these icons render over
+    # arbitrary backgrounds (HUD chips, Atlas rows, the Help tab's debuff
+    # listing) and a bare transparent glyph disappeared against light/busy
+    # scenery.
+    pygame.draw.rect(s, (10, 10, 12), (0, 0, 14, 14), border_radius=3)
+    pygame.draw.rect(s, (70, 70, 80), (0, 0, 14, 14), 1, border_radius=3)
     if effect_id == "poison":
         c = (140, 220, 90)
         pygame.draw.polygon(s, c, [(7, 1), (11, 8), (7, 13), (3, 8)])

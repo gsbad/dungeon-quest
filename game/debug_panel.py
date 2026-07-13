@@ -4,13 +4,12 @@ difficulty tier, and a handful of "force this system to happen now" actions
 be set directly, for exercising systems (Paragon/Champion rolls, difficulty
 gating, boss one-hit testing, etc.) without grinding for them.
 
-PC-keyboard-only, no mouse-tap path and no mobile button - same precedent
-as the M/N dev-jump keys (game/states.py's GameplayState._dev_jump): this is
-a testing tool, not a player-facing feature, so it doesn't need the touch
-affordances every real overlay (Paperdoll, ItemsOverlay) has. Reuses their
-exact keyboard idiom instead: W/S move a row cursor (pulsing glow highlight,
-same look as Paperdoll._draw_glow), A/D adjust a value-row, Space fires a
-trigger-row - see handle_keys().
+Keyboard-first (same precedent as the M/N dev-jump keys - a testing tool,
+not a player-facing feature): W/S move a row cursor (pulsing glow
+highlight, same look as Paperdoll._draw_glow), A/D adjust a value-row,
+Space fires a trigger-row - see handle_keys(). The only pointer affordance
+is the Stage J6 page-flip arrows (Carousel), since A/D was already taken
+by value adjustment.
 
 Rows take the whole GameplayState (not just Player) because several of them
 need level.enemies/boss/save_state/the existing msg_text toast - a tighter
@@ -22,8 +21,9 @@ import math
 import random
 import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
-from game.ui import Panel, draw_text
+from game.ui import Panel, draw_text, Carousel
 from game.input_system import Action
+from game.status_effects import STATUS_EFFECTS
 from game.items import ITEMS
 from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER
 from game.affixes import make_paragon, make_champion
@@ -75,11 +75,14 @@ _PANEL_W = 460
 _PY = 20
 _TITLE_Y = 18
 _ROWS_START_Y = 60
-# Stage I2/I6 added a 23rd row (login/sync status) to a panel that was
-# already right at SH's edge with the old 24px rows (60 + 23*24 + 40 + PY(20)
-# = 672, well past SH=600 - the new row rendered off-screen). 20px keeps
-# every row on-screen with margin (60 + 23*20 + 40 + 20 = 580).
-_ROW_H = 20
+# Stage J6: the row list is paginated now (Carousel from game/ui.py, same
+# widget as the paperdoll Help/Achievements tabs) - the panel sizes to
+# _ROWS_PER_PAGE, not to the full row count, so it can never creep past
+# SH=600 again no matter how many debug rows get added. That also undoes
+# Stage I6's emergency 24->20px row squeeze: with only 12 rows per page,
+# 24px rows fit with lots of margin (60 + 12*24 + 40 + PY(20) = 408).
+_ROW_H = 24
+_ROWS_PER_PAGE = 12
 
 
 def _persist_character(gs):
@@ -103,13 +106,21 @@ class DebugPanel:
     def __init__(self):
         self.px = SW // 2 - _PANEL_W // 2
         self.py = _PY
-        self.panel = None  # built lazily once _rows is known, for _PANEL_H
         self.cursor = 0
         self._difficulty_dirty = False
         self._rows = self._build_rows()
-        panel_h = _ROWS_START_Y + len(self._rows) * _ROW_H + 40
+        # Stage J6: height comes from the page size, not the row count -
+        # rows beyond _ROWS_PER_PAGE live on later carousel pages.
+        panel_h = _ROWS_START_Y + _ROWS_PER_PAGE * _ROW_H + 40
         self.panel = Panel(_PANEL_W, panel_h, PANEL_FILL, PANEL_BORDER, border_width=2)
         self._panel_h = panel_h
+        # Page state follows the keyboard cursor (W/S walking past a page
+        # edge flips pages naturally, since page = cursor // per-page);
+        # the arrows exist for the mouse/tap path and jump the cursor.
+        # Widened by 34px per side so the arrows land OUTSIDE the panel
+        # (rows span nearly its full width - inside-edge arrows would sit
+        # on top of the row labels/values).
+        self.carousel = Carousel(self.px - 34, _PANEL_W + 68, self.py + panel_h // 2)
 
     # ------------------------------------------------------------- rows
     def _build_rows(self):
@@ -132,6 +143,7 @@ class DebugPanel:
         rows.append(self._kill_all_row())
         rows.append(self._god_mode_row())
         rows.append(self._one_hit_boss_row())
+        rows.append(self._all_debuffs_row())
         rows.append(self._login_status_row())
         return rows
 
@@ -322,6 +334,17 @@ class DebugPanel:
 
         return {"label": "One-hit no chefe atual", "kind": "trigger", "fire": fire}
 
+    def _all_debuffs_row(self):
+        # Stage J6: instantly afflicted with every status effect at once -
+        # exists to eyeball the HUD chips/icons (Stage J4/J5's black-plated
+        # debuff icons) without hunting down one applier of each kind.
+        def fire(gs):
+            for effect_id in STATUS_EFFECTS:
+                gs.player.status.apply(effect_id)
+            gs.msg_timer, gs.msg_text = 2.0, f"{len(STATUS_EFFECTS)} debuffs aplicados (debug)"
+
+        return {"label": "Contrair todos os debuffs", "kind": "trigger", "fire": fire}
+
     def _login_status_row(self):
         # Stage I2 spike: read-only proof that Google login -> backend JWT ->
         # localStorage -> game/net.py's js bridge round-trip actually worked,
@@ -365,6 +388,15 @@ class DebugPanel:
             if input_mgr.consume_action(Action.CONFIRM):
                 row["fire"](game_state)
 
+    def handle_tap(self, input_mgr):
+        """Stage J6: the panel is otherwise keyboard-only, but the carousel
+        arrows are clickable - A/D can't flip pages here (they adjust the
+        selected row's value), so the keyboard path flips pages by walking
+        the cursor past a page edge instead, and clicks jump it directly."""
+        before = self.carousel.page
+        if self.carousel.handle_tap(input_mgr) and self.carousel.page != before:
+            self.cursor = self.carousel.page * _ROWS_PER_PAGE
+
     # ------------------------------------------------------------- draw
     @staticmethod
     def _glow_alpha():
@@ -381,10 +413,18 @@ class DebugPanel:
         draw_text(surface, "PAINEL DE DEBUG (F1)", f_title, ACCENT_GOLD,
                   self.px + _PANEL_W // 2, self.py + _TITLE_Y)
 
+        # Stage J6: only the cursor's page is drawn; the carousel (arrows
+        # outside the panel's lateral edges) shows there's more.
+        num_pages = math.ceil(len(self._rows) / _ROWS_PER_PAGE)
+        self.carousel.set_num_pages(num_pages)
+        self.carousel.page = self.cursor // _ROWS_PER_PAGE
+        page_start = self.carousel.page * _ROWS_PER_PAGE
+
         f_row = font(14)
         f_val = font(14, bold=True)
-        for i, row in enumerate(self._rows):
-            y = self.py + _ROWS_START_Y + i * _ROW_H
+        for slot, i in enumerate(range(page_start, min(page_start + _ROWS_PER_PAGE, len(self._rows)))):
+            row = self._rows[i]
+            y = self.py + _ROWS_START_Y + slot * _ROW_H
             if i == self.cursor:
                 glow_rect = pygame.Rect(self.px + 10, y - 3, _PANEL_W - 20, _ROW_H - 4)
                 glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
@@ -403,6 +443,8 @@ class DebugPanel:
                 value_surf = None
             if value_surf is not None:
                 surface.blit(value_surf, (self.px + _PANEL_W - 22 - value_surf.get_width(), y))
+
+        self.carousel.draw(surface, font(13), indicator_y=self.py + _TITLE_Y + 24)
 
         # Stage I6 debugging: the login/sync row's own value text is
         # truncated to fit next to its label - when the cursor sits on that

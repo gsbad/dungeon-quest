@@ -122,3 +122,17 @@ STATUS_DISPLAY = {
     "heat":     ("CAL", (255, 180, 80)),
     "shock":    ("CHO", (255, 255, 120)),
 }
+
+# Stage J4: full name + player-facing description per effect, read by the
+# paperdoll Help tab's debuff page. The numbers here must mirror
+# STATUS_EFFECTS above (they're prose renderings of those exact values, the
+# same single-source discipline HELP_ENTRIES follows for keybindings).
+STATUS_HELP = {
+    "poison":   ("Veneno", "3 de dano a cada 5s, por ate 12s. Cura: Antidoto."),
+    "slow":     ("Lentidao", "-45% de velocidade de movimento por 12s. Cura: Antidoto."),
+    "weakness": ("Fraqueza", "+30% de dano recebido por 12s. Cura: Antidoto."),
+    "burn":     ("Fogo", "2 de dano a cada 2s, 3 vezes. Sem cura - espere passar."),
+    "chill":    ("Frio", "-15% de velocidade enquanto exposto a neve/gelo. Cura: Antidoto."),
+    "heat":     ("Calor", "Dano leve continuo e -10% de velocidade em areia/cinzas. Sem cura."),
+    "shock":    ("Choque", "+15% de dano recebido por 5s (raios de tempestade). Cura: Antidoto."),
+}

@@ -881,6 +881,7 @@ class GameplayState:
             self.items.handle_keys(self.input, self.player, self.save_state)
             return
         if self.debug_panel_open:
+            self.debug_panel.handle_tap(self.input)
             self.debug_panel.handle_keys(self.input, self)
             return
         if self.paused:

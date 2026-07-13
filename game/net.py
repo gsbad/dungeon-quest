@@ -97,12 +97,12 @@ async def _fetch_json_emscripten(path, method, jwt, body):
     # never was the problem, only the Authorization header was, at the time)
     # combined with the query-param URL from (7) - no headers to set at all
     # now, so this is strictly simpler than attempt 6.
-    # Mirrors sync_state()'s breadcrumb trick: written to the same
-    # _last_sync_status the debug panel already reads live, so a hang here
-    # (no exception, nothing in the console - see the history above) still
-    # leaves a visible trace of exactly which step never returned.
-    global _last_sync_status
-
+    # NOTE: this transport deliberately does NOT touch _last_sync_status -
+    # it's shared by callers that aren't the save sync (Stage I4's balance
+    # fetch), and its breadcrumbs used to linger as the panel's "sync"
+    # status long after boot. The per-step `step` label below still reaches
+    # the panel on FAILURE, via the RuntimeError sync_state() formats into
+    # _last_sync_status - hangs are already bounded by the 8s timeout.
     step = "import js"
     try:
         import js
@@ -148,7 +148,6 @@ async def _fetch_json_emscripten(path, method, jwt, body):
         # already does every frame, so the real XHR has a chance to
         # progress between polls.
         step = "xhr:polling readyState"
-        _last_sync_status = step
         # Stage I7: offline-first means a backend that's down/unreachable
         # must never cost the game more than a bounded, silent failure - a
         # hung TCP connection (as opposed to an immediate connection-refused,
@@ -160,7 +159,6 @@ async def _fetch_json_emscripten(path, method, jwt, body):
                 xhr.abort()
                 raise RuntimeError("XHR timed out after 8s")
             await asyncio.sleep(0)
-        _last_sync_status = "xhr:readyState reached 4"
 
         step = "read status/responseText"
         status = xhr.status

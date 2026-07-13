@@ -62,6 +62,86 @@ class Panel:
         surface.blit(box, topleft)
 
 
+class Carousel:
+    """Stage J3: horizontal page-flipper for panels whose content outgrew
+    their fixed height (the paperdoll's Help/Achievements tabs and the F1
+    debug panel all just kept drawing past the panel edge before this).
+    Owns only page state + the lateral < > arrows + a "n/N" indicator;
+    the OWNER slices its own content by self.page - this widget never
+    knows what a "page" contains, which is what lets the same class serve
+    both the paperdoll tabs and the debug panel's row list."""
+
+    _ARROW_W = 26
+    _ARROW_H = 44
+
+    def __init__(self, panel_x, panel_w, arrow_cy):
+        self.page = 0
+        self.num_pages = 1
+        self.left_rect = pygame.Rect(
+            panel_x + 4, arrow_cy - self._ARROW_H // 2, self._ARROW_W, self._ARROW_H)
+        self.right_rect = pygame.Rect(
+            panel_x + panel_w - 4 - self._ARROW_W, arrow_cy - self._ARROW_H // 2,
+            self._ARROW_W, self._ARROW_H)
+        self._panel_cx = panel_x + panel_w // 2
+
+    def set_num_pages(self, n):
+        """Owners call this every draw (content can grow at runtime, e.g.
+        HELP_ENTRIES gaining lines) - clamps the current page rather than
+        resetting it, so a mid-session content change doesn't yank the
+        user back to page 0."""
+        self.num_pages = max(1, n)
+        self.page = min(self.page, self.num_pages - 1)
+
+    def prev_page(self):
+        self.page = (self.page - 1) % self.num_pages
+
+    def next_page(self):
+        self.page = (self.page + 1) % self.num_pages
+
+    def handle_keys(self, input_mgr):
+        """A/D-or-arrows page flip. Returns True if it consumed the action,
+        so owners whose tab ALSO uses left/right (e.g. stats +/-) know not
+        to wire this in at all - only conflict-free tabs should call it."""
+        from game.input_system import Action
+        if self.num_pages <= 1:
+            return False
+        if input_mgr.consume_action(Action.MENU_LEFT):
+            self.prev_page()
+            return True
+        if input_mgr.consume_action(Action.MENU_RIGHT):
+            self.next_page()
+            return True
+        return False
+
+    def handle_tap(self, input_mgr):
+        if self.num_pages <= 1:
+            return False
+        if input_mgr.tapped_rect(self.left_rect):
+            self.prev_page()
+            return True
+        if input_mgr.tapped_rect(self.right_rect):
+            self.next_page()
+            return True
+        return False
+
+    def draw(self, surface, f, indicator_y=None):
+        if self.num_pages <= 1:
+            return
+        for rect, pointing_left in ((self.left_rect, True), (self.right_rect, False)):
+            pygame.draw.rect(surface, (45, 40, 60), rect, border_radius=6)
+            pygame.draw.rect(surface, (200, 190, 220), rect, 1, border_radius=6)
+            tip_x = rect.x + 8 if pointing_left else rect.right - 8
+            base_x = rect.right - 8 if pointing_left else rect.x + 8
+            pygame.draw.polygon(surface, (230, 225, 245), [
+                (tip_x, rect.centery),
+                (base_x, rect.centery - 10),
+                (base_x, rect.centery + 10),
+            ])
+        if indicator_y is not None:
+            draw_text(surface, f"{self.page + 1}/{self.num_pages}", f,
+                      (170, 165, 185), self._panel_cx, indicator_y, shadow=False)
+
+
 class ProgressBar:
     """A background rect + proportional fill + border, optionally wrapped in
     a slightly larger backing box (margin>0). Covers both the small in-world

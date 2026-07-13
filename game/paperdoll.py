@@ -1,7 +1,7 @@
 import math
 import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
-from game.ui import Panel, draw_text
+from game.ui import Panel, draw_text, Carousel
 from game.assets import (
     create_player_sprite, create_attribute_icon, create_level_thumbnail,
     create_debuff_icon, create_spell_icon, create_trophy_icon,
@@ -121,6 +121,16 @@ class Paperdoll:
         self.bestiary_cursor = 0
         self.atlas_cursor = 0
 
+        # Stage J3: Help/Achievements content outgrew the fixed panel
+        # height (both just drew past the edge before) - lateral < >
+        # carousels, one per tab so each remembers its own page. Only
+        # wired into tabs whose left/right keys are FREE (stats uses A/D
+        # for +/- and bestiary/atlas for grid movement - see
+        # Carousel.handle_keys' docstring).
+        arrow_cy = self.py + _PANEL_H // 2
+        self.help_carousel = Carousel(self.px, _PANEL_W, arrow_cy)
+        self.achievements_carousel = Carousel(self.px, _PANEL_W, arrow_cy)
+
         # Tab bar width is derived from however many tabs _TAB_ORDER has -
         # was hardcoded for exactly 3 (Stage E4); Stage F3/F4 added a 4th
         # (Atlas) and 5th (Help) tab, so this now scales down tab_w instead
@@ -202,6 +212,10 @@ class Paperdoll:
             self._handle_tap_bestiary(input_mgr)
         elif self.active_tab == "atlas":
             self._handle_tap_atlas(input_mgr)
+        elif self.active_tab == "achievements":
+            self.achievements_carousel.handle_tap(input_mgr)
+        elif self.active_tab == "help":
+            self.help_carousel.handle_tap(input_mgr)
 
     def _handle_tap_bestiary(self, input_mgr):
         for i, rect in enumerate(self.bestiary_buttons):
@@ -252,6 +266,10 @@ class Paperdoll:
             self._handle_keys_bestiary(input_mgr)
         elif self.active_tab == "atlas":
             self._handle_keys_atlas(input_mgr)
+        elif self.active_tab == "achievements":
+            self.achievements_carousel.handle_keys(input_mgr)
+        elif self.active_tab == "help":
+            self.help_carousel.handle_keys(input_mgr)
 
     def _handle_keys_bestiary(self, input_mgr):
         if input_mgr.consume_action(Action.MENU_LEFT):
@@ -632,12 +650,20 @@ class Paperdoll:
         f_name = font(14, bold=True)
         f_desc = font(11)
         icon_size = 22
-        icon_x = self.px + 20
+        # Icons/text inset past the carousel arrows (Carousel._ARROW_W=26 at
+        # each lateral edge) so page content never sits under them.
+        icon_x = self.px + 38
         text_x = icon_x + icon_size + 10
-        desc_max_w = self.px + _PANEL_W - 20 - text_x
+        desc_max_w = self.px + _PANEL_W - 38 - text_x
+
+        # Stage J3: 12 rows/page - the full list (14 and growing) already
+        # collided with the footer hint at 32px/row.
+        per_page = 12
+        pages = [ACHIEVEMENTS[i:i + per_page] for i in range(0, len(ACHIEVEMENTS), per_page)]
+        self.achievements_carousel.set_num_pages(len(pages))
 
         y = top + _ACHIEVEMENTS_START_Y
-        for ach in ACHIEVEMENTS:
+        for ach in pages[self.achievements_carousel.page]:
             is_unlocked = ach["id"] in unlocked
             icon = pygame.transform.scale(create_trophy_icon(ach["tier"], locked=not is_unlocked),
                                            (icon_size, icon_size))
@@ -652,29 +678,70 @@ class Paperdoll:
 
             y += _ACHIEVEMENTS_ROW_H
 
+        self.achievements_carousel.draw(surface, font(13), indicator_y=self.py + _PANEL_H - 48)
         f_hint = font(14)
-        draw_text(surface, "TAB troca aba | C/ESC - Fechar", f_hint, SUBTEXT,
+        draw_text(surface, "TAB troca aba | A/D muda pagina | C/ESC - Fechar", f_hint, SUBTEXT,
                   cx, self.py + _PANEL_H - 30)
+
+    def _help_pages(self):
+        """Page list for the Help tab's carousel (Stage J3). Each page is
+        {"kind": ..., "title": ...} plus kind-specific fields - the debuff
+        listing (Stage J4) is a different kind from the shortcut chunks, so
+        _draw_help dispatches per page rather than assuming one layout."""
+        per_page = 8
+        return [{"kind": "debuffs", "title": "DEBUFFS"}] + [
+            {"kind": "shortcuts", "title": "ATALHOS", "entries": HELP_ENTRIES[i:i + per_page]}
+            for i in range(0, len(HELP_ENTRIES), per_page)
+        ]
 
     def _draw_help(self, surface, top):
         cx = self.px + _PANEL_W // 2
+        pages = self._help_pages()
+        self.help_carousel.set_num_pages(len(pages))
+        page = pages[self.help_carousel.page]
+
         f_title = font(19, bold=True)
-        draw_text(surface, "ATALHOS", f_title, ACCENT_GOLD, cx, top + 6)
+        draw_text(surface, page["title"], f_title, ACCENT_GOLD, cx, top + 6)
 
-        f_key = font(15, bold=True)
-        f_desc = font(14)
-        key_x = self.px + 24
-        desc_x = self.px + 190
-        y = top + 42
-        for key_label, description in HELP_ENTRIES:
-            draw_text(surface, key_label, f_key, ACCENT_GOLD, key_x, y, shadow=False, align="left")
-            for line in self._wrap_text(description, f_desc, self.px + _PANEL_W - 24 - desc_x):
-                draw_text(surface, line, f_desc, (210, 210, 225), desc_x, y, shadow=False, align="left")
-                y += 17
-            y += 12
+        if page["kind"] == "shortcuts":
+            f_key = font(15, bold=True)
+            f_desc = font(14)
+            # Inset past the lateral carousel arrows, same as achievements.
+            key_x = self.px + 38
+            desc_x = self.px + 190
+            y = top + 42
+            for key_label, description in page["entries"]:
+                draw_text(surface, key_label, f_key, ACCENT_GOLD, key_x, y, shadow=False, align="left")
+                for line in self._wrap_text(description, f_desc, self.px + _PANEL_W - 38 - desc_x):
+                    draw_text(surface, line, f_desc, (210, 210, 225), desc_x, y, shadow=False, align="left")
+                    y += 17
+                y += 12
+        elif page["kind"] == "debuffs":
+            # Stage J4: what monster/boss/weather afflictions do and how to
+            # cure them - the info previously only discoverable by suffering
+            # through each one. Icon + colored name + prose description.
+            from game.status_effects import STATUS_DISPLAY, STATUS_HELP
+            f_name = font(15, bold=True)
+            f_desc = font(13)
+            icon_size = 28
+            icon_x = self.px + 38
+            text_x = icon_x + icon_size + 12
+            desc_max_w = self.px + _PANEL_W - 38 - text_x
+            y = top + 40
+            for effect_id, (name, description) in STATUS_HELP.items():
+                icon = pygame.transform.scale(create_debuff_icon(effect_id), (icon_size, icon_size))
+                surface.blit(icon, (icon_x, y))
+                _, color = STATUS_DISPLAY[effect_id]
+                draw_text(surface, name, f_name, color, text_x, y - 1, shadow=False, align="left")
+                dy = y + 16
+                for line in self._wrap_text(description, f_desc, desc_max_w):
+                    draw_text(surface, line, f_desc, (205, 205, 220), text_x, dy, shadow=False, align="left")
+                    dy += 15
+                y = max(y + 44, dy + 12)
 
+        self.help_carousel.draw(surface, font(13), indicator_y=self.py + _PANEL_H - 48)
         f_hint = font(14)
-        draw_text(surface, "TAB troca aba | C/ESC - Fechar", f_hint, SUBTEXT,
+        draw_text(surface, "TAB troca aba | A/D muda pagina | C/ESC - Fechar", f_hint, SUBTEXT,
                   cx, self.py + _PANEL_H - 30)
 
     @staticmethod
