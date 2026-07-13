@@ -767,12 +767,15 @@ class GameplayState:
     def toggle_paperdoll(self):
         """Shared by the C keypress (handle_event) and Stage G5's
         PaperdollButton tap (GameStateManager.update()) - one place owning
-        the "only one overlay at a time" guard and the forced-level-up
-        lock, instead of duplicating it per input source."""
+        the "only one overlay at a time" guard, instead of duplicating it
+        per input source. Stage J2: a level-up still auto-opens this panel
+        on the stats tab (see update()'s pending_level_up branch), but no
+        longer LOCKS it - closing with points unspent is allowed, the
+        points just wait in player.unspent_points until the player comes
+        back."""
         if self.paperdoll_open:
-            if not (self.level_up_forced and self.player.unspent_points > 0):
-                self.paperdoll_open = False
-                self.level_up_forced = False
+            self.paperdoll_open = False
+            self.level_up_forced = False
         elif not self.paused and not self.items_open and not self.debug_panel_open:
             self.paperdoll_open = True
 
@@ -1500,6 +1503,18 @@ class GameStateManager:
         except pygame.error:
             pass
 
+    def _ensure_fullscreen(self):
+        """Stage J1: entering a run (Novo Jogo/Continuar/difficulty pick)
+        auto-enters fullscreen, as if the resize button had been clicked.
+        Guarded because _toggle_fullscreen() is bidirectional - starting a
+        second run while already fullscreen must not kick the player OUT of
+        it. Safe to call from _transition(): it runs synchronously inside
+        the keydown/click event that produced the menu choice, so the
+        browser still counts it as a user gesture (which requestFullscreen
+        requires)."""
+        if not self._is_fullscreen():
+            self._toggle_fullscreen()
+
     def handle_event(self, event):
         result = self.state.handle_event(event)
         if result:
@@ -1604,6 +1619,7 @@ class GameStateManager:
 
     def _transition(self, result):
         if result == "NOVO JOGO":
+            self._ensure_fullscreen()
             self.state = NameEntryState(self.screen, self.input, self.audio)
         elif result == "name_confirmed":
             import game.save as save
@@ -1645,6 +1661,7 @@ class GameStateManager:
                 self.save_state["progression"]["cleared_difficulties"],
             )
         elif result and result.startswith("difficulty:"):
+            self._ensure_fullscreen()
             diff_id = result.split(":", 1)[1]
             self.save_state["progression"]["current_difficulty"] = diff_id
             self.player = self._player_from_save()
@@ -1660,6 +1677,7 @@ class GameStateManager:
             # only a death (see update()'s "game_over" branch) zeroes this
             # tier's furthest-cleared checkpoint, sending the dungeon itself
             # back to level 1 without touching the character underneath it.
+            self._ensure_fullscreen()
             self.player = self._player_from_save()
             self.state = TransitionState(self.screen, self._continue_level(), self.player)
             self.play_time = 0.0

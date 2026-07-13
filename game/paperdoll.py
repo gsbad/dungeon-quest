@@ -436,7 +436,9 @@ class Paperdoll:
 
         f_hint = font(14)
         if forced:
-            hint = "Voce subiu de nivel! Distribua todos os pontos para continuar"
+            # Stage J2: leveling up no longer locks this panel open - the
+            # golden hint celebrates/informs, it doesn't demand anymore.
+            hint = "Voce subiu de nivel! Distribua quando quiser | C/ESC - Fechar"
             hint_color = ACCENT_GOLD
         else:
             hint = "TAB troca aba | W/S seleciona | A/D distribui | C/ESC - Fechar"
