@@ -21,7 +21,7 @@ Uma campanha em **3 atos** (13 fases, incluindo uma secreta), com sistema de atr
 - **Paperdoll** com 5 abas: Status, Magias, Bestiário (mobs/bosses descobertos), Atlas (fases já visitadas) e Ajuda.
 - **Save/load** persistente (personagem, economia, progressão por dificuldade).
 - **Painel de debug** (`F1`, PC apenas) pra testar atributos, economia e dificuldade sem precisar re-jogar a campanha inteira.
-- Roda no desktop, no **navegador** (PC e celular, via Pygbag/WebAssembly) e compila pra **.exe** do Windows.
+- Roda no navegador (PC e celular, via Pygbag/WebAssembly), com login Google e sync de save na nuvem.
 
 ---
 
@@ -130,24 +130,6 @@ python -m pygbag --bind <IP-do-PC-na-rede> --port 8001 main.py
   mouse/toque).
 - A primeira execução baixa o runtime do Pygbag (Pyodide); é necessário ter internet
   nesse primeiro build.
-
----
-
-## 📦 Como Compilar para Windows (.exe)
-
-1. Instale o PyInstaller:
-   ```bash
-   pip install pyinstaller
-   ```
-2. Navegue até a pasta do projeto e abra o CMD aqui
-3. Execute:
-   ```bash
-   PyInstaller --onefile main.py
-   ```
-4. O arquivo `main.exe` será gerado em `dist/`
-5. Compacte a pasta `dist/` em um ZIP e entregue
-
-> **Dica:** Se o .exe der erro, execute pelo CMD para ver a mensagem de erro.
 
 ---
 
