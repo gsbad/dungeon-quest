@@ -181,7 +181,8 @@ async def _fetch_json_emscripten(path, method, jwt, body):
 def _fetch_json_native(path, method, jwt, body):
     data = None
     req = urllib.request.Request(_api_base() + path, method=method)
-    req.add_header("Authorization", f"Bearer {jwt}")
+    if jwt:
+        req.add_header("Authorization", f"Bearer {jwt}")
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         req.add_header("Content-Type", "application/json")
@@ -333,3 +334,21 @@ def trigger_sync(save_state):
     # and stalling somewhere past its first await.
     _last_sync_status = "0 scheduled"
     _track(sync_state(save_state))
+
+
+async def _fetch_and_apply_balance():
+    try:
+        config = await fetch_json("/balance", "GET")
+    except Exception:
+        return  # offline/backend down - game.balance_config's defaults stand
+    import game.balance_config as balance_config
+    balance_config.apply_overrides(config)
+
+
+def trigger_balance_fetch():
+    """Stage I4: fire-and-forget at boot (game/states.py's
+    GameStateManager.__init__) - the game already runs fine on the code's
+    own defaults immediately, so this never blocks startup; whenever/if it
+    resolves, it live-patches ITEMS/DIFFICULTIES/SPELLS/game.stats in
+    place. No JWT needed - /balance is a public endpoint, same as /health."""
+    _track(_fetch_and_apply_balance())

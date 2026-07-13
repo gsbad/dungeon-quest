@@ -41,6 +41,19 @@ class SaveRow(Base):
     updated_at = Column(Float, nullable=False)
 
 
+class BalanceConfig(Base):
+    """Stage I4: admin-panel overrides on top of the game's own balance
+    defaults (game/items.py, game/difficulty.py, game/spells.py,
+    game/stats.py). Absent key = code default stands - this table only
+    ever holds the curated subset an admin actually changed, never a full
+    mirror of every constant."""
+    __tablename__ = "balance_config"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+    updated_at = Column(Float, nullable=False)
+
+
 def init_db():
     Base.metadata.create_all(engine)
 

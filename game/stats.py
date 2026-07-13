@@ -123,8 +123,17 @@ def mitigate(amount, defense):
     return amount * MITIGATION_K / (MITIGATION_K + defense)
 
 
+# Named (not inline) so Stage I4's balance admin panel can override them at
+# runtime via game/balance_config.py - xp_to_next() below reads these from
+# this module's own globals at call time, so a `stats.XP_CURVE_BASE = x`
+# from outside takes effect immediately, no matter who imported xp_to_next
+# by reference or when.
+XP_CURVE_BASE = 20
+XP_CURVE_EXP = 1.4
+
+
 def xp_to_next(level):
-    return round(20 * level ** 1.4)
+    return round(XP_CURVE_BASE * level ** XP_CURVE_EXP)
 
 
 # Attribute blocks calibrated so physical_damage/max_hp land close to the
@@ -236,19 +245,26 @@ def scale_archetype(base_kwargs, ml):
     return scaled
 
 
+# Named for the same Stage I4 override reason as XP_CURVE_BASE/EXP above.
+ML_GROWTH_RATE = 0.35
+ANTI_FARM_LEVEL_GAP = 5
+ANTI_FARM_XP_MULT = 0.1
+
+
 def scale_by_ml(base_amount, ml):
     """XP/gold growth per monster level - same formula for both, no separate
     multiplier table (per the RPG systems expansion plan's note)."""
-    return base_amount * (1 + 0.35 * (ml - 1))
+    return base_amount * (1 + ML_GROWTH_RATE * (ml - 1))
 
 
 def xp_for_kill(base_xp, monster_level, player_level):
-    """Anti-farm rule: a monster 5+ levels below the player gives only 10%
-    XP, so grinding early content for late-game gold doesn't trivially also
-    grind XP - farming still has to happen on level-appropriate content."""
+    """Anti-farm rule: a monster ANTI_FARM_LEVEL_GAP+ levels below the player
+    gives only ANTI_FARM_XP_MULT of the XP, so grinding early content for
+    late-game gold doesn't trivially also grind XP - farming still has to
+    happen on level-appropriate content."""
     xp = scale_by_ml(base_xp, monster_level)
-    if player_level - monster_level >= 5:
-        xp *= 0.1
+    if player_level - monster_level >= ANTI_FARM_LEVEL_GAP:
+        xp *= ANTI_FARM_XP_MULT
     return round(xp)
 
 

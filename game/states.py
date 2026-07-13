@@ -1423,6 +1423,13 @@ class GameStateManager:
         self.save_state = save.load() or save.new_game_state()
         self.audio.muted = self.save_state["settings"]["muted"]
 
+        # Stage I4: fire-and-forget, no JWT needed (/balance is public) -
+        # patches ITEMS/DIFFICULTIES/SPELLS/game.stats in place whenever it
+        # resolves, if ever; the code's own defaults already make the game
+        # fully playable before/without this.
+        import game.net as net
+        net.trigger_balance_fetch()
+
         self.state = MenuState(screen, input_mgr, audio_mgr, has_save=self._has_progress())
         self.player = None
         self.play_time = 0.0
