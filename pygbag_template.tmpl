@@ -447,10 +447,16 @@ function show_infobox() {
         // application client, authorized origin http://localhost:8000.
         window.DQ_GOOGLE_CLIENT_ID = "570460627729-jleq8h59see1kdhre4aeh5q07t9l6jif.apps.googleusercontent.com";
         // DQ_API_BASE: single place the backend origin lives, mirroring the
-        // dqMouseLogicalX/Y globals below - Stage I9 flips this to the
-        // deployed HTTPS URL, nothing else in this file or in game/net.py
-        // should hardcode a backend URL.
-        window.DQ_API_BASE = "http://localhost:8090";
+        // dqMouseLogicalX/Y globals below. Stage I9's deployed Caddy setup
+        // serves the game AND reverse-proxies the API from the SAME origin
+        // (see deploy notes) - ports 8000 (PC dev)/8001 (LAN mobile dev)
+        // are how the two local pygbag dev servers are told apart from a
+        // real deployment; anything else falls back to same-origin
+        // (location.origin), no hardcoded production URL needed here at
+        // all.
+        window.DQ_API_BASE = (location.port === "8000" || location.port === "8001")
+            ? "http://" + location.hostname + ":8090"
+            : location.origin;
     </script>
 
 </head>

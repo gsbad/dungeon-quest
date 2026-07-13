@@ -40,14 +40,17 @@ JWT_SECRET = _load_jwt_secret()
 app = FastAPI(title="Dungeon Quest Backend")
 init_db()
 
-# Stage I9 will add the deployed HTTPS origin here once it exists; the LAN
-# entry lets the phone's pygbag tab (192.168.100.19:8001) call this API even
-# though Google's own OAuth origin check won't accept that origin (plain
-# http, non-localhost) - login stays PC-only until Stage I9, but non-auth
-# endpoints work from the phone from day one.
+# The LAN entry lets the phone's local-dev pygbag tab (192.168.100.19:8001)
+# call this API even though Google's own OAuth origin check won't accept
+# that origin (plain http, non-localhost) - login is PC-only for the local
+# dev setup, but non-auth endpoints work from the phone there too. The
+# deployed sslip.io origin (Stage I9) is same-origin with the game there
+# (Caddy serves both), so CORS doesn't gate that path at all - listed here
+# anyway for robustness/testing from other origins.
 ALLOWED_ORIGINS = [
     "http://localhost:8000",
     "http://192.168.100.19:8001",
+    "https://129.80.222.127.sslip.io",
 ]
 
 app.add_middleware(
