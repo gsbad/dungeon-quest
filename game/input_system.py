@@ -879,13 +879,3 @@ class InputManager:
         pygame.draw.line(layer, color, (cx, cy - size), (cx, cy + size), 3)
         pygame.draw.circle(layer, color, (cx, cy), size, 2)
         surface.blit(layer, (x - cx, y - cy))
-        # Text label alongside it - a live number is a much more reliable
-        # diagnostic signal than trying to color-pick a 14px marker out of
-        # a screenshot (the HUD's own red HP bar fill is close enough in
-        # color to false-match a naive scan).
-        from game.theme import font
-        label = font(14, bold=True).render(f"({x},{y})", True, (255, 255, 255))
-        bg = pygame.Surface((label.get_width() + 6, label.get_height() + 4), pygame.SRCALPHA)
-        bg.fill((20, 20, 20, min(220, alpha + 40)))
-        bg.blit(label, (3, 2))
-        surface.blit(bg, (x + size + 4, y - size))

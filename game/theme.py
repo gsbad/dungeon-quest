@@ -7,9 +7,29 @@ SW, SH = 800, 600
 
 
 # ─── Fonts ──────────────────────────────────────────────────────────────────
+# Playtest bug: the game would gradually slow down and eventually freeze
+# solid after an extended session, with no console error - the classic
+# signature of resource exhaustion, not an exception. This was the prime
+# suspect: font() is called from dozens of draw() sites across the whole
+# UI (HUD, tooltips, menus, hotbar, damage numbers...), many of them every
+# single frame for the entire session, and every call built a brand new
+# pygame.font.Font from scratch. Cheap-ish on native pygame; on WASM/
+# emscripten (a heap that grows but rarely shrinks, allocation costlier
+# than native) that's exactly the kind of steady churn that degrades a tab
+# into unresponsive over time. Memoized by (size, bold) - same Font object
+# reused instead of rebuilt, identical behavior at every call site, no
+# call site needed to change.
+_FONT_CACHE = {}
+
+
 def font(size, bold=False):
+    key = (size, bold)
+    cached = _FONT_CACHE.get(key)
+    if cached is not None:
+        return cached
     f = pygame.font.Font(None, size)
     f.set_bold(bold)
+    _FONT_CACHE[key] = f
     return f
 
 

@@ -641,6 +641,16 @@ class Level:
         puddles_arg = self.puddles if self.data.get("hazards", {}).get("puddles") else None
         for enemy in self.enemies:
             enemy.update(dt, player, self.walls, self.width, self.height, puddles_arg)
+        # Playtest freeze bug: dead enemies used to stay in this list
+        # forever (only ever filtered OUT for counting via the `living =`
+        # line below, never actually removed) - with Stage K14's post-
+        # clear respawn trickle also appending new ones on top, a long
+        # session in one level accumulates dead objects that still get
+        # iterated every frame for no reason. Kept alive one extra frame
+        # after death exactly as long as it still has floating damage
+        # numbers on screen (the killing blow's number needs to finish
+        # drifting/fading), pruned right after.
+        self.enemies = [e for e in self.enemies if e.alive or e.floating_numbers]
 
         # Update puddles and damage player on contact (puddles persist)
         for p in self.puddles:

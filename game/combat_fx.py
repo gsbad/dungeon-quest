@@ -46,7 +46,7 @@ class FloatingNumber:
         self.color = color
         self.life = 0.7
         self.max_life = self.life
-        self._font = font(16, bold=True)
+        self._font = font(18, bold=True)
 
     def update(self, dt):
         self.y -= 28 * dt

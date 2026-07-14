@@ -115,6 +115,16 @@ class Particle:
         surface.blit(s, (int(self.x - cam_x), int(self.y - cam_y)))
 
 
+# Playtest freeze bug: puddles never expired and had no cap - a goblin
+# spawns one every 4-8s for as long as it's alive, whether or not the
+# player is anywhere nearby, so a long session near a live goblin grew
+# this list without bound. Kept "persists indefinitely" (see Puddle.update
+# below - staying in a hazardous room should still cost something), but
+# capped: once MAX_PUDDLES exist in a level, the oldest is dropped to make
+# room for a new one instead of growing forever.
+MAX_PUDDLES = 15
+
+
 class Puddle:
     def __init__(self, x, y, damage_interval=1.0):
         # x,y should be tile-aligned world coords
@@ -127,9 +137,29 @@ class Puddle:
         self.w = w
         self.h = h
         self.rect = pygame.Rect(int(self.x), int(self.y), w, h)
+        # Playtest freeze bug: this used to build a brand new Surface every
+        # single draw() call, forever - puddles persist indefinitely (see
+        # update() below) and a goblin keeps spawning more of them the
+        # whole time it's alive, regardless of whether the player is even
+        # near it. Rendered once here and reused - the puddle's look never
+        # changes after it's placed, so there was never a reason to redraw
+        # it from scratch every frame.
+        self._surface = self._render()
+
+    def _render(self):
+        s = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+        # Draw an irregular purple acid puddle by compositing several overlapping ellipses
+        color = (140, 50, 180, 200)
+        offsets = [(-6, 0, self.w-8, self.h), (6, 2, self.w-12, self.h-4), (0, -4, self.w-6, self.h-2)]
+        for ox, oy, ow, oh in offsets:
+            pygame.draw.ellipse(s, color, (max(0, ox), max(0, oy), max(4, ow), max(4, oh)))
+        # add a small darker ring
+        pygame.draw.ellipse(s, (90,30,120,140), (4,4,self.w-8,self.h-8), 2)
+        return s
 
     def update(self, dt):
         # Only advance damage cooldown timer; puddle persists indefinitely
+        # (capped in count by game/level.py instead - see MAX_PUDDLES).
         self._tick -= dt
         if self._tick < 0:
             self._tick = 0
@@ -143,15 +173,7 @@ class Puddle:
     def draw(self, surface, cam_x, cam_y):
         sx = int(self.x - cam_x)
         sy = int(self.y - cam_y)
-        s = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
-        # Draw an irregular purple acid puddle by compositing several overlapping ellipses
-        color = (140, 50, 180, 200)
-        offsets = [(-6, 0, self.w-8, self.h), (6, 2, self.w-12, self.h-4), (0, -4, self.w-6, self.h-2)]
-        for ox, oy, ow, oh in offsets:
-            pygame.draw.ellipse(s, color, (max(0, ox), max(0, oy), max(4, ow), max(4, oh)))
-        # add a small darker ring
-        pygame.draw.ellipse(s, (90,30,120,140), (4,4,self.w-8,self.h-8), 2)
-        surface.blit(s, (sx, sy))
+        surface.blit(self._surface, (sx, sy))
 
 
 # AI/animation tuning that isn't a combat stat - stays local to enemy.py.
@@ -447,6 +469,8 @@ class Enemy:
                 elif any(candidate.colliderect(p.rect) for p in puddles):
                     pass
                 else:
+                    if len(puddles) >= MAX_PUDDLES:
+                        puddles.pop(0)  # oldest first (puddles is append-order)
                     puddles.append(Puddle(spawn_x, spawn_y, damage_interval=1.0))
 
         if not self.alive:
