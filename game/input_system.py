@@ -83,11 +83,11 @@ class Action(Enum):
 HELP_ENTRIES = [
     ("WASD / Setas", "Mover o personagem"),
     ("Mouse", "Mirar ataques/feiticos na direcao do cursor"),
-    ("F", "Atacar corpo a corpo"),
-    ("R", "Conjurar Bola de Fogo / Reiniciar (na tela de pausa ou de morte)"),
+    ("ESPACO", "Atacar corpo a corpo"),
+    ("F", "Conjurar Bola de Fogo"),
     ("Q", "Conjurar Nova de Gelo"),
-    ("X", "Conjurar Luz Curativa"),
-    ("ESPACO", "Investida (Dash)"),
+    ("R", "Conjurar Luz Curativa / Reiniciar (na tela de pausa ou de morte)"),
+    ("X", "Investida (Dash)"),
     ("1 / 2 / 3", "Usar item (slots do hotbar)"),
     ("C", "Abrir/fechar o menu Personagem"),
     ("I", "Abrir/fechar o menu Itens"),
@@ -585,26 +585,23 @@ class InputManager:
             if event.key == pygame.K_RETURN:
                 self._press_action(Action.CONFIRM)
             if event.key == pygame.K_SPACE:
-                # Stage J14 hotbar remap: Space was ATTACK, now DASH - the
-                # sword moved to F below, freeing Space up as the new
-                # spell's "big and easy to hit" key, same reasoning that
-                # put ATTACK there originally.
+                # Stage K1: reverted Stage J14's remap - Space is ATTACK
+                # again (the original binding), Dash moved to X below.
                 self._press_action(Action.CONFIRM)
-                self._press_action(Action.DASH)
+                self._press_action(Action.ATTACK)
                 self._press_action(Action.SECRET)
             if event.key == pygame.K_ESCAPE:
                 self._press_action(Action.PAUSE)
             if event.key == pygame.K_r:
                 self._press_action(Action.RESTART)
-                # Same physical key also casts Bola de Fogo (SPELL_ORDER[0])
+                # Same physical key also casts Luz Curativa (SPELL_ORDER[2])
                 # during gameplay - no collision with RESTART above, since
                 # that's only consumed while paused (game/states.py) and
-                # CAST_1 only while not paused; unconsumed actions are
+                # CAST_3 only while not paused; unconsumed actions are
                 # cleared every frame (InputManager.update()), so pressing R
-                # while paused can't leak into a stray fireball cast on
-                # unpause. Was Luz Curativa/CAST_3 pre-Stage-J14 - moved to
-                # X below so R could take over Fireball from F.
-                self._press_action(Action.CAST_1)
+                # while paused can't leak into a stray heal cast on unpause.
+                # Stage K1: reverted back from Bola de Fogo (Stage J14).
+                self._press_action(Action.CAST_3)
             if event.key == pygame.K_c:
                 self._press_action(Action.PAPERDOLL)
             if event.key == pygame.K_i:
@@ -612,15 +609,16 @@ class InputManager:
             if event.key == pygame.K_l:
                 self._press_action(Action.LEADERBOARD)
             if event.key == pygame.K_f:
-                # Stage J14: was Bola de Fogo (CAST_1) - F is now the melee
-                # attack (freed up since Space became Dash), matching the
-                # user's ask that the sword get its own hotbar key.
-                self._press_action(Action.ATTACK)
+                # Stage K1: reverted back to Bola de Fogo (Stage J14 had
+                # moved this to melee attack - Space owns that again now).
+                self._press_action(Action.CAST_1)
             if event.key == pygame.K_q:
                 self._press_action(Action.CAST_2)
             if event.key == pygame.K_x:
-                # Stage J14: Luz Curativa moved here from R (see K_r above).
-                self._press_action(Action.CAST_3)
+                # Stage K1: Dash moved here - Space reverted to ATTACK, so
+                # Dash (Stage J14, previously on Space) needed a new key;
+                # X was free since Luz Curativa moved back to R above.
+                self._press_action(Action.DASH)
             if event.key == pygame.K_1:
                 self._press_action(Action.USE_1)
             if event.key == pygame.K_2:

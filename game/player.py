@@ -35,13 +35,13 @@ _HOTBAR_GROUP_GAP = 16
 # Below the top-center "Inimigos: N" / exit-hint text (game/level.py draws
 # it at y=12) - the hotbar used to sit right on top of it.
 _HOTBAR_Y = 34
-# Stage J14 hotbar remap: F is melee attack (new slot, was unbound in the
-# hotbar), R is now Fireball (was F), Q stays Nova de Gelo, X is now Luz
-# Curativa (was R - freed up so R could become Fireball), 1/2/3 are the
-# potions (were 4/5/6), SPC is the new Dash spell (was plain ATTACK on
-# Space). Order matches hotbar_slots() below: attack, then SPELL_ORDER's
-# fixed fireball/frost_nova/healing_light, then the 3 items, then dash.
-_HOTBAR_KEYS = ["F", "R", "Q", "X", "1", "2", "3", "SPC"]
+# Stage K1: reverted Stage J14's remap - SPACE is melee attack again, F is
+# Fireball again, Q stays Nova de Gelo, R is Luz Curativa again, 1/2/3 are
+# still the potions, and Dash (new in J14, didn't exist pre-J14) moved to
+# X since Space went back to attack. Order matches hotbar_slots() below:
+# attack, then SPELL_ORDER's fixed fireball/frost_nova/healing_light, then
+# the 3 items, then dash.
+_HOTBAR_KEYS = ["SPC", "F", "Q", "R", "1", "2", "3", "X"]
 # Stage G1: slot background is always black (contrast for the icon, not a
 # per-spell/item tint) - the old _SPELL_COLOR/_ITEM_COLOR dicts are gone,
 # nothing else read them.
@@ -327,6 +327,13 @@ class Player:
             self._resolve_collisions_y(walls)
             if self.dash_timer <= 0:
                 self.dashing = False
+                # Stage K2: this never ran before - draw() shows the trail
+                # whenever dash_trail is non-empty regardless of self.dashing,
+                # and nothing else ever cleared it once the dash ended, so
+                # the last DASH_TRAIL_LEN ghost frames sat on screen forever
+                # (until the *next* dash overwrote them via try_dash()'s own
+                # reset). The trail should only exist while actually dashing.
+                self.dash_trail = []
         else:
             dx, dy = movement_vector
 

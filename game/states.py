@@ -1697,14 +1697,11 @@ class GameStateManager:
                 if ns == "game_over":
                     self.save_state["counters"]["deaths"] = self.save_state["counters"].get("deaths", 0) + 1
                     self._just_cleared_difficulty = None
-                    # Death sends the dungeon back to the start of the
-                    # current tier - "Continuar" never resumes where the
-                    # player died. The character itself (xp/level/
-                    # attributes/gold/inventory, synced below) is never
-                    # lost; only this tier's level checkpoint resets.
-                    # cleared_difficulties (which tiers are unlocked) is
-                    # untouched.
-                    self.save_state["progression"]["highest_level_cleared"][self.state.difficulty_id] = 0
+                    # Stage K3: death no longer touches highest_level_cleared
+                    # - "Continuar" resumes at the deepest level already
+                    # cleared (_continue_level() below reads exactly that),
+                    # same as the original pre-Stage-D4 behavior. A death
+                    # only costs the in-progress run, never the checkpoint.
                 else:
                     prog = self.save_state["progression"]
                     diff_id = self.state.difficulty_id
@@ -1740,11 +1737,10 @@ class GameStateManager:
             self.leaderboard_button.draw(self.screen)
 
     def _has_progress(self):
-        # A death now zeroes the active tier's highest_level_cleared (see
-        # the "game_over" branch above), so a character who dies before
-        # clearing level 1 anywhere would otherwise make this false and
-        # silently orphan their name/gold/attributes behind "Novo Jogo".
-        # A non-empty name means a character exists, dungeon progress or not.
+        # A character who dies before ever clearing level 1 anywhere would
+        # otherwise make this false and silently orphan their name/gold/
+        # attributes behind "Novo Jogo" - a non-empty name or level>1 means
+        # a character exists, dungeon progress or not.
         highest = self.save_state["progression"]["highest_level_cleared"]
         return (any(v > 0 for v in highest.values())
                 or self.save_state["character"]["level"] > 1
