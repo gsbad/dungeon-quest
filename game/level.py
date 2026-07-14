@@ -661,7 +661,9 @@ class Level:
         # drifting/fading), pruned right after.
         self.enemies = [e for e in self.enemies if e.alive or e.floating_numbers]
 
-        # Update puddles and damage player on contact (puddles persist)
+        # Update puddles and damage player on contact - each puddle has its
+        # own lifetime now (Puddle.LIFETIME, Stage K23), so this also prunes
+        # the expired ones instead of them persisting forever.
         for p in self.puddles:
             p.update(dt)
             if p.rect.colliderect(player.rect):
@@ -673,6 +675,7 @@ class Level:
                     player.take_damage(round(player.max_hp / 6), dtype="magic")
                     if random.random() < 0.20:
                         player.try_apply_debuff("poison")
+        self.puddles = [p for p in self.puddles if p.alive]
 
         # Update gold drops - expire the unclaimed ones, collect the rest
         for g in self.gold_drops:

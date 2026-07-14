@@ -115,35 +115,37 @@ class Particle:
         surface.blit(s, (int(self.x - cam_x), int(self.y - cam_y)))
 
 
-# Playtest freeze bug: puddles never expired and had no cap - a goblin
-# spawns one every 4-8s for as long as it's alive, whether or not the
-# player is anywhere nearby, so a long session near a live goblin grew
-# this list without bound. Kept "persists indefinitely" (see Puddle.update
-# below - staying in a hazardous room should still cost something), but
-# capped: once MAX_PUDDLES exist in a level, the oldest is dropped to make
-# room for a new one instead of growing forever.
-MAX_PUDDLES = 15
-
-
 class Puddle:
+    # Stage K23: the actual intended design all along - 4s fully visible/
+    # damaging, then 2s blinking as a "this is about to go away" warning,
+    # then gone. My first pass at the playtest freeze (a goblin spawning
+    # one every 4-8s for as long as it's alive, with the old code never
+    # expiring any of them) capped the *count* instead of giving each
+    # puddle its own lifetime - that masked the symptom (unbounded growth)
+    # without fixing the real bug (puddles were never supposed to be
+    # permanent). A real lifetime fixes both at once: nothing to cap, since
+    # puddles now naturally can't outlive the goblin that keeps refreshing
+    # them by more than a few seconds.
+    SOLID_DURATION = 4.0
+    BLINK_DURATION = 2.0
+    LIFETIME = SOLID_DURATION + BLINK_DURATION
+
     def __init__(self, x, y, damage_interval=1.0):
         # x,y should be tile-aligned world coords
         self.x = float(x)
         self.y = float(y)
         self.damage_interval = float(damage_interval)
         self._tick = 0.0
+        self.age = 0.0
         w = TILE
         h = TILE // 2
         self.w = w
         self.h = h
         self.rect = pygame.Rect(int(self.x), int(self.y), w, h)
         # Playtest freeze bug: this used to build a brand new Surface every
-        # single draw() call, forever - puddles persist indefinitely (see
-        # update() below) and a goblin keeps spawning more of them the
-        # whole time it's alive, regardless of whether the player is even
-        # near it. Rendered once here and reused - the puddle's look never
-        # changes after it's placed, so there was never a reason to redraw
-        # it from scratch every frame.
+        # single draw() call, forever. Rendered once here and reused - the
+        # puddle's look never changes over its lifetime, so there was never
+        # a reason to redraw it from scratch every frame.
         self._surface = self._render()
 
     def _render(self):
@@ -157,20 +159,33 @@ class Puddle:
         pygame.draw.ellipse(s, (90,30,120,140), (4,4,self.w-8,self.h-8), 2)
         return s
 
+    @property
+    def alive(self):
+        return self.age < self.LIFETIME
+
     def update(self, dt):
-        # Only advance damage cooldown timer; puddle persists indefinitely
-        # (capped in count by game/level.py instead - see MAX_PUDDLES).
+        self.age += dt
         self._tick -= dt
         if self._tick < 0:
             self._tick = 0
 
     def can_damage(self):
+        # Stage K23: blinking (about to expire) no longer deals contact
+        # damage - matches the visual telegraph, a puddle that's already
+        # flickering out shouldn't still bite on the way out.
+        if self.age >= self.SOLID_DURATION:
+            return False
         if self._tick <= 0:
             self._tick = self.damage_interval
             return True
         return False
 
     def draw(self, surface, cam_x, cam_y):
+        if self.age >= self.SOLID_DURATION:
+            # Blink phase - same fast on/off flicker language as
+            # Player.draw()'s invincibility flash.
+            if int(self.age * 8) % 2 == 0:
+                return
         sx = int(self.x - cam_x)
         sy = int(self.y - cam_y)
         surface.blit(self._surface, (sx, sy))
@@ -469,8 +484,6 @@ class Enemy:
                 elif any(candidate.colliderect(p.rect) for p in puddles):
                     pass
                 else:
-                    if len(puddles) >= MAX_PUDDLES:
-                        puddles.pop(0)  # oldest first (puddles is append-order)
                     puddles.append(Puddle(spawn_x, spawn_y, damage_interval=1.0))
 
         if not self.alive:
