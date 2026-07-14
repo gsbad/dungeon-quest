@@ -13,7 +13,7 @@ from game.combat_fx import (
     FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR, DOT_COLOR,
     knockback_vector, KNOCKBACK_DURATION,
 )
-from game.stances import stance_multiplier, stance_bonus
+from game.stances import stance_multiplier, stance_bonus, all_stances_multiplier, all_stances_bonus
 
 TILE = 48
 
@@ -127,6 +127,10 @@ class Player:
         # spots further down (order never mattered before this).
         self.status = StatusEffectCarrier()
         self.profession = determine_profession(self.stats)
+        # Stage K13: stance_multiplier()/_bonus() (called by the max_hp read
+        # right below) check this flag too - same construction-order class
+        # of bug as status/profession above, so it moves up here with them.
+        self.debug_all_stances = False
         self.hp = self.max_hp
         self.mana = self.max_mana
         self.width = 32
@@ -241,11 +245,20 @@ class Player:
         STANCES registry instead, keyed by whatever profession is currently
         derived (same "derived, not stored" shape self.profession itself
         already uses - a respec that changes profession changes the active
-        Postura for free, no special-case code needed)."""
+        Postura for free, no special-case code needed).
+
+        Stage K13: debug_all_stances short-circuits to every Postura
+        combined (game/debug_panel.py's "Todas as posturas" toggle) -
+        checked here instead of at each of the ~15 call sites so it applies
+        uniformly regardless of which stat property triggered the read."""
+        if self.debug_all_stances:
+            return all_stances_multiplier(field)
         return stance_multiplier(self.profession, field)
 
     def stance_bonus(self, field):
         """Additive counterpart to stance_multiplier() above."""
+        if self.debug_all_stances:
+            return all_stances_bonus(field)
         return stance_bonus(self.profession, field)
 
     def _mult(self, field):

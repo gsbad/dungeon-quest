@@ -139,6 +139,22 @@ def stance_bonus(profession, field):
     return stance.get(field, 0.0)
 
 
+def all_stances_multiplier(field):
+    """Stage K13: debug-only ("ativar todas as posturas" row) - combines
+    every Postura's bonus at once for balance-testing, something no real
+    character can normally have (a character only ever has the one Postura
+    tied to its current profession). Same aggregation stance_multiplier()
+    already does for a single profession, just over every entry in STANCES."""
+    mult = 1.0
+    for stance in STANCES.values():
+        mult *= stance.get(field, 1.0)
+    return mult
+
+
+def all_stances_bonus(field):
+    return sum(stance.get(field, 0.0) for stance in STANCES.values())
+
+
 # Player-facing description text for the Postura badge's tooltip (Stage K8's
 # draw_tooltip) - the numbers here are prose renderings of STANCES above,
 # same single-source discipline game/status_effects.py's STATUS_HELP follows.

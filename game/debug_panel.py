@@ -23,7 +23,7 @@ import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
 from game.ui import Panel, draw_text, Carousel
 from game.input_system import Action
-from game.status_effects import STATUS_EFFECTS
+from game.status_effects import STATUS_EFFECTS, STATUS_HELP
 from game.items import ITEMS
 from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER
 from game.affixes import make_paragon, make_champion
@@ -52,6 +52,18 @@ ATTR_ROWS = [
 # means applying the attribute combination it's derived from.
 PROFESSION_ORDER = [ADVENTURER] + list(PURE.values()) + list(HYBRID.values())
 _PROFESSION_ATTRS = ["strength", "dexterity", "intelligence", "wisdom", "vigor"]
+
+# Stage K13: the 3 STATUS_EFFECTS ids game/weather.py actually attaches to a
+# weather type's "debuff" field (snow->chill, sandstorm/ashfall->heat,
+# storm->shock) - a debug row to preview all 3 at once without waiting for
+# the right biome/weather roll.
+_WEATHER_DEBUFFS = ("chill", "heat", "shock")
+# The 7 debuffs that existed before Stage K12 (already covered by
+# _all_debuffs_row below) - everything else in STATUS_EFFECTS is one of
+# K12's new potion/elixir buffs, each getting its own individual-activate
+# row (the K13 plan's "ativar cada buff individualmente").
+_ORIGINAL_DEBUFFS = frozenset({"poison", "slow", "weakness", "burn", "chill", "heat", "shock"})
+_NEW_BUFF_IDS = [k for k in STATUS_EFFECTS if k not in _ORIGINAL_DEBUFFS]
 
 
 def _profession_recipe(name):
@@ -144,6 +156,10 @@ class DebugPanel:
         rows.append(self._god_mode_row())
         rows.append(self._one_hit_boss_row())
         rows.append(self._all_debuffs_row())
+        rows.append(self._weather_debuffs_row())
+        rows.append(self._all_stances_row())
+        for effect_id in _NEW_BUFF_IDS:
+            rows.append(self._buff_row(effect_id))
         rows.append(self._login_status_row())
         return rows
 
@@ -344,6 +360,45 @@ class DebugPanel:
             gs.msg_timer, gs.msg_text = 2.0, f"{len(STATUS_EFFECTS)} debuffs aplicados (debug)"
 
         return {"label": "Contrair todos os debuffs", "kind": "trigger", "fire": fire}
+
+    def _weather_debuffs_row(self):
+        # Stage K13: the 3 debuffs game/weather.py actually attaches to a
+        # weather type (_WEATHER_DEBUFFS above) - separate from
+        # _all_debuffs_row so a tester can preview just the climate-tied
+        # ones without also contracting Veneno/Fraqueza.
+        def fire(gs):
+            for effect_id in _WEATHER_DEBUFFS:
+                gs.player.status.apply(effect_id)
+            gs.msg_timer, gs.msg_text = 2.0, "Debuffs climaticos aplicados (debug)"
+
+        return {"label": "Debuffs climaticos (Frio/Calor/Choque)", "kind": "trigger", "fire": fire}
+
+    def _all_stances_row(self):
+        # Stage K13: toggles Player.debug_all_stances (game/player.py),
+        # which makes stance_multiplier()/stance_bonus() combine every
+        # Postura in game/stances.py's STANCES at once instead of just the
+        # one tied to the current profession - a balance-preview state no
+        # real character can reach normally.
+        def fire(gs):
+            gs.player.debug_all_stances = not gs.player.debug_all_stances
+
+        def text(gs):
+            return "ON" if gs.player.debug_all_stances else "OFF"
+
+        return {"label": "Todas as posturas", "kind": "trigger", "fire": fire, "text": text}
+
+    def _buff_row(self, effect_id):
+        # Stage K13: one row per K12 potion/elixir buff - instantly applies
+        # it to the player (game/player.py's self.status, same
+        # StatusEffectCarrier every debuff already goes through) without
+        # needing to grind gold and walk through the Items overlay first.
+        name, _ = STATUS_HELP.get(effect_id, (effect_id, ""))
+
+        def fire(gs):
+            gs.player.status.apply(effect_id)
+            gs.msg_timer, gs.msg_text = 1.6, f"{name} aplicado (debug)"
+
+        return {"label": name, "kind": "trigger", "fire": fire}
 
     def _login_status_row(self):
         # Stage I2 spike: read-only proof that Google login -> backend JWT ->
