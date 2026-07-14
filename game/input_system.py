@@ -524,21 +524,35 @@ class InputManager:
         # VirtualButtons that used to sit between the joystick and ATK were
         # pure duplicates - removed to free up that space for the spell arc.
         #
-        # 3 buttons in an arc around the attack button (one per spell, same
-        # radius the old single "MAG" button had) instead of a single
-        # cast-whatever's-selected button - each one fires its spell's own
-        # Action.CAST_n directly, same binding as the F/Q/R keyboard keys.
+        # 4 buttons in an arc around the attack button (one per spell, plus
+        # Dash - Stage K24 follow-up moved Dash in here per the user's ask,
+        # out of its previous spot next to the joystick) instead of a single
+        # cast-whatever's-selected button - each one fires its own Action
+        # directly, same binding as the F/Q/R/Dash keys. Radius shrunk from
+        # the original 3-button version's 36 to fit a 4th slot on an 800px-
+        # wide screen without the rightmost button (closest to the attack
+        # button, steepest angle) clipping off the right edge - the arc's
+        # angular span/gap is computed, not hardcoded, so this stays
+        # correct if the button count or radius ever changes again.
         atk = self.attack_button
-        spell_btn_radius = 36
+        spell_btn_radius = 30
         arc_distance = atk.radius + 14 + spell_btn_radius
-        arc_angles_deg = [180, 135, 90]  # left, up-left, up (y-down screen coords)
+        n_arc_buttons = 4
+        arc_start_deg, arc_end_deg = 185, 55  # left-and-slightly-down, to upper-right
+        arc_angles_deg = [
+            arc_start_deg + (arc_end_deg - arc_start_deg) * i / (n_arc_buttons - 1)
+            for i in range(n_arc_buttons)
+        ]
+
+        def _arc_pos(angle_deg):
+            rad = math.radians(angle_deg)
+            return atk.cx + math.cos(rad) * arc_distance, atk.cy - math.sin(rad) * arc_distance
+
         cast_actions = [Action.CAST_1, Action.CAST_2, Action.CAST_3]
         from game.spells import ORDER as SPELL_ORDER
         self.spell_buttons = []
         for angle_deg, action, spell_id in zip(arc_angles_deg, cast_actions, SPELL_ORDER):
-            rad = math.radians(angle_deg)
-            bx = atk.cx + math.cos(rad) * arc_distance
-            by = atk.cy - math.sin(rad) * arc_distance
+            bx, by = _arc_pos(angle_deg)
             # Stage J13: fireball/frost_nova aim like the attack button
             # (drag to aim, auto-fires while held - see GameplayState.update).
             # Healing Light has no direction to aim, so it keeps the old
@@ -547,6 +561,15 @@ class InputManager:
                                  icon=create_spell_icon(spell_id),
                                  aimable=(spell_id != "healing_light"))
             self.spell_buttons.append(btn)
+
+        # Stage J14: dashes along the current aim vector - aimable=True so
+        # dragging this button (same "touch then drag to aim" the attack/
+        # fireball/frost_nova buttons already use) sets that direction,
+        # instead of dashing along whatever aim was last set by some other
+        # button. The 4th (last) arc slot, closest to the attack button.
+        dash_bx, dash_by = _arc_pos(arc_angles_deg[3])
+        self.dash_button = VirtualButton(dash_bx, dash_by, spell_btn_radius, "", Action.DASH,
+                                          icon=create_dash_icon(), aimable=True)
 
         # A row of 3 direct-use item buttons, centered in the open gap
         # between the joystick and the spell arc - same "fire the action
@@ -569,41 +592,35 @@ class InputManager:
                                  icon=create_potion_icon(item_id))
             self.item_buttons.append(btn)
 
-        # Stage K24: Dash had no mobile control at all - PC's default binding
-        # is a mouse click (game/keybinds.py), which has no touch equivalent,
-        # and the spell arc around the attack button (above) is already
-        # fully packed edge-to-edge across its whole safe 180-90 degree
-        # sweep (any wider and it clips the spell buttons or, further right,
-        # the screen edge itself). The one clean gap left on this whole HUD
-        # is between the joystick's hit-circle and the item row - this sizes
-        # and centers itself in that exact gap from their own geometry
-        # rather than a hand-picked coordinate, so it stays correct if
-        # either one ever moves.
-        dash_btn_radius = 30
+        # Stage K24 follow-up: Pickaxe had no mobile control at all - the
+        # one clean gap left on this whole HUD is between the joystick's
+        # hit-circle and the item row (Dash used to live here too, before
+        # moving into the spell arc above), sized/centered from their own
+        # geometry rather than a hand-picked coordinate so it stays correct
+        # if either one ever moves. Aimable for the same reason the arc
+        # buttons are: try_break_tile() targets whatever tile is in front of
+        # the player along aim_dx/aim_dy (GameplayState._attempt_pickaxe()),
+        # so dragging to aim picks which tile actually gets hit instead of
+        # digging in a stale direction.
+        pickaxe_btn_radius = 30
         joystick_edge = self.joystick.cx + self.joystick.radius * 1.4
         items_edge = item_cx0 - item_spacing - item_btn_radius
-        dash_cx = (joystick_edge + items_edge) / 2
-        # Stage J14: dashes along the current aim vector - aimable=True so
-        # dragging this button (same "touch then drag to aim" the attack/
-        # fireball/frost_nova buttons already use) sets that direction,
-        # instead of dashing along whatever aim was last set by some other
-        # button.
-        self.dash_button = VirtualButton(dash_cx, item_cy, dash_btn_radius, "", Action.DASH,
-                                          icon=create_dash_icon(), aimable=True)
-
-        # Stage K24 follow-up: Pickaxe had no mobile control either, same
-        # gap as Dash - stacked directly above it (same cx, same radius) at
-        # the user's request ("ao lado direito do joystick"), rather than
-        # hunting for a second separate gap elsewhere on an already-tight
-        # HUD. Aimable for the same reason Dash is: try_break_tile() targets
-        # whatever tile is in front of the player along aim_dx/aim_dy
-        # (GameplayState._attempt_pickaxe()), so dragging to aim picks which
-        # tile actually gets hit instead of digging in a stale direction.
-        pickaxe_btn_radius = dash_btn_radius
-        pickaxe_gap = 8
-        pickaxe_cy = item_cy - (dash_btn_radius + pickaxe_gap + pickaxe_btn_radius)
-        self.pickaxe_button = VirtualButton(dash_cx, pickaxe_cy, pickaxe_btn_radius, "", Action.PICKAXE,
+        pickaxe_cx = (joystick_edge + items_edge) / 2
+        self.pickaxe_button = VirtualButton(pickaxe_cx, item_cy, pickaxe_btn_radius, "", Action.PICKAXE,
                                              icon=create_pickaxe_icon(), aimable=True)
+
+        # Stage K24 follow-up: a discreet way into the F1 debug panel
+        # (previously PC/keyboard-only) - deliberately small and unlabeled-
+        # icon (just short text, same minimal style as pause_button's "II")
+        # and tucked above the joystick, out of the main action cluster, so
+        # it doesn't read as a real gameplay control to bump by accident.
+        # Fires once on press like pause_button (not aimable - there's
+        # nothing to aim).
+        debug_btn_radius = 18
+        debug_gap = 10
+        self.debug_button = VirtualButton(
+            self.joystick.cx, self.joystick.cy - self.joystick.radius - debug_gap - debug_btn_radius,
+            debug_btn_radius, "DBG", Action.DEBUG_PANEL)
 
     def refresh_item_icons(self, player):
         """Stage K12: item_buttons are built once at InputManager
@@ -856,6 +873,10 @@ class InputManager:
                 self.pause_button.press(pid)
                 self._press_action(Action.PAUSE)
                 claimed = "pause"
+            elif self.debug_button.contains(x, y):
+                self.debug_button.press(pid)
+                self._press_action(Action.DEBUG_PANEL)
+                claimed = "debug"
             elif self.dash_button.contains(x, y):
                 self.dash_button.press(pid)
                 # Same "no immediate fire, drag to aim" shape as the attack
@@ -919,6 +940,8 @@ class InputManager:
             self.pickaxe_button.release(pid)
         elif claimed == "pause":
             self.pause_button.release(pid)
+        elif claimed == "debug":
+            self.debug_button.release(pid)
         elif isinstance(claimed, tuple) and claimed[0] == "spell":
             self.spell_buttons[claimed[1]].release(pid)
         elif isinstance(claimed, tuple) and claimed[0] == "item":
@@ -938,6 +961,7 @@ class InputManager:
         self.dash_button.update(dt)
         self.pickaxe_button.update(dt)
         self.pause_button.update(dt)
+        self.debug_button.update(dt)
         for btn in self.spell_buttons:
             btn.update(dt)
         for btn in self.item_buttons:
@@ -964,6 +988,7 @@ class InputManager:
         self.dash_button.draw(surface)
         self.pickaxe_button.draw(surface)
         self.pause_button.draw(surface)
+        self.debug_button.draw(surface)
         for btn in self.spell_buttons:
             btn.draw(surface)
         for btn in self.item_buttons:
