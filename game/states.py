@@ -13,12 +13,13 @@ from game.paperdoll import Paperdoll
 from game.merchant import ItemsOverlay
 from game.debug_panel import DebugPanel
 from game.leaderboard import LeaderboardOverlay
+from game.settings_overlay import SettingsOverlay
 from game.weather import WeatherSystem
 from game.assets import (
     create_heart_sprite, create_mana_orb_sprite, create_logo_sprite,
     create_victory_hero_sprite, create_player_sprite,
 )
-from game.input_system import Action, FullscreenButton, PaperdollButton, ItemsButton, LeaderboardButton
+from game.input_system import Action, FullscreenButton, PaperdollButton, ItemsButton, LeaderboardButton, SettingsButton
 from game.audio import SoundButton
 from game.stats import POINTS_PER_LEVEL, MAX_LEVEL
 from game.spells import SPELLS, ORDER as SPELL_ORDER, missing_requirements, requirement_text
@@ -654,6 +655,8 @@ class GameplayState:
         self.debug_panel_open = False
         self.leaderboard = LeaderboardOverlay()
         self.leaderboard_open = False
+        self.settings = SettingsOverlay()
+        self.settings_open = False
 
         # "Penumbra" level affix (Stage B5) forces a darker fog than the
         # level's own weather flavor, combat levels only - boss arenas are
@@ -724,11 +727,13 @@ class GameplayState:
         if self.input.consume_action(Action.LEADERBOARD):
             self.toggle_leaderboard()
         if self.input.consume_action(Action.DEBUG_PANEL):
-            if not self.paused and not self.paperdoll_open and not self.items_open and not self.leaderboard_open:
+            if (not self.paused and not self.paperdoll_open and not self.items_open
+                    and not self.leaderboard_open and not self.settings_open):
                 self.debug_panel_open = not self.debug_panel_open
                 if not self.debug_panel_open and self.debug_panel.consume_difficulty_dirty():
                     self._dev_jump(0)
-        if self.paperdoll_open or self.items_open or self.debug_panel_open or self.leaderboard_open:
+        if (self.paperdoll_open or self.items_open or self.debug_panel_open
+                or self.leaderboard_open or self.settings_open):
             # Stage F2: ESC also closes whichever menu is open, same as
             # pressing the key that opened it, instead of only pausing.
             # Stage J12 fixed a longstanding gap here: debug_panel_open had
@@ -741,6 +746,8 @@ class GameplayState:
                     self.toggle_items()
                 elif self.leaderboard_open:
                     self.toggle_leaderboard()
+                elif self.settings_open:
+                    self.toggle_settings()
                 elif self.debug_panel_open:
                     self.debug_panel_open = False
                     if self.debug_panel.consume_difficulty_dirty():
@@ -819,14 +826,16 @@ class GameplayState:
         if self.paperdoll_open:
             self.paperdoll_open = False
             self.level_up_forced = False
-        elif not self.paused and not self.items_open and not self.debug_panel_open and not self.leaderboard_open:
+        elif (not self.paused and not self.items_open and not self.debug_panel_open
+                and not self.leaderboard_open and not self.settings_open):
             self.paperdoll_open = True
 
     def toggle_items(self):
         """Shared by the I keypress and Stage G5's ItemsButton tap."""
         if self.items_open:
             self.items_open = False
-        elif not self.paused and not self.paperdoll_open and not self.debug_panel_open and not self.leaderboard_open:
+        elif (not self.paused and not self.paperdoll_open and not self.debug_panel_open
+                and not self.leaderboard_open and not self.settings_open):
             self.items_open = True
 
     def toggle_leaderboard(self):
@@ -835,9 +844,20 @@ class GameplayState:
         toggle_items."""
         if self.leaderboard_open:
             self.leaderboard_open = False
-        elif not self.paused and not self.paperdoll_open and not self.items_open and not self.debug_panel_open:
+        elif (not self.paused and not self.paperdoll_open and not self.items_open
+                and not self.debug_panel_open and not self.settings_open):
             self.leaderboard_open = True
             self.leaderboard.open()
+
+    def toggle_settings(self):
+        """Stage K15 - click/tap-only (no dedicated key, per the plan's
+        "novo botao" framing), same "only one overlay at a time" guard as
+        the others."""
+        if self.settings_open:
+            self.settings_open = False
+        elif (not self.paused and not self.paperdoll_open and not self.items_open
+                and not self.debug_panel_open and not self.leaderboard_open):
+            self.settings_open = True
 
     def _attempt_cast(self, spell_id, silent=False):
         self.player.selected_spell = spell_id
@@ -1021,6 +1041,13 @@ class GameplayState:
                 self.toggle_leaderboard()
                 return
             self.leaderboard.handle_keys(self.input)
+            return
+        if self.settings_open:
+            self.settings.handle_tap(self.input, self.player, self.save_state)
+            if self.input.any_unconsumed_tap():
+                self.toggle_settings()
+                return
+            self.settings.handle_keys(self.input, self.player, self.save_state)
             return
         if self.paused:
             return
@@ -1235,6 +1262,7 @@ class GameplayState:
             self.items_open = False
             self.debug_panel_open = False
             self.leaderboard_open = False
+            self.settings_open = False
         while self.player.pending_level_up > 0:
             self.player.pending_level_up -= 1
             self.msg_timer = 2.5
@@ -1345,6 +1373,10 @@ class GameplayState:
         # Leaderboard overlay (Stage J8-J10)
         if self.leaderboard_open:
             self.leaderboard.draw(self.screen)
+
+        # Settings overlay (Stage K15)
+        if self.settings_open:
+            self.settings.draw(self.screen, self.save_state)
 
         # Stage J11: always called now, not just when touch_active - the
         # mouse-click crosshair (InputManager._draw_crosshair) needs to
@@ -1657,10 +1689,16 @@ class GameStateManager:
         self.paperdoll_button = PaperdollButton(SW - 40, 100)
         self.items_button = ItemsButton(SW - 40, 154)
         self.leaderboard_button = LeaderboardButton(SW - 40, 208)
+        self.settings_button = SettingsButton(SW - 40, 262)
 
         import game.save as save
         self.save_state = save.load() or save.new_game_state()
         self.audio.muted = self.save_state["settings"]["muted"]
+        # Stage K15: applies any remapped keys before InputManager ever
+        # reads game.keybinds.BINDINGS - an empty dict here is a no-op
+        # (BINDINGS already starts as a copy of DEFAULT_BINDINGS).
+        import game.keybinds as keybinds
+        keybinds.BINDINGS.update(self.save_state["settings"]["keybinds"])
 
         # Stage I4: fire-and-forget, no JWT needed (/balance is public) -
         # patches ITEMS/DIFFICULTIES/SPELLS/game.stats in place whenever it
@@ -1790,6 +1828,9 @@ class GameStateManager:
             if self.input.tapped_rect(self.leaderboard_button.rect):
                 self.state.toggle_leaderboard()
                 self.audio.play("menu_select")
+            if self.input.tapped_rect(self.settings_button.rect):
+                self.state.toggle_settings()
+                self.audio.play("menu_select")
 
         self.state.update(dt)
 
@@ -1842,6 +1883,7 @@ class GameStateManager:
             self.paperdoll_button.draw(self.screen)
             self.items_button.draw(self.screen)
             self.leaderboard_button.draw(self.screen)
+            self.settings_button.draw(self.screen)
 
     def _has_progress(self):
         # A character who dies before ever clearing level 1 anywhere would

@@ -96,6 +96,7 @@ HELP_ENTRIES = [
     ("I", "Abrir/fechar o menu Itens"),
     ("H (no menu Itens)", "Marcar/desmarcar o item selecionado para o hotbar (max. 3)"),
     ("L", "Abrir/fechar o Ranking (requer login Google)"),
+    ("Icone de engrenagem", "Configuracoes - remapear teclas de acao (PC, so pelo mouse/toque)"),
     ("TAB", "Trocar de aba dentro de um menu"),
     ("ESC", "Pausar o jogo / fechar o menu aberto"),
     ("F11 / icone (tela)", "Tela cheia - tecla ou toque"),
@@ -421,6 +422,41 @@ class LeaderboardButton:
         _draw_shortcut_badge(surface, self.rect, "L")
 
 
+class SettingsButton:
+    """Stage K15 - quick-access to the Settings/keybind-remap overlay,
+    same translucent-circle pattern as PaperdollButton/ItemsButton/
+    LeaderboardButton above (a gear). No key badge - unlike C/I/L this
+    one has no dedicated keyboard shortcut, click/tap-only by design."""
+
+    def __init__(self, cx, cy, radius=22):
+        self.cx = cx
+        self.cy = cy
+        self.radius = radius
+
+    @property
+    def rect(self):
+        d = self.radius * 2
+        return pygame.Rect(self.cx - self.radius, self.cy - self.radius, d, d)
+
+    def draw(self, surface):
+        d = self.radius * 2
+        buf = pygame.Surface((d, d), pygame.SRCALPHA)
+        pygame.draw.circle(buf, (25, 25, 35, 140), (self.radius, self.radius), self.radius)
+        pygame.draw.circle(buf, (230, 230, 245, 190), (self.radius, self.radius), self.radius, 2)
+
+        color = (210, 210, 225, 230)
+        r = self.radius
+        pygame.draw.circle(buf, color, (r, r), 5, 2)
+        pygame.draw.circle(buf, color, (r, r), 2)
+        for i in range(8):
+            angle = i * (math.pi / 4)
+            x1, y1 = r + math.cos(angle) * 7, r + math.sin(angle) * 7
+            x2, y2 = r + math.cos(angle) * 11, r + math.sin(angle) * 11
+            pygame.draw.line(buf, color, (x1, y1), (x2, y2), 2)
+
+        surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
+
+
 class InputManager:
     """
     Single translation layer between raw pygame input (keyboard, mouse,
@@ -444,6 +480,8 @@ class InputManager:
         self._taps = []
         self.touch_active = False
         self._time = 0.0
+        # Stage K15: see begin_key_capture()/feed() above.
+        self._capture_callback = None
 
         # Stage J13: last known corrected mouse position, updated on every
         # MOUSEMOTION/MOUSEBUTTONDOWN regardless of whether a button is
@@ -587,7 +625,20 @@ class InputManager:
         return dx, dy
 
     # ------------------------------------------------------------- raw events
+    def begin_key_capture(self, callback):
+        """Stage K15: the Settings overlay calls this when the player
+        starts rebinding an action - the very next KEYDOWN is swallowed
+        here (never reaches the normal action dispatch below, so e.g.
+        capturing a new Pickaxe key doesn't also fire Action.PICKAXE) and
+        handed to `callback(key_code)` instead."""
+        self._capture_callback = callback
+
     def feed(self, event):
+        if event.type == pygame.KEYDOWN and self._capture_callback is not None:
+            cb = self._capture_callback
+            self._capture_callback = None
+            cb(event.key)
+            return
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_w, pygame.K_UP):
                 self._press_action(Action.MENU_UP)
@@ -601,51 +652,48 @@ class InputManager:
                 self._press_action(Action.TAB_NEXT)
             if event.key == pygame.K_RETURN:
                 self._press_action(Action.CONFIRM)
+            # Stage K15: CONFIRM/RESTART/PAUSE stay hardcoded to their
+            # physical keys - not in game/keybinds.py's REMAPPABLE list,
+            # since every menu's keyboard-nav assumptions (and the
+            # while-paused RESTART trick below) are built around them never
+            # moving. ATTACK/CAST_3 default to these exact same physical
+            # keys (SPACE/R) but are checked independently right below via
+            # BINDINGS, so remapping one doesn't drag the other along.
             if event.key == pygame.K_SPACE:
-                # Stage K1: reverted Stage J14's remap - Space is ATTACK
-                # again (the original binding), Dash moved to X below.
                 self._press_action(Action.CONFIRM)
-                self._press_action(Action.ATTACK)
                 self._press_action(Action.SECRET)
             if event.key == pygame.K_ESCAPE:
                 self._press_action(Action.PAUSE)
             if event.key == pygame.K_r:
                 self._press_action(Action.RESTART)
-                # Same physical key also casts Luz Curativa (SPELL_ORDER[2])
-                # during gameplay - no collision with RESTART above, since
-                # that's only consumed while paused (game/states.py) and
-                # CAST_3 only while not paused; unconsumed actions are
-                # cleared every frame (InputManager.update()), so pressing R
-                # while paused can't leak into a stray heal cast on unpause.
-                # Stage K1: reverted back from Bola de Fogo (Stage J14).
+
+            from game.keybinds import BINDINGS
+            if event.key == BINDINGS["ATTACK"]:
+                self._press_action(Action.ATTACK)
+            if event.key == BINDINGS["CAST_1"]:
+                self._press_action(Action.CAST_1)
+            if event.key == BINDINGS["CAST_2"]:
+                self._press_action(Action.CAST_2)
+            if event.key == BINDINGS["CAST_3"]:
+                # Unconsumed while paused (see RESTART above) - cleared
+                # every frame (InputManager.update()), so this can't leak
+                # into a stray heal cast on unpause.
                 self._press_action(Action.CAST_3)
-            if event.key == pygame.K_c:
+            if event.key == BINDINGS["DASH"]:
+                self._press_action(Action.DASH)
+            if event.key == BINDINGS["PICKAXE"]:
+                self._press_action(Action.PICKAXE)
+            if event.key == BINDINGS["PAPERDOLL"]:
                 self._press_action(Action.PAPERDOLL)
-            if event.key == pygame.K_i:
+            if event.key == BINDINGS["ITEMS"]:
                 self._press_action(Action.ITEMS)
-            if event.key == pygame.K_l:
+            if event.key == BINDINGS["LEADERBOARD"]:
                 self._press_action(Action.LEADERBOARD)
-            if event.key == pygame.K_h:
+            if event.key == BINDINGS["TOGGLE_HOTBAR"]:
                 # Stage K12: only meaningful inside the Items overlay ("seus
                 # itens" row -> toggle hotbar selection), consumed nowhere
                 # else - safe to bind globally like every other menu action.
                 self._press_action(Action.TOGGLE_HOTBAR)
-            if event.key == pygame.K_e:
-                # Stage K14: picareta - PC-only for now, same precedent
-                # Stage J14's Dash already set (no touch button either,
-                # keyboard/mouse-aim only on mobile until a future pass).
-                self._press_action(Action.PICKAXE)
-            if event.key == pygame.K_f:
-                # Stage K1: reverted back to Bola de Fogo (Stage J14 had
-                # moved this to melee attack - Space owns that again now).
-                self._press_action(Action.CAST_1)
-            if event.key == pygame.K_q:
-                self._press_action(Action.CAST_2)
-            if event.key == pygame.K_x:
-                # Stage K1: Dash moved here - Space reverted to ATTACK, so
-                # Dash (Stage J14, previously on Space) needed a new key;
-                # X was free since Luz Curativa moved back to R above.
-                self._press_action(Action.DASH)
             if event.key == pygame.K_1:
                 self._press_action(Action.USE_1)
             if event.key == pygame.K_2:

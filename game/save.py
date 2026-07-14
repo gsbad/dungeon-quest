@@ -20,7 +20,7 @@ import copy
 from game.player import Player
 from game.professions import determine_profession
 
-SAVE_VERSION = 7
+SAVE_VERSION = 8
 _KEY = "dungeon_quest_save"
 _NATIVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_save.json")
 
@@ -43,7 +43,12 @@ def new_game_state():
             "levels_seen": [],
         },
         "counters": {"kills": {}, "boss_kills": {}, "deaths": 0, "playtime_s": 0.0},
-        "settings": {"muted": False},
+        # Stage K15: keybinds mirrors game/keybinds.py's BINDINGS dict in
+        # full (action name -> pygame key code), same "always the current
+        # full value, not a diff" shape "muted" already has - empty means
+        # nothing has loaded yet, GameStateManager.__init__ falls back to
+        # DEFAULT_BINDINGS in that case (see game/keybinds.py).
+        "settings": {"muted": False, "keybinds": {}},
         "gold": 0,
         "inventory": {},
         "hotbar_items": ["health_potion", "mana_potion", "antidote"],
@@ -117,6 +122,12 @@ def _migrate(data):
         # before this was selectable, so nobody's hotbar changes on load.
         data["hotbar_items"] = data.get("hotbar_items", ["health_potion", "mana_potion", "antidote"])
         data["version"] = 7
+    if data["version"] < 8:
+        # Stage K15: remappable keybinds - empty means "use
+        # game/keybinds.py's DEFAULT_BINDINGS", identical to what every
+        # existing save already behaved like before this existed.
+        data["settings"]["keybinds"] = data["settings"].get("keybinds", {})
+        data["version"] = 8
     return data
 
 
