@@ -7,6 +7,22 @@ from game.stats import StatBlock, ENEMY_ARCHETYPES, BASE_XP, GOLD_DROPS, scale_a
 from game.status_effects import StatusEffectCarrier
 from game.affixes import AFFIXES
 
+# Stage K5: display name shown above a regular enemy's head (draw() below).
+# Duplicated from game/bestiary.py's BESTIARY[etype]["name"] rather than
+# imported from it - bestiary.py already imports ENEMY_FLAVOR from this
+# module, so the reverse import would be circular. Same small-duplication
+# tradeoff already accepted elsewhere in this codebase (e.g. the backend's
+# BALANCE_DEFAULTS) when the import direction can't go both ways.
+ENEMY_DISPLAY_NAMES = {
+    "skeleton": "Esqueleto", "goblin": "Goblin", "dark_knight": "Cavaleiro Negro",
+    "aranha": "Aranha", "serpente": "Serpente", "treant": "Treant",
+    "troll": "Troll", "death_knight": "Cavaleiro da Morte",
+    "zumbi": "Zumbi", "verme": "Verme", "imp": "Imp",
+    "dark_horse": "Dark Horse", "acolito": "Acolito", "feiticeira": "Feiticeira",
+    "fire_hound": "Fire Hound", "ogro": "Ogro", "elemental_pedra": "Elemental de Pedra",
+    "chimera": "Quimera", "lyzardman": "Lyzardman", "dark_skeleton": "Esqueleto Sombrio",
+}
+
 class EnemyProjectile:
     def __init__(self, x, y, vx, vy, damage=1, color=(160,100,255),
                  status_effect=None, status_chance=0.0, dtype="magic"):
@@ -578,6 +594,15 @@ class Enemy:
             label = f"CAMPEAO - {AFFIXES[self.affix]['name']}"
             txt = f_name.render(label, True, (220, 225, 235))
             surface.blit(txt, (sx + self.width // 2 - txt.get_width() // 2, sy - 24))
+        else:
+            # Stage K5: Paragon/Champion already get their own label above
+            # (the affix name reads more useful than the plain etype there),
+            # so this is only for the common case.
+            from game.theme import font, SUBTEXT
+            f_name = font(11, bold=True)
+            label = ENEMY_DISPLAY_NAMES.get(self.etype, self.etype)
+            txt = f_name.render(label, True, SUBTEXT)
+            surface.blit(txt, (sx + self.width // 2 - txt.get_width() // 2, sy - 22))
 
         surface.blit(sprite, (sx - 8, sy - 10))
 

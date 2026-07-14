@@ -449,6 +449,14 @@ class Boss:
         color = (180,0,220) if self.phase==1 else (255,80,0)
         self.hp_bar.draw(surface, bx, by, frac, color)
 
+        # Stage K5: name above the HP bar, in-world - draw_hud() below
+        # already shows it in the bottom HUD box, but that's easy to miss
+        # mid-fight; this puts it right where the player is looking.
+        from game.theme import font, SUBTEXT
+        f_name = font(12, bold=True)
+        txt = f_name.render(self.name, True, SUBTEXT)
+        surface.blit(txt, (bx + self.hp_bar.w // 2 - txt.get_width() // 2, by - 16))
+
     def draw_hud(self, surface, screen_w):
         """Boss HP bar + name, boxed, at the bottom of the screen (Stage G3)."""
         # Stage H4: pygame's default embedded font (game/theme.py's font(),
@@ -629,6 +637,12 @@ class CacodemonBoss:
         by = sy - 20
         frac = max(0, self.hp / self.max_hp)
         self.hp_bar.draw(surface, bx, by, frac, (255, 50, 0))
+
+        # Stage K5: name above the HP bar, in-world (see Boss.draw()).
+        from game.theme import font, SUBTEXT
+        f_name = font(12, bold=True)
+        txt = f_name.render("CACODEMON INFERNAL", True, SUBTEXT)
+        surface.blit(txt, (bx + self.hp_bar.w // 2 - txt.get_width() // 2, by - 16))
 
         # Draw projectiles
         for proj in self.projectiles:
