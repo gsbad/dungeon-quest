@@ -1174,8 +1174,13 @@ class GameplayState:
         if self.leaderboard_open:
             self.leaderboard.draw(self.screen)
 
-        if self.input.touch_active:
-            self.input.draw(self.screen)
+        # Stage J11: always called now, not just when touch_active - the
+        # mouse-click crosshair (InputManager._draw_crosshair) needs to
+        # render on desktop too, where touch_active is deliberately never
+        # set. InputManager.draw() already re-checks touch_active itself
+        # before drawing the virtual joystick/buttons, so this doesn't
+        # change anything about when THOSE show up.
+        self.input.draw(self.screen)
 
     def _spawn_pickup(self, kind):
         sprite = self._pickup_sprites[kind]

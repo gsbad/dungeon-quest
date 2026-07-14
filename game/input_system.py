@@ -1,4 +1,5 @@
 import math
+import sys
 import pygame
 from enum import Enum, auto
 from game.theme import font
@@ -8,6 +9,38 @@ from game.items import ITEMS
 TAP_MAX_DURATION = 0.35
 TAP_MAX_MOVEMENT = 18
 JOYSTICK_DEADZONE = 0.15
+
+
+def _corrected_mouse_pos(raw_pos):
+    """Stage J11: the long-open canvas click-misalignment bug
+    ([[project_pygbag_canvas_stretch_bug]]), finally root-caused via a
+    Playwright harness that clicked a precise, known canvas-fraction point
+    and measured where event.pos actually landed instead of theorizing.
+    The canvas's CSS display size (pygbag_template.tmpl's fitCanvas()
+    keeps it at 800x600 scaled to fill the window, e.g. 960x720) differs
+    from its backing-buffer size (canvas.width/height, always 800x600) -
+    clicking the exact center measured event.pos landing at (333,250)
+    instead of (400,300), a uniform (800/960)**2 ratio on both axes, not
+    (800/960)**1. That's not a wrong single correction or an offset bug -
+    it's the SAME css->buffer correction applied TWICE somewhere in this
+    pygbag build's SDL2-emscripten mouse-event pipeline (probably
+    pygame.SCALED's own logical-size transform stacking with emscripten's
+    own canvas-relative coordinate handling). Multiplying back by
+    (clientWidth/canvas.width) undoes exactly the extra pass - confirmed
+    against the same harness before this was wired in for real (see the
+    e2e_click_precision.py script referenced in project memory)."""
+    if sys.platform != "emscripten":
+        return raw_pos
+    try:
+        import js
+        canvas = js.document.getElementById("canvas")
+        client_w, client_h = canvas.clientWidth, canvas.clientHeight
+        buf_w, buf_h = canvas.width, canvas.height
+        if not client_w or not client_h or not buf_w or not buf_h:
+            return raw_pos
+        return (raw_pos[0] * client_w / buf_w, raw_pos[1] * client_h / buf_h)
+    except Exception:
+        return raw_pos
 
 
 class Action(Enum):
@@ -353,6 +386,18 @@ class InputManager:
         self.touch_active = False
         self._time = 0.0
 
+        # Stage J11: a permanent (not debug-only) crosshair at the raw
+        # event.pos of every real mouse click - the diagnostic tool for the
+        # long-open canvas-misalignment bug (see
+        # [[project_pygbag_canvas_stretch_bug]]) and, per the user's ask,
+        # kept on afterward since upcoming mouse-aimed combat needs the
+        # same "where does the game think the pointer is" visibility.
+        # Replaces the old debug_last_raw/debug_last_scaled attributes,
+        # which were written on every click but never read/drawn anywhere.
+        self._crosshair_pos = None
+        self._crosshair_timer = 0.0
+        self._CROSSHAIR_DURATION = 0.6
+
         self.joystick = VirtualJoystick(100, screen_h - 120, radius=70, knob_radius=32)
         self.attack_button = VirtualButton(screen_w - 90, screen_h - 100, 48, "ATK", Action.ATTACK,
                                             icon=create_sword_icon())
@@ -502,11 +547,12 @@ class InputManager:
             # shouldn't make the mobile-only joystick/attack/pause/paperdoll
             # overlay pop up on desktop. Real touchscreens send FINGERDOWN
             # separately (see below), so this doesn't affect mobile.
-            self.debug_last_raw = event.pos
-            self.debug_last_scaled = event.pos
-            self._pointer_down("mouse", *event.pos)
+            pos = _corrected_mouse_pos(event.pos)
+            self._crosshair_pos = pos
+            self._crosshair_timer = self._CROSSHAIR_DURATION
+            self._pointer_down("mouse", *pos)
         elif event.type == pygame.MOUSEMOTION:
-            self._pointer_move("mouse", *event.pos)
+            self._pointer_move("mouse", *_corrected_mouse_pos(event.pos))
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self._pointer_up("mouse")
 
@@ -587,6 +633,8 @@ class InputManager:
     # ------------------------------------------------------------- lifecycle
     def update(self, dt):
         self._time += dt
+        if self._crosshair_timer > 0:
+            self._crosshair_timer -= dt
         self.attack_button.update(dt)
         self.pause_button.update(dt)
         for btn in self.spell_buttons:
@@ -599,6 +647,7 @@ class InputManager:
         self._taps.clear()
 
     def draw(self, surface):
+        self._draw_crosshair(surface)
         if not self.touch_active:
             return
         self.joystick.draw(surface)
@@ -608,3 +657,36 @@ class InputManager:
             btn.draw(surface)
         for btn in self.item_buttons:
             btn.draw(surface)
+
+    def _draw_crosshair(self, surface):
+        """Stage J11: marks the (now _corrected_mouse_pos()-corrected)
+        position of the last real mouse click, fading out over
+        _CROSSHAIR_DURATION - drawn regardless of touch_active (mouse
+        clicks happen on desktop, where the virtual touch controls above
+        are never shown). Kept on permanently (not debug-only) per the
+        user's request - upcoming mouse-aimed combat needs the same
+        "where does the game think the pointer is" visibility, and it's
+        exactly what originally measured the correction this now applies
+        (see _corrected_mouse_pos's docstring)."""
+        if self._crosshair_timer <= 0 or self._crosshair_pos is None:
+            return
+        alpha = int(255 * (self._crosshair_timer / self._CROSSHAIR_DURATION))
+        x, y = self._crosshair_pos
+        size = 14
+        layer = pygame.Surface((size * 2 + 4, size * 2 + 4), pygame.SRCALPHA)
+        cx, cy = layer.get_width() // 2, layer.get_height() // 2
+        color = (255, 40, 40, alpha)
+        pygame.draw.line(layer, color, (cx - size, cy), (cx + size, cy), 3)
+        pygame.draw.line(layer, color, (cx, cy - size), (cx, cy + size), 3)
+        pygame.draw.circle(layer, color, (cx, cy), size, 2)
+        surface.blit(layer, (x - cx, y - cy))
+        # Text label alongside it - a live number is a much more reliable
+        # diagnostic signal than trying to color-pick a 14px marker out of
+        # a screenshot (the HUD's own red HP bar fill is close enough in
+        # color to false-match a naive scan).
+        from game.theme import font
+        label = font(14, bold=True).render(f"({x},{y})", True, (255, 255, 255))
+        bg = pygame.Surface((label.get_width() + 6, label.get_height() + 4), pygame.SRCALPHA)
+        bg.fill((20, 20, 20, min(220, alpha + 40)))
+        bg.blit(label, (3, 2))
+        surface.blit(bg, (x + size + 4, y - size))
