@@ -1428,7 +1428,11 @@ class GameplayState:
         # the pause dim too.
         menu_open = (self.paused or self.paperdoll_open or self.items_open
                      or self.debug_panel_open or self.leaderboard_open or self.settings_open)
-        self.input.draw(self.screen, hide_controls=menu_open)
+        # Stage K24 follow-up: debug_panel_open passed separately so
+        # InputManager.draw() can keep just the debug button itself up as
+        # an exception - the only overlay a mobile player has no other way
+        # to close (every other one already closes via a tap outside it).
+        self.input.draw(self.screen, hide_controls=menu_open, debug_panel_open=self.debug_panel_open)
 
     def _spawn_pickup(self, kind, at=None):
         sprite = self._pickup_sprites[kind]

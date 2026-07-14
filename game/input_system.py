@@ -617,7 +617,7 @@ class InputManager:
         # Fires once on press like pause_button (not aimable - there's
         # nothing to aim).
         debug_btn_radius = 18
-        debug_gap = 10
+        debug_gap = 40
         self.debug_button = VirtualButton(
             self.joystick.cx, self.joystick.cy - self.joystick.radius - debug_gap - debug_btn_radius,
             debug_btn_radius, "DBG", Action.DEBUG_PANEL)
@@ -971,7 +971,7 @@ class InputManager:
         self._actions.clear()
         self._taps.clear()
 
-    def draw(self, surface, hide_controls=False):
+    def draw(self, surface, hide_controls=False, debug_panel_open=False):
         self._draw_crosshair(surface)
         if not self.touch_active:
             return
@@ -981,18 +981,25 @@ class InputManager:
         # overlay, since this ran unconditionally after all of them. A
         # closed menu doesn't need this flag at all (touch_active alone
         # already gates everything below on desktop).
-        if hide_controls:
-            return
-        self.joystick.draw(surface)
-        self.attack_button.draw(surface)
-        self.dash_button.draw(surface)
-        self.pickaxe_button.draw(surface)
-        self.pause_button.draw(surface)
-        self.debug_button.draw(surface)
-        for btn in self.spell_buttons:
-            btn.draw(surface)
-        for btn in self.item_buttons:
-            btn.draw(surface)
+        if not hide_controls:
+            self.joystick.draw(surface)
+            self.attack_button.draw(surface)
+            self.dash_button.draw(surface)
+            self.pickaxe_button.draw(surface)
+            self.pause_button.draw(surface)
+            for btn in self.spell_buttons:
+                btn.draw(surface)
+            for btn in self.item_buttons:
+                btn.draw(surface)
+        # Stage K24 follow-up: debug_button is the one exception - when
+        # IT'S the reason hide_controls is True (the debug panel itself is
+        # open), it has to stay visible/tappable, or a mobile player who
+        # opened the panel would have no way back out of it (unlike every
+        # other overlay, which already closes via a tap outside/its own
+        # close control - the debug panel is keyboard/F1-shortcut-driven
+        # otherwise).
+        if not hide_controls or debug_panel_open:
+            self.debug_button.draw(surface)
 
     def _draw_crosshair(self, surface):
         """Stage J11: marks the (now _corrected_mouse_pos()-corrected)

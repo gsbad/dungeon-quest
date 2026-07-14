@@ -160,6 +160,26 @@ entry) and `sudo systemctl reload caddy`. Verified both routes live:
 tracked in git (VM-only, edited directly over SSH) - this note is the
 only record of the change outside the VM's own file.
 
+## Caddy route fixed: /leaderboard had the exact same bug
+
+Same class of bug, same session it was found in: `/leaderboard` (Stage
+J8-J10) was also never in the Caddyfile - "o rank ainda nao esta
+funcionando" traced straight to this, not any code bug in
+game/leaderboard.py or the `/leaderboard` endpoint itself. Every `GET
+/leaderboard` 404'd through the catch-all `file_server` in production,
+even though the underlying data was there the whole time (players' saves
+sync fine via `/save`, which *was* proxied - only the leaderboard READ
+path was dead). Fixed the same way: added its own `handle /leaderboard`
+block, reloaded Caddy, verified `curl
+https://129.80.222.127.sslip.io/leaderboard` returns real entries.
+
+**Lesson for next time a new backend route is added**: don't just check
+it works against `127.0.0.1:8090` locally - verify it through the actual
+public domain too, or add it to the Caddyfile in the same breath as
+adding the FastAPI route. Both this and /appearance sat broken in
+production for a while specifically because local testing (`docs/deploy.md`'s own "Admin balance panel on localhost" section) never
+touches Caddy at all, so it never would have caught either.
+
 ## Login gate (Stage K23)
 
 `pygbag_template.tmpl` now blocks the game behind a forced Google login
