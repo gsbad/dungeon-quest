@@ -130,14 +130,14 @@ O rolamento de Paragon acontece uma vez, logo após `Level` spawnar os inimigos 
 
 Ouro dropa fisicamente no mapa em kills de inimigo comum (`GoldDrop`, 3s visível + 2s piscando, depois desaparece se não coletado) — visualiza a decisão do jogador de arriscar ir buscar ou seguir em frente. Kills de boss creditam ouro instantaneamente (sem pickup: a fase termina imediatamente na morte do boss, não há janela de jogo pra andar até uma moeda).
 
-Itens (`game/items.py`):
-- Poção de Vida — 15g, cura 50% da vida máxima atual.
-- Poção de Mana — 12g, cura 60% da mana máxima atual.
-- Antídoto — 20g, cura Veneno/Lentidão/Fraqueza instantaneamente.
+Itens base (`game/items.py`):
+- Poção de Vida — 30g, cura 50% da vida máxima atual.
+- Poção de Mana — 24g, cura 60% da mana máxima atual.
+- Antídoto — 40g, cura Veneno/Lentidão/Fraqueza instantaneamente.
 
 Cura em *fração* do máximo atual (não valor fixo) — mantém as poções relevantes conforme VIG/INT sobem, mesma convenção já usada pro coração-pickup.
 
-**Overlay "Itens" (`game/merchant.py`'s `ItemsOverlay`, tecla `I`):** "seus itens" (usar, topo) + "loja" (comprar, embaixo) na mesma tela — mesmo padrão do Paperdoll (tela cheia, congela o jogo). Compra é persistida na hora (`save.sync_economy`/`save.save`), mesmo peso de "ação deliberada" que o toggle de mute já tinha, não só no checkpoint de saída de fase. Navegação 100% por teclado (W/S percorre a lista única usar-depois-comprar na mesma ordem em que aparece na tela, ESPAÇO age conforme a linha) pelo mesmo motivo do Paperdoll — clique de mouse não confiável no build pygbag/navegador (ver "Bugs reais encontrados" abaixo).
+**Overlay "Itens" (`game/merchant.py`'s `ItemsOverlay`, tecla `I`):** "seus itens" (usar, topo) + "loja" (comprar, embaixo) na mesma tela — mesmo padrão do Paperdoll (tela cheia, congela o jogo). Compra é persistida na hora (`save.sync_economy`/`save.save`), mesmo peso de "ação deliberada" que o toggle de mute já tinha, não só no checkpoint de saída de fase. Navegação 100% por teclado (W/S percorre a lista única usar-depois-comprar na mesma ordem em que aparece na tela, ESPAÇO age conforme a linha) pelo mesmo motivo do Paperdoll — clique de mouse não confiável no build pygbag/navegador (ver "Bugs reais encontrados" abaixo). Stage K12 fez `ITEMS` crescer de 3 pra ~25 entradas (ver seção "Poções/elixires e seleção de hotbar" abaixo), o que forçou uma reforma em abas (SEUS ITENS/LOJA) + paginação (`Carousel`) - a lista única não cabia mais numa tela.
 
 ## Magias (Stage B2)
 
@@ -149,7 +149,7 @@ Cura em *fração* do máximo atual (não valor fixo) — mantém as poções re
 | Nova de Gelo | Dano em área + Lentidão | 12 mana | — | INT 20, SAB 15 | O efeito "slow" já existente |
 | Luz Curativa | Cura 25% da vida máxima | 15 mana | 10s | SAB 25 | Mesma fórmula de fração das poções |
 
-Magia "desbloqueada" = atende aos requisitos de atributo no momento — não é uma flag persistida (mesmo raciocínio de `profession` não estar no save). Conjuração: teclado **F** (Bola de Fogo) / **Q** (Nova de Gelo) / **R** (Luz Curativa) conjura direto — trocado de 1/2/3 pra ficar mais perto do teclado de movimento (WASD); `R` também continua reiniciando na tela de pausa/morte (`Action.RESTART`), sem colisão real entre os dois usos porque cada `Action` só é consumida no branch certo (pausado vs. em jogo) e `InputManager.update()` limpa qualquer ação não consumida a cada frame. Celular seleciona a magia na aba "Magias" do paperdoll e dispara com um botão dedicado. A aba Magias mostra a tecla de cada magia (`F`/`Q`/`R`, `game/paperdoll.py`'s `SPELL_KEYS`) em vez de um número de lista, pra não ficar desatualizada.
+Magia "desbloqueada" = atende aos requisitos de atributo no momento — não é uma flag persistida (mesmo raciocínio de `profession` não estar no save). Conjuração: teclado **F** (Bola de Fogo) / **Q** (Nova de Gelo) / **R** (Luz Curativa) conjura direto — trocado de 1/2/3 pra ficar mais perto do teclado de movimento (WASD); `R` também continua reiniciando na tela de pausa/morte (`Action.RESTART`), sem colisão real entre os dois usos porque cada `Action` só é consumida no branch certo (pausado vs. em jogo) e `InputManager.update()` limpa qualquer ação não consumida a cada frame. Celular seleciona a magia na aba "Magias" do paperdoll e dispara com um botão dedicado. A aba Magias mostra a tecla *atual* de cada magia (`game/paperdoll.py`'s `SPELL_ACTIONS` resolvido via `game.keybinds.display_key()`, Stage K20) em vez de um número de lista ou um literal fixo — segue o remapeamento (ver "Teclas remapeáveis" abaixo) em vez de ficar desatualizada.
 
 **Nova de Gelo "não fazia nada" — dois problemas reais, não um bug na mecânica:** testado diretamente (`GameplayState._cast_frost_nova` com um inimigo próximo) e o dano/lentidão/gasto de mana já funcionavam corretamente. O que faltava era *feedback*:
 1. **Cast falho era 100% silencioso.** `_attempt_cast()` só fazia algo quando `Player.try_cast()` retornava `True`; se a magia estivesse bloqueada por atributo, em recarga, ou sem mana suficiente, apertar a tecla não tinha efeito nenhum visível — indistinguível de "a tecla não faz nada". Corrigido com `_cast_fail_message()`, reusando o mesmo `msg_timer`/`msg_text` toast que level-up/troca de profissão já usam, explicando exatamente qual dos 3 motivos bloqueou o cast.
@@ -342,3 +342,79 @@ Recompensa dos 3 bosses escalada à mão pra refletir a posição na campanha (n
 **Individualização de mobs comuns (Stage B4b, fases 5/6/7/9/10/11):** o parágrafo acima ficou desatualizado - as 6 fases de combate dos Atos 2/3 tinham cada uma seu próprio `monster_level`, mas reusavam só `goblin`/`skeleton`/`dark_knight` recolorados (via `swamp_troll`/`cursed_mage`/`crypt_wraith`/`ash_fiend`/`royal_guard`) em vez de um elenco visualmente próprio. Corrigido junto com os bosses: 17 arquétipos novos (ver tabela de mobs comuns no Bestiário acima), cada um com seu rig em `game/assets.py` e ataque em `game/enemy.py`'s `ENEMY_FLAVOR` — `skeleton`/`goblin`/`dark_knight` continuam intactos, usados só nas fases 1-3. `Enemy._shoot_at_player()` ganhou um parâmetro opcional `flavor["ranged_shape"]` (`"spread3"`/`"spread5"`/`"circle6"`, default `"single"` = comportamento antigo inalterado) pros 3 mobs cujo ataque pedia mais que um tiro reto (treant, imp, elemental_pedra) — a mesma técnica de leque/rajada circular que `game/boss.py` já usava, adaptada pra `Enemy`/`EnemyProjectile` em vez de `Boss`/`Projectile`. Nenhum mob comum ganhou charge/dash ou invocação — essas continuam exclusivas de boss (exigiriam a máquina de estados de `Boss._update_charge`/o dreno de `pending_summons`, fora do escopo pedido). Cenário: fase 6 ganhou `"cursed_floor"` (pedra + runas roxas) e fase 9 ganhou `"ritual_floor"` (pedra pálida + círculo arcano), fase 7 passou a reusar `"crypt_floor"` (já existia, criado pro Necromante); fases 5/10/11 mantiveram `swamp`/`lava`/`boss_floor` (já combinavam com o elenco novo).
 
 **Bestiário além de 12 entradas (`game/paperdoll.py`):** a aba Bestiário tinha um grid fixo de exatamente 3 linhas (`_BESTIARY_DETAIL_Y` hardcoded pra `3 * _BESTIARY_CELL`) porque nunca tinha passado de 8 mobs + 4 bosses. Com o elenco crescendo pra 20 mobs + 4 bosses (24 entradas), isso viraria 6 linhas e o painel de detalhe ficaria por cima do grid. Corrigido pra ser derivado (`math.ceil(len(BESTIARY_ORDER)/_BESTIARY_COLS)` linhas, nunca mais um literal solto) e o grid passou de 4 colunas/70px pra 6 colunas/56px (cabe na mesma largura de painel, menos linhas no total). Atlas não precisou de nenhuma mudança de código — já lia `title`/`description`/`enemies` de `LEVEL_MAPS` dinamicamente.
+
+## Combate físico: recuo e não-sobreposição (Stage K9)
+
+Todo dano (herói→monstro, monstro→herói, boss↔herói) empurra o alvo pra longe da fonte por um vetor curto (`game/combat_fx.py`'s `knockback_vector()`, força fixa `KNOCKBACK_SPEED=380`, `KNOCKBACK_DURATION=0.15s`) — um estado temporário que assume o controle da posição, mesmo princípio já usado pelo Dash, checado com prioridade *antes* do movimento normal/IA e passando pelas mesmas resoluções de colisão de parede já existentes (nunca atravessa parede). Além disso, herói e monstro/boss nunca ocupam o mesmo espaço: uma resolução de de-penetração AABB padrão (empurra pela metade da sobreposição, no eixo com menor overlap) roda toda vez que os dois colidem — deliberadamente desligada durante o Dash, já que o Dash depende da sobreposição acontecer de verdade pra aplicar o dano de contato.
+
+Todo acerto também gera um número de dano flutuante (`FloatingNumber`, mesmo módulo) que sobe e desaparece — vermelho para dano físico, roxo para mágico, laranja-escuro para dano-ao-longo-do-tempo (Veneno/Fogo/Calor). Nomes de monstro comum passaram a ficar sempre visíveis acima da barra de HP (antes só Paragon/Campeão tinham rótulo).
+
+## Buff percentual unificado (Stage K10)
+
+`StatusEffectDef` (`game/status_effects.py`) ganhou ~16 eixos percentuais além de `speed_mult`/`damage_taken_mult` originais (dano físico/mágico, defesa física/mágica, crítico, velocidade de ataque, vida/mana máxima, regen. de vida/mana, custo de mana, chance/resistência a debuff, XP/ouro ganho) — todos com default neutro (1.0 multiplicativo / 0.0 aditivo), então nenhum dos 7 debuffs originais precisou mudar pra ganhar essa infraestrutura. `Player._mult(field)`/`_bonus(field)` são o único ponto que toda stat derivada relevante lê: `status.multiplier(field) * stance_multiplier(field)` (multiplicativo) ou `status.bonus(field) + stance_bonus(field)` (aditivo) — uma Postura (permanente) e um buff de poção (temporário) empilham exatamente como dois debuffs já empilhavam, sem nenhuma stat property precisar mudar de novo quando um novo buff é adicionado.
+
+## Posturas — bônus permanente por profissão (Stage K11)
+
+`game/stances.py`'s `STANCES` — ao contrário de um debuff/buff (`StatusEffectCarrier`, expira), uma Postura é **derivada** da profissão atual, exatamente como a própria profissão é derivada dos atributos gastos: não tem duração, não precisa de `apply()`/expiração, só existe enquanto aquela profissão existir. Aventureiro (sem build definido) não tem Postura.
+
+| Profissão | Postura | Bônus |
+|---|---|---|
+| Guerreiro | Postura do Colosso | +15% dano físico, +10% defesa física |
+| Assassino | Passos das Sombras | +20% velocidade, +15% crítico |
+| Mago | Concentração Arcana | +20% mana máxima, +25% regen. de mana |
+| Feiticeiro | Olho do Oráculo | +20% dano mágico, +10% chance de aplicar debuffs |
+| Cavaleiro | Muralha Viva | +25% vida máxima, -10% dano recebido |
+| Duelista | Lâmina Dançante | +10% dano físico, +10% vel. ataque, +5% esquiva |
+| Cavaleiro Arcano | Espada Encantada | +10% dano mágico, +10% mana máxima, -10% custo de mana |
+| Paladino | Luz Sagrada | +10% dano físico, +15% resist. a debuffs, +2% regen. vida/s |
+| Campeão | Conquistador | +20% vida máxima, +10% dano físico, +10% defesa física |
+| Monge | Serenidade | +20% regen. de mana, +10% vel. ataque, -15% custo de mana |
+| Xamã | Espíritos | +15% chance de aplicar debuffs, +10% velocidade, +10% dano mágico |
+| Ranger | Caçador | +15% velocidade, +10% crítico, +2% regen. vida/s |
+| Arcanista | Eclipse | +25% dano mágico, +20% regen. de mana |
+| Druida | Natureza | +2% regen. vida/s, +2% regen. mana/s, +10% velocidade, +10% vida máxima |
+| Templário | Guardião | -15% dano recebido, +20% resist. a debuffs, +3% regen. vida/s |
+
+**Aproximações deliberadas:** "Cavaleiro Arcano" pedia "ataques físicos causam +10% de dano mágico" — não existe um sistema de proc-on-hit (um ataque não causa dois tipos de dano ao mesmo tempo hoje), então foi modelado como um bônus fixo de dano/mana mágico em vez de inventar um sistema de proc só pra essa profissão. Ícone dedicado por profissão (`create_stance_icon`, `game/assets.py`) num badge de HUD maior que os ícones de debuff comuns, sempre visível (não expira, não entra na fileira de buffs temporários) — hover mostra a descrição exata (`STANCE_DESCRIPTIONS`).
+
+## Poções/elixires e seleção de hotbar (Stage K12)
+
+`ITEMS` (`game/items.py`) cresceu de 3 pra 25 entradas — cada poção/elixir novo aponta pra um `StatusEffectDef` (`game/status_effects.py`, mesma tabela dos debuffs, campo `"buff": "<effect_id>"`) aplicado direto via `player.status.apply()` quando usado (sem passar pela rolagem de resistência — resistência só existe pra debuff *inimigo*, não pra um buff que o próprio jogador escolheu beber).
+
+| Categoria | Qtd. | Preço | Duração | Exemplo |
+|---|---|---|---|---|
+| Atributo (Preta/Laranja/Roxa/Branca/Verde/Azul-Escura/Amarela) | 7 | 100g | 3min | +15% no eixo correspondente (força→dano físico, destreza→vel. ataque...) |
+| Defensiva (Cinza/Prateada/Marrom) | 3 | 120g | 3min | +15-20% defesa/resist. a debuff |
+| Ofensiva (Vermelho-Escura/Violeta/Rubra) | 3 | 150g | 3min | +20% dano físico/mágico, +10% crítico |
+| Utilitária (Ciano/Rosa/Dourada/Turquesa) | 4 | 100-250g | 3-5min | regen. de vida/mana, +20% XP/ouro ganho |
+| Elixir (Carmesim/Arcano/Guardião/Caçador/Campeão) | 5 | 400-600g | 2-5min | combinações de 2+ eixos, Campeão é +10% em quase tudo |
+
+**Hotbar (`player.hotbar_items`, máx. 3):** com 25 itens, a hotbar não pode mais mostrar todo mundo — o jogador escolhe até 3 no menu Itens (tecla `H` numa linha "seus itens" pra marcar/desmarcar). `hotbar_slots()` (`game/player.py`) passou a ler `player.hotbar_items` em vez de iterar `ITEMS` inteiro; as teclas 1/2/3 usam o slot correspondente da lista, não mais um índice fixo no dict. `SAVE_VERSION` 6→7 persiste a seleção (default: as 3 poções originais, pra não mudar a hotbar de ninguém que nunca abriu o menu novo).
+
+## Masmorra: picareta, chave escondida e baú (Stage K14)
+
+Substituiu "matar todo mundo abre a saída" — o objetivo agora é achar uma chave escondida. `Level.layout` deixou de ser a lista compartilhada de `LEVEL_MAPS` (módulo-level, a mesma pra toda instância do mesmo `level_num`) e virou uma cópia por instância, porque quebrar um bloco muda esse grid permanentemente e isso não pode vazar entre partidas/dificuldades.
+
+- **Picareta (tecla `E`, cooldown 1s, sem requisito de atributo):** golpeia o SQM na frente do jogador (mesmo vetor `aim_dx`/`aim_dy` do combate mirado). Bloco interno (`#`, nunca a borda do mapa - convenção confirmada nos 13 layouts) racha no 1º golpe (`create_cracked_wall_overlay`), quebra no 2º (vira chão, remove da lista de colisão, rola um drop: 12% coração / 8% mana / 4% poção).
+- **Chave escondida:** um SQM de chão específico por fase de combate (nunca embaixo de bloco, longe do spawn do jogador, longe de spawn de monstro) — cavar esse SQM libera a saída. Marcador sutil no próprio chão (não um brilho óbvio - a ideia é procurar, não seguir uma seta).
+- **Saída vira baú (`create_chest_sprite`):** sempre visível, fechado/"TRANCADO" até a chave ser achada, abre com brilho dourado quando `exit_open` vira `True`.
+- **Drop de monstro reformulado:** ouro deixou de ser incondicional (era o que o usuário reclamou) — agora 75% de chance, mais coração (10%)/mana (6%)/poção (6%) independentes.
+- **Respawn gradual:** depois que todo o elenco original de uma fase morre, uma onda extra (mesmo elenco/nível) volta aos poucos, uma a cada 6s, até o dobro do total original — dá o que fazer enquanto o jogador ainda procura a chave, sem virar spam infinito.
+
+Níveis de boss (`type != "combat"`) não têm chave/baú/blocos destrutíveis — já transicionam direto na morte do boss, e os obstáculos de arena são estruturais pro padrão de ataque, não decoração.
+
+## Teclas remapeáveis (Stage K15)
+
+`game/keybinds.py`'s `BINDINGS` — 10 ações "de habilidade" (ataque, 3 magias, dash, picareta, e os atalhos de menu Personagem/Itens/Ranking/marcar-hotbar) podem ser remapeadas individualmente via um novo botão de engrenagem (`SettingsOverlay`). Deliberadamente **não** remapeável: movimento (WASD, lido por polling contínuo, caminho de código diferente do sistema de `Action`) e navegação pura de menu (CONFIRM/PAUSE/TAB/MENU_UP-DOWN-LEFT-RIGHT/RESTART) — mexer nessas quebraria a navegação por teclado de todo overlay do jogo.
+
+`InputManager.begin_key_capture(callback)` intercepta o próximo `KEYDOWN` inteiro (não deixa a tecla capturada também disparar a ação antiga) — assim capturar uma tecla nova pra Picareta não também aciona a Picareta com a tecla atual. Toda UI que mostra uma tecla (hotbar, aba Magias, aba Ajuda) lê `keybinds.display_key(action_name)` em vez de guardar um literal — ver "Bugs reais encontrados" mais abaixo pra por que isso importava.
+
+## Painel de balanceamento: categorias, abas e editor de pixel (Stage K16-K19)
+
+`BALANCE_DEFAULTS` (`backend/app/main.py`) cresceu de ~20 pra ~330 chaves pontilhadas, cobrindo monstro (`monster.<etype>.<campo>`), buff/debuff (`buff.`/`debuff.<id>.<campo>`, mesma tabela `STATUS_EFFECTS` dividida só pelo prefixo) e postura (`stance.<profissão>.<campo>`) além do que já existia (item/dificuldade/stats/magia) — gerado direto dos dicts reais do jogo, não digitado à mão, pra nunca desviar dos valores de verdade. A tabela plana virou 8 abas por categoria, cada entidade num bloco colapsável (`<details>`), com um botão "Editar aparência" (Monstros/Itens por enquanto) que abre um editor de pixel de verdade: grade 16x16 clicável/arrastável, salva como PNG em base64 (`AppearanceOverride` no banco). O cliente (`game/appearance_overrides.py`) busca todos os overrides uma vez no boot (`GET /appearance`, público, mesmo padrão fire-and-forget de `/balance`) e `create_enemy_sprite()`/`create_potion_icon()` checam por um override antes do pintor procedural normal.
+
+## Bugs reais encontrados nesta rodada (Stage K20)
+
+- **Rótulo de tecla desatualizado depois de um remapeamento.** A hotbar (`game/player.py`), a aba Magias e a lista de atalhos da aba Ajuda guardavam a tecla como um literal (`"F"`, `"X"`, `"SPC"`) escrito antes do sistema de remapeamento (Stage K15) existir — remapear Bola de Fogo pra `G` continuava mostrando "F" em todo lugar. Corrigido lendo `game.keybinds.display_key(action_name)` sempre, em vez de um literal.
+- **Aba Ajuda > Debuffs rodava pra fora do painel.** A listagem iterava `STATUS_HELP` inteiro sem paginação - inofensivo com os 7 debuffs originais, mas Stage K12 acrescentou 22 buffs de poção na mesma tabela, e o conteúdo extra simplesmente ficava inalcançável abaixo da borda do painel, sob um título ("DEBUFFS") que também parou de fazer sentido pra metade do conteúdo. Corrigido separando em páginas paginadas de Debuffs/Buffs, mais uma página nova de Posturas (Stage K11 não tinha nenhuma superfície além do tooltip do badge).
+- **`LeaderboardButton.draw()` perdeu suas últimas 2 linhas (blit final + badge "L") no meio de uma edição** que adicionava `SettingsButton` logo depois - um `Edit` cujo texto de origem terminava exatamente onde essas linhas ficavam as substituiu junto. Só um botão sumiu (o troféu ficou invisível, círculo vazio) - pego revisando o screenshot ao vivo da fileira de botões, não por inspeção de código.

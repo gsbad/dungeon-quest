@@ -20,18 +20,23 @@ Uma campanha em **3 atos** (13 fases, incluindo uma secreta), com sistema de atr
 - **3 atos, 4 bosses únicos** — cada um com sprite, sala e padrão de ataque próprios (Senhor da Guerra Orc, Necromante, Rei das Sombras, e o Cacodemônio da fase secreta).
 - **20 arquétipos de monstro comuns**, cada um com seu próprio rig visual e "magia"/ataque de acordo com a natureza dele (veneno, gelo, choque, fogo, fraqueza...), espalhados pelas 12 fases de combate.
 - **Atributos e profissões**: FOR/DES/INT/SAB/VIG/SOR determinam 16 profissões possíveis (5 puras + 10 híbridas + Aventureiro), sem nada "guardado" — é só a leitura dos pontos gastos.
-- **Combate mirado no mouse (PC) / toque-e-arraste (celular)**: ataque corpo a corpo, Bola de Fogo, Nova de Gelo e a nova Investida (Dash) seguem a direção real do cursor/arraste, não só 4 direções fixas.
+- **Combate mirado no mouse (PC) / toque-e-arraste (celular)**: ataque corpo a corpo, Bola de Fogo, Nova de Gelo e a Investida (Dash) seguem a direção real do cursor/arraste, não só 4 direções fixas. Recuo físico (knockback) em todo dano recebido, e herói/monstro nunca ocupam o mesmo espaço.
 - **Dash**: mobilidade baseada em Destreza, dano de contato, e um rastro fantasma que se apaga atrás do herói.
+- **Posturas**: cada uma das 15 profissões (5 puras + 10 híbridas) ganha um bônus permanente próprio — dano, defesa, velocidade, regeneração — só por estar naquela profissão, sem gasto extra.
+- **Masmorra com chave escondida**: a saída de cada fase é um baú trancado — cave com a Picareta (bloco por bloco, 2 golpes cada) até achar a chave enterrada num ponto do mapa. Blocos quebrados podem soltar poções/vida/mana; monstros voltam aos poucos depois que a sala é limpa.
 - **Magias**: Bola de Fogo, Nova de Gelo, Luz Curativa — desbloqueadas por requisito de atributo.
-- **Status effects**: Veneno, Lentidão, Fraqueza, Fogo, Frio, Calor e Choque, com cura por Antídoto onde faz sentido.
+- **~25 poções e elixires**, cada um com um buff temporário próprio (dano, defesa, regeneração, XP, ouro...) — até 3 selecionáveis para o hotbar.
+- **Status effects**: Veneno, Lentidão, Fraqueza, Fogo, Frio, Calor e Choque, com cura por Antídoto onde faz sentido; números de dano flutuantes (físico/mágico/dano-ao-longo-do-tempo) em todo acerto.
 - **5 dificuldades** (Normal → Inferno), cada uma a mesma campanha com monstros mais fortes, chance de Campeões, afixos de fase inteira e enrage de boss mais cedo — desbloqueadas sequencialmente.
 - **Paragon**: spawn raro (3%, com pity) de monstro comum upgradado, x4 XP/ouro.
 - **Clima dinâmico** por fase (neblina, chuva, neve, tempestade, cinzas...).
-- **Paperdoll** com 6 abas: Status, Magias, Bestiário, Atlas, Conquistas e Ajuda (com uma listagem ilustrada de todos os debuffs).
+- **Remapeamento de teclas**: qualquer tecla de ação (ataque, magias, dash, picareta, atalhos de menu) pode ser trocada pelo próprio jogador, pelo botão de engrenagem.
+- **Paperdoll** com 6 abas: Status, Magias, Bestiário, Atlas, Conquistas e Ajuda (com listagem ilustrada de debuffs, buffs de poção e posturas, além dos atalhos de teclado — sempre refletindo o remapeamento atual).
 - **Leaderboard online** (requer login Google) — ranking por Nível, Horas Jogadas, Conquistas ou Ouro.
 - **God mode de debug vira Super Sayajin** 🐉 — easter egg visual, não só um flag invisível.
 - **Save/load** persistente, local e (opcionalmente) sincronizado na nuvem via login Google.
-- **Painel de debug** (`F1`, PC apenas) pra testar atributos, economia, dificuldade e status effects sem precisar re-jogar a campanha inteira.
+- **Painel de debug** (`F1`, PC apenas) pra testar atributos, economia, dificuldade, status effects, posturas e clima sem precisar re-jogar a campanha inteira.
+- **Painel de balanceamento admin** (`/admin`, backend) organizado em abas por categoria (Monstros/Magias/Itens/Buffs/Debuffs/Posturas/Dificuldade), com um editor de pixel real (grade 16x16, clique/arraste) pra sobrescrever a aparência de qualquer monstro/item sem precisar editar código.
 - Roda no navegador (PC e celular, via Pygbag/WebAssembly) — deploy automático via GitHub Actions a cada push em `main` (ver [`docs/deploy.md`](docs/deploy.md)).
 
 ---
@@ -42,21 +47,26 @@ Uma campanha em **3 atos** (13 fases, incluindo uma secreta), com sistema de atr
 |---|---|
 | W / A / S / D ou ↑↓←→ | Mover personagem |
 | Mouse | Mirar ataque/magias na direção do cursor |
-| F | Atacar corpo a corpo |
-| R | Conjurar Bola de Fogo |
+| ESPAÇO | Atacar corpo a corpo |
+| F | Conjurar Bola de Fogo |
 | Q | Conjurar Nova de Gelo |
-| X | Conjurar Luz Curativa |
-| ESPAÇO | Investida (Dash) |
-| 1 / 2 / 3 | Usar poção (Vida / Mana / Antídoto) |
+| R | Conjurar Luz Curativa (ou Reiniciar, na tela de pausa/morte) |
+| X | Investida (Dash) |
+| E | Picareta — quebra blocos e cava em busca da chave escondida da masmorra |
+| 1 / 2 / 3 | Usar item (slots do hotbar, escolhidos no menu Itens) |
+| H (no menu Itens) | Marcar/desmarcar item para o hotbar (máx. 3) |
 | C | Abrir Paperdoll (Status/Magias/Bestiário/Atlas/Conquistas/Ajuda) |
 | I | Abrir Itens |
 | L | Abrir Ranking (requer login Google) |
+| Ícone de engrenagem | Configurações — remapear qualquer tecla de ação acima (PC, só pelo mouse/toque) |
 | ESC / clique fora do painel | Pausar / fechar o menu aberto |
 | ENTER | Confirmar menus |
 | F1 | Painel de debug (dev, só PC) |
 | F11 / F12 | Tela cheia / mudo |
 
-No navegador/celular, assim que a tela é tocada aparecem controles virtuais: joystick (mover), botão de ataque e magias (toque e arraste para mirar, dispara automaticamente enquanto segurar), botões de item, e um botão de pausa.
+Todas as teclas de ação (ataque, magias, dash, picareta, atalhos de menu) podem ser remapeadas individualmente pelo botão de engrenagem — a tabela acima mostra os padrões.
+
+No navegador/celular, assim que a tela é tocada aparecem controles virtuais: joystick (mover), botão de ataque e magias (toque e arraste para mirar, dispara automaticamente enquanto segurar), botões de item, e um botão de pausa. (Dash/Picareta/remapeamento são PC-only por enquanto.)
 
 ---
 
@@ -209,28 +219,33 @@ dungeon-quest/
     ├── boss.py                ← Bosses (fases, padrões de ataque, projéteis)
     ├── level.py                ← Mapas e carregamento de fases (LEVEL_MAPS)
     ├── stats.py                ← StatBlock, arquétipos, fórmulas de dano/XP
-    ├── status_effects.py        ← Veneno/Lentidão/Fraqueza/Fogo/Frio/Calor/Choque
-    ├── affixes.py                ← Paragon/Campeão e afixos de fase
-    ├── difficulty.py              ← 5 tiers de dificuldade
-    ├── professions.py              ← Derivação de profissão a partir dos atributos
-    ├── spells.py                    ← Magias do jogador
-    ├── items.py                      ← Poções/consumíveis
-    ├── merchant.py                    ← Loja
-    ├── weather.py                      ← Clima dinâmico por fase
-    ├── reputation.py                    ← Reputação/facções
-    ├── bestiary.py                       ← Dados do Bestiário (nome/descrição/discovery)
-    ├── leaderboard.py                     ← Overlay + busca do ranking online
-    ├── balance_config.py                   ← Aplica overrides vindos do painel admin
-    ├── net.py                                ← Ponte pyodide/emscripten para o backend
-    ├── paperdoll.py                           ← UI do painel do personagem (6 abas)
-    ├── debug_panel.py                          ← Painel de debug (F1)
-    ├── save.py                                  ← Persistência (save/load)
-    ├── camera.py                                 ← Câmera suave
-    ├── audio.py                                   ← Som
-    ├── input_system.py                             ← Teclado/mouse/touch unificados
-    ├── theme.py                                     ← Paleta de cores e fontes
-    ├── ui.py                                         ← Componentes de UI reutilizáveis
-    └── assets.py                                      ← Sprites/ícones pixel art gerados em código
+    ├── status_effects.py        ← Debuffs + buffs de poção/elixir (StatusEffectCarrier, ~29 efeitos)
+    ├── stances.py                ← Posturas: bônus permanente por profissão (15 entradas)
+    ├── keybinds.py                 ← Teclas remapeáveis (padrões + bindings ao vivo)
+    ├── settings_overlay.py          ← UI de remapeamento de teclas
+    ├── appearance_overrides.py       ← Overrides de sprite vindos do editor de pixel admin
+    ├── affixes.py                     ← Paragon/Campeão e afixos de fase
+    ├── difficulty.py                   ← 5 tiers de dificuldade
+    ├── professions.py                   ← Derivação de profissão a partir dos atributos
+    ├── spells.py                         ← Magias do jogador
+    ├── items.py                           ← Poções/elixires/consumíveis (~25 itens)
+    ├── merchant.py                         ← Loja + seleção de hotbar (menu Itens)
+    ├── weather.py                           ← Clima dinâmico por fase
+    ├── reputation.py                         ← Reputação/facções
+    ├── bestiary.py                            ← Dados do Bestiário (nome/descrição/discovery)
+    ├── leaderboard.py                          ← Overlay + busca do ranking online
+    ├── balance_config.py                        ← Aplica overrides vindos do painel admin
+    ├── net.py                                     ← Ponte pyodide/emscripten para o backend
+    ├── paperdoll.py                                ← UI do painel do personagem (6 abas)
+    ├── debug_panel.py                               ← Painel de debug (F1)
+    ├── save.py                                       ← Persistência (save/load)
+    ├── camera.py                                      ← Câmera suave
+    ├── audio.py                                        ← Som
+    ├── input_system.py                                  ← Teclado/mouse/touch unificados
+    ├── combat_fx.py                                       ← Números de dano flutuantes + knockback
+    ├── theme.py                                            ← Paleta de cores e fontes
+    ├── ui.py                                                ← Componentes de UI reutilizáveis
+    └── assets.py                                             ← Sprites/ícones pixel art gerados em código
 ```
 
 ---
