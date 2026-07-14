@@ -810,14 +810,19 @@ class GameplayState:
             self.leaderboard_open = True
             self.leaderboard.open()
 
-    def _attempt_cast(self, spell_id):
+    def _attempt_cast(self, spell_id, silent=False):
         self.player.selected_spell = spell_id
         if not self.player.try_cast(spell_id):
             # A failed cast used to be completely silent - pressing the key
             # while locked/on cooldown/out of mana looked identical to the
             # key doing nothing at all. Same msg_timer/msg_text toast the
             # level-up/profession-change messages already use.
-            self._cast_fail_message(spell_id)
+            # Stage J13: `silent` is for the mobile hold-to-aim auto-fire
+            # polling below, which retries every frame while a spell button
+            # is held - without it, holding through a cooldown would reset
+            # the toast every single frame instead of showing it once.
+            if not silent:
+                self._cast_fail_message(spell_id)
             return
         spell = SPELLS[spell_id]
         self.audio.play("attack")
@@ -841,12 +846,15 @@ class GameplayState:
         self.msg_timer, self.msg_text = 1.6, text
 
     def _cast_fireball(self, spell):
+        # Stage J13: fires along the continuous aim_dx/aim_dy vector (mouse
+        # angle on PC, drag-aim on mobile) instead of snapping to one of the
+        # 4 cardinal directions - Projectile itself already takes a plain
+        # (vx, vy), so this is the only spot that needed to change.
         px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
-        direction = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[self.player.direction]
         speed = 320
         dmg = self.player.stats.magic_damage(spell["spell_base"])
         self.player_projectiles.append(
-            Projectile(px, py, direction[0] * speed, direction[1] * speed, dmg, (255, 120, 20))
+            Projectile(px, py, self.player.aim_dx * speed, self.player.aim_dy * speed, dmg, (255, 120, 20))
         )
 
     def _cast_frost_nova(self, spell, radius=110):
@@ -962,6 +970,31 @@ class GameplayState:
 
         hp_before = self.player.hp
         self.player.update(dt, self.level.walls, self.input.movement_vector())
+
+        # Stage J13: mouse-aimed combat (PC) - continuous facing towards the
+        # cursor's world position, independent of movement, feeding
+        # get_attack_rect()/_cast_fireball(). Mobile has no hover concept,
+        # so it aims by holding+dragging the attack/spell buttons instead
+        # (VirtualButton.aim_dx/dy, set by InputManager._pointer_move) -
+        # each is also polled here to auto-fire while held+aimed, respecting
+        # its own cooldown (try_attack()/try_cast() already no-op otherwise).
+        # Healing Light has no button here (game/input_system.py only marks
+        # fireball/frost_nova as aimable) since it doesn't need a direction.
+        if not self.input.touch_active:
+            mx, my = self.input.mouse_pos()
+            world_x, world_y = mx + self.camera.render_x, my + self.camera.render_y
+            pcx = self.player.x + self.player.width / 2
+            pcy = self.player.y + self.player.height / 2
+            self.player.set_aim(world_x - pcx, world_y - pcy)
+        else:
+            atk_btn = self.input.attack_button
+            if atk_btn.active and atk_btn.has_aim:
+                self.player.set_aim(atk_btn.aim_dx, atk_btn.aim_dy)
+                self.player.try_attack()
+            for i, btn in enumerate(self.input.spell_buttons):
+                if btn.active and btn.has_aim:
+                    self.player.set_aim(btn.aim_dx, btn.aim_dy)
+                    self._attempt_cast(SPELL_ORDER[i], silent=True)
 
         self._update_pickup_spawns(dt)
         self._check_pickup_pickups()

@@ -117,6 +117,13 @@ class Player:
 
         self.direction = "down"  # up/down/left/right
 
+        # Stage J13: continuous aim vector for mouse-aimed combat (PC) /
+        # touch-drag aim (mobile) - independent of movement. Used by
+        # get_attack_rect() and GameplayState._cast_fireball() for the real
+        # angle; self.direction above stays quantized to the 4 sprite poses
+        # (set_aim() below keeps both in sync from the same vector).
+        self.aim_dx, self.aim_dy = 0.0, 1.0
+
         # Per-profession individualization pass: each profession is now its
         # own rig (game/assets.py's PLAYER_SPRITES/_PLAYER_RIG_PAINTERS), not
         # a color multiply over one shared silhouette - so sprites are built
@@ -211,15 +218,34 @@ class Player:
     def rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
+    def set_aim(self, dx, dy):
+        """Stage J13: normalizes (dx, dy) into aim_dx/aim_dy (used for the
+        real attack/fireball angle) and quantizes it into self.direction
+        (one of the 4 sprite poses), same vector driving both."""
+        dist = math.hypot(dx, dy)
+        if dist < 1e-4:
+            return
+        self.aim_dx, self.aim_dy = dx / dist, dy / dist
+        if abs(dx) >= abs(dy):
+            self.direction = "right" if dx > 0 else "left"
+        else:
+            self.direction = "down" if dy > 0 else "up"
+
     def get_attack_rect(self):
-        if self.direction == "right":
-            return pygame.Rect(self.x + self.width, self.y, self.attack_range, self.height)
-        elif self.direction == "left":
-            return pygame.Rect(self.x - self.attack_range, self.y, self.attack_range, self.height)
-        elif self.direction == "down":
-            return pygame.Rect(self.x, self.y + self.height, self.width, self.attack_range)
-        else:  # up
-            return pygame.Rect(self.x, self.y - self.attack_range, self.width, self.attack_range)
+        # Stage J13: was 4 fixed axis-aligned strips keyed off self.direction
+        # - now a square hitbox pushed out from the player's center along
+        # the continuous aim_dx/aim_dy vector, so a diagonal aim actually
+        # reaches diagonally instead of snapping to one of 4 strips. Sizing
+        # (max(width, height) side, centered attack_range/2 + size/2 beyond
+        # the player) matches the old cardinal cases closely at dx/dy=(±1,0)
+        # or (0,±1).
+        cx = self.x + self.width / 2
+        cy = self.y + self.height / 2
+        size = max(self.width, self.height)
+        offset = size / 2 + self.attack_range / 2
+        center_x = cx + self.aim_dx * offset
+        center_y = cy + self.aim_dy * offset
+        return pygame.Rect(center_x - size / 2, center_y - size / 2, size, size)
 
     def take_damage(self, amount, dtype="physical"):
         if self.invincible or self.debug_invincible:

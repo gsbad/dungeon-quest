@@ -163,15 +163,23 @@ class VirtualJoystick:
 
 class VirtualButton:
     """Round tap button. Draws an `icon` surface centered if given, otherwise
-    falls back to rendering `label` as text. `action` is fired once on press."""
+    falls back to rendering `label` as text. `action` is fired once on press
+    - unless `aimable=True` (Stage J13: mobile attack/spell buttons that
+    need a direction), in which case pressing alone does nothing: the
+    caller (InputManager._pointer_move) feeds drag() a world position, and
+    GameplayState.update() polls `.active and .has_aim` each frame to fire
+    repeatedly while held+aimed, same "touch then drag to aim" as the sword
+    joystick-style control the user asked for."""
 
-    def __init__(self, cx, cy, radius, label, action, icon=None):
+    def __init__(self, cx, cy, radius, label, action, icon=None, aimable=False):
         self.cx = cx
         self.cy = cy
         self.radius = radius
         self.label = label
         self.action = action
         self.icon = icon
+        self.aimable = aimable
+        self.aim_dx, self.aim_dy = 0.0, 0.0
         self.pointer_id = None
         self.press_flash = 0.0
         self._font = None
@@ -182,14 +190,34 @@ class VirtualButton:
     def press(self, pointer_id):
         self.pointer_id = pointer_id
         self.press_flash = 1.0
+        if self.aimable:
+            self.aim_dx, self.aim_dy = 0.0, 0.0
+
+    def drag(self, pointer_id, x, y):
+        if not self.aimable or pointer_id != self.pointer_id:
+            return
+        dx, dy = x - self.cx, y - self.cy
+        # Deadzone in pixels (not normalized, unlike VirtualJoystick's) - a
+        # finger that barely moved off dead-center shouldn't snap an aim
+        # arrow onto some arbitrary direction.
+        if math.hypot(dx, dy) < 10:
+            return
+        dist = math.hypot(dx, dy)
+        self.aim_dx, self.aim_dy = dx / dist, dy / dist
 
     def release(self, pointer_id):
         if pointer_id == self.pointer_id:
             self.pointer_id = None
+            if self.aimable:
+                self.aim_dx, self.aim_dy = 0.0, 0.0
 
     @property
     def active(self):
         return self.pointer_id is not None
+
+    @property
+    def has_aim(self):
+        return self.aimable and (self.aim_dx != 0.0 or self.aim_dy != 0.0)
 
     def update(self, dt):
         if self.press_flash > 0:
@@ -204,6 +232,9 @@ class VirtualButton:
         pygame.draw.circle(buf, (255, 255, 255, 170), (self.radius, self.radius), self.radius, 3)
         surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
 
+        if self.has_aim:
+            self._draw_aim_arrow(surface)
+
         if self.icon is not None:
             size = int(self.radius * 1.4)
             scaled = pygame.transform.scale(self.icon, (size, size))
@@ -214,6 +245,27 @@ class VirtualButton:
             self._font = font(20)
         txt = self._font.render(self.label, True, (35, 25, 10))
         surface.blit(txt, (self.cx - txt.get_width() // 2, self.cy - txt.get_height() // 2))
+
+    def _draw_aim_arrow(self, surface):
+        """Translucent arrow pointing from the button towards the drag
+        direction - the visual the user explicitly asked for so aiming
+        while dragging is legible, same idea as the joystick's knob offset
+        but drawn as an arrow since there's no separate knob here."""
+        length = self.radius * 1.8
+        size = int(length * 2 + 24)
+        buf = pygame.Surface((size, size), pygame.SRCALPHA)
+        c = size // 2
+        tip_x, tip_y = c + self.aim_dx * length, c + self.aim_dy * length
+        base_x = c + self.aim_dx * (self.radius * 0.9)
+        base_y = c + self.aim_dy * (self.radius * 0.9)
+        color = (255, 240, 200, 170)
+        pygame.draw.line(buf, color, (base_x, base_y), (tip_x, tip_y), 5)
+        ang = math.atan2(self.aim_dy, self.aim_dx)
+        for side in (-1, 1):
+            hx = tip_x - math.cos(ang + side * 0.5) * 12
+            hy = tip_y - math.sin(ang + side * 0.5) * 12
+            pygame.draw.line(buf, color, (tip_x, tip_y), (hx, hy), 5)
+        surface.blit(buf, (self.cx - c, self.cy - c))
 
 
 class FullscreenButton:
@@ -386,6 +438,12 @@ class InputManager:
         self.touch_active = False
         self._time = 0.0
 
+        # Stage J13: last known corrected mouse position, updated on every
+        # MOUSEMOTION/MOUSEBUTTONDOWN regardless of whether a button is
+        # held - mouse-aimed combat needs continuous hover position, unlike
+        # _pointers (which only tracks a pointer between down and up).
+        self._mouse_screen_pos = (screen_w / 2, screen_h / 2)
+
         # Stage J11: a permanent (not debug-only) crosshair at the raw
         # event.pos of every real mouse click - the diagnostic tool for the
         # long-open canvas-misalignment bug (see
@@ -399,8 +457,11 @@ class InputManager:
         self._CROSSHAIR_DURATION = 0.6
 
         self.joystick = VirtualJoystick(100, screen_h - 120, radius=70, knob_radius=32)
+        # Stage J13: aimable=True - touch+drag now aims the melee swing
+        # (mouse-aimed combat's mobile equivalent) instead of firing once on
+        # press towards whatever self.direction happened to be.
         self.attack_button = VirtualButton(screen_w - 90, screen_h - 100, 48, "ATK", Action.ATTACK,
-                                            icon=create_sword_icon())
+                                            icon=create_sword_icon(), aimable=True)
         self.pause_button = VirtualButton(screen_w - 40, 40, 26, "II", Action.PAUSE)
         # Stage H3: the corner PaperdollButton/ItemsButton (states.py) already
         # cover "C"/"I" on both mobile and desktop, so the touch-only "C"/"I"
@@ -422,8 +483,13 @@ class InputManager:
             rad = math.radians(angle_deg)
             bx = atk.cx + math.cos(rad) * arc_distance
             by = atk.cy - math.sin(rad) * arc_distance
+            # Stage J13: fireball/frost_nova aim like the attack button
+            # (drag to aim, auto-fires while held - see GameplayState.update).
+            # Healing Light has no direction to aim, so it keeps the old
+            # fire-once-on-press behavior untouched.
             btn = VirtualButton(bx, by, spell_btn_radius, "", action,
-                                 icon=create_spell_icon(spell_id))
+                                 icon=create_spell_icon(spell_id),
+                                 aimable=(spell_id != "healing_light"))
             self.spell_buttons.append(btn)
 
         # A row of 3 direct-use item buttons, centered in the open gap
@@ -473,6 +539,12 @@ class InputManager:
         Doesn't consume anything itself; _taps already gets cleared once
         per frame by update() regardless."""
         return bool(self._taps)
+
+    def mouse_pos(self):
+        """Stage J13: last known corrected mouse position (screen-space,
+        800x600 logical) - used for continuous PC mouse-aimed combat.
+        Not meaningful once touch_active is set (no real mouse on mobile)."""
+        return self._mouse_screen_pos
 
     # ---------------------------------------------------------------- movement
     def movement_vector(self):
@@ -558,11 +630,14 @@ class InputManager:
             # overlay pop up on desktop. Real touchscreens send FINGERDOWN
             # separately (see below), so this doesn't affect mobile.
             pos = _corrected_mouse_pos(event.pos)
+            self._mouse_screen_pos = pos
             self._crosshair_pos = pos
             self._crosshair_timer = self._CROSSHAIR_DURATION
             self._pointer_down("mouse", *pos)
         elif event.type == pygame.MOUSEMOTION:
-            self._pointer_move("mouse", *_corrected_mouse_pos(event.pos))
+            pos = _corrected_mouse_pos(event.pos)
+            self._mouse_screen_pos = pos
+            self._pointer_move("mouse", *pos)
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self._pointer_up("mouse")
 
@@ -593,7 +668,8 @@ class InputManager:
                 claimed = "joystick"
             elif self.attack_button.contains(x, y):
                 self.attack_button.press(pid)
-                self._press_action(Action.ATTACK)
+                # Stage J13: no immediate fire - aimable, drag to aim, then
+                # GameplayState.update() polls active+has_aim to swing.
                 claimed = "attack"
             elif self.pause_button.contains(x, y):
                 self.pause_button.press(pid)
@@ -603,7 +679,8 @@ class InputManager:
                 for i, btn in enumerate(self.spell_buttons):
                     if btn.contains(x, y):
                         btn.press(pid)
-                        self._press_action(btn.action)
+                        if not btn.aimable:
+                            self._press_action(btn.action)
                         claimed = ("spell", i)
                         break
                 else:
@@ -626,8 +703,13 @@ class InputManager:
         if p is None:
             return
         p["x"], p["y"] = x, y
-        if p["claimed"] == "joystick":
+        claimed = p["claimed"]
+        if claimed == "joystick":
             self.joystick.drag(pid, x, y)
+        elif claimed == "attack":
+            self.attack_button.drag(pid, x, y)
+        elif isinstance(claimed, tuple) and claimed[0] == "spell":
+            self.spell_buttons[claimed[1]].drag(pid, x, y)
 
     def _pointer_up(self, pid):
         p = self._pointers.pop(pid, None)
