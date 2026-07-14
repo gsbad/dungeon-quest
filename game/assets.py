@@ -221,15 +221,71 @@ def _draw_body_monk(s, SC, body):
         pygame.draw.rect(s, (220,170,110), (x*SC,y*SC,SC,SC))  # bare shins
 
 
-def create_player_sprite(direction="down", attacking=False, profession=None):
+def create_player_sprite(direction="down", attacking=False, profession=None, super_saiyan=False):
     SC = 3
     s = pygame.Surface((16*SC, 16*SC), pygame.SRCALPHA)
+    if super_saiyan:
+        # Stage J7: god mode's cosmetic tell - a fixed costume regardless of
+        # profession (a transformation, not a build), same reasoning
+        # Aventureiro already gets a fixed look. Golden aura is drawn first
+        # so the body/hair blit over its edges instead of clipping them.
+        _draw_super_saiyan_aura(s, SC)
+        _paint_super_saiyan(s, SC, direction, attacking)
+        return s
     defn = PLAYER_SPRITES.get(profession)
     if defn is None:
         _paint_adventurer(s, SC, direction, attacking)
     else:
         _PLAYER_RIG_PAINTERS[profession](s, SC, direction, attacking, defn["body"], defn["accent"])
     return s
+
+
+def _draw_super_saiyan_aura(s, SC):
+    """Translucent golden glow behind the whole rig - same SRCALPHA-circle
+    trick game/assets.py's _draw_staff(glow=True) already uses for spell
+    orbs, just centered on the character instead of a weapon tip."""
+    cx, cy = 8 * SC, 8 * SC
+    r = 9 * SC
+    glow = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+    pygame.draw.circle(glow, (255, 220, 80, 70), (r, r), r)
+    pygame.draw.circle(glow, (255, 240, 160, 100), (r, r), int(r * 0.6))
+    s.blit(glow, (cx - r, cy - r))
+
+
+def _paint_super_saiyan(s, SC, direction, attacking):
+    """God mode's transformed look (Stage J7 - a gracejo, not a build):
+    reuses the lean _draw_body_light silhouette + the shared humanoid head/
+    eyes/sword helpers every other rig already shares, swapped to a white
+    gi with a gold trim, topped with an upward spiky hair fan instead of
+    the usual hat/helm block - the one genuinely new piece of geometry
+    here, everything else is existing pieces in a new palette."""
+    _draw_body_light(s, SC, (245, 245, 250))
+    pygame.draw.rect(s, GOLD, (4*SC, 9*SC, 8*SC, SC))  # belt/trim accent
+    _draw_humanoid_head(s, SC)
+    _draw_player_eyes(s, SC, direction, color=(210, 40, 40))  # fierce red eyes
+    # Spiky gold hair fan, standing straight up off the head block
+    # (game/assets.py's _HELM_BLOCK footprint) instead of a hat - each
+    # spike is a thin triangle, alternating heights for a jagged silhouette
+    # instead of a uniform comb. Heights are capped at base_y (tip_y >= 0)
+    # on purpose - the sprite canvas is only 16*SC=48px tall and pygame
+    # silently clips draws past its edge, so a first attempt at "tall spiky
+    # hair" with tip_h up to 22 just got its points chopped flat at y=0,
+    # reading as a solid rectangle instead of spikes (caught by screenshot,
+    # not by inspection - the clipping is silent, no error/warning).
+    hair_color = (255, 215, 60)
+    base_y = 3 * SC
+    tips = [(-3, 5), (0, 9), (3, 4), (6, 9), (9, 4), (12, 7), (15, 5)]
+    for tip_x, tip_h in tips:
+        bx = 5 * SC + tip_x
+        pygame.draw.polygon(s, hair_color, [
+            (bx - 2, base_y), (bx + 2, base_y), (bx, base_y - tip_h),
+        ])
+    if attacking:
+        hilt = _weapon_hilt(SC)
+        _draw_blade(s, hilt, _weapon_tip(SC), 3.5, (225, 228, 235), (140, 145, 158))
+        ux, uy, px, py = _blade_vectors(hilt, _weapon_tip(SC))
+        _draw_crossguard(s, hilt, px, py, 4.5, GOLD)
+        _draw_grip(s, hilt, ux, uy, 4, (90, 55, 20), GOLD)
 
 
 # ─── Per-profession hero rigs (individualization pass) ─────────────────────

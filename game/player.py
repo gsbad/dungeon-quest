@@ -310,17 +310,23 @@ class Player:
                     self.y = wall.top - self.height
 
     def _get_sprite(self, key):
-        # Cached per (key, profession) - each profession is its own rig
-        # now (game/assets.py's create_player_sprite(..., profession=...)),
-        # so switching build/profession must rebuild, not just re-tint.
-        # Accumulates at most 8 sprites x every profession the player has
-        # had this run, trivial for pygame.Surface objects this small.
-        cache_key = (key, self.profession)
+        # Cached per (key, profession, god mode) - each profession is its
+        # own rig now (game/assets.py's create_player_sprite(...,
+        # profession=...)), so switching build/profession must rebuild, not
+        # just re-tint. Stage J7: god mode overrides profession entirely
+        # with a fixed "Super Sayajin" costume - included in the cache key
+        # (not just passed through) so toggling debug_invincible off
+        # doesn't keep serving the transformed sprite from cache.
+        # Accumulates at most 8 sprites x every profession/mode combo the
+        # player has had this run, trivial for pygame.Surface objects this
+        # small.
+        god_mode = self.debug_invincible
+        cache_key = (key, self.profession, god_mode)
         cached = self._sprite_cache.get(cache_key)
         if cached is None:
             attacking = key.endswith("_atk")
             direction = key[:-4] if attacking else key
-            cached = create_player_sprite(direction, attacking, self.profession)
+            cached = create_player_sprite(direction, attacking, self.profession, super_saiyan=god_mode)
             self._sprite_cache[cache_key] = cached
         return cached
 
