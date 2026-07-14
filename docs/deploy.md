@@ -28,29 +28,45 @@ still work unchanged.
 
 ### One-time runner setup on the VM
 
+**Done as of 2026-07-13** (this session): the runner package (v2.335.1) is
+downloaded and extracted at `~/actions-runner` on the VM, `python3-pip` is
+installed, and the sudoers rule below is already in place. The only step
+left is registration, which needs a short-lived token only the GitHub UI
+can mint:
+
 ```bash
 ssh -i ~/.ssh/dungeonquest_vm ubuntu@129.80.222.127
-mkdir actions-runner && cd actions-runner
-curl -o actions-runner-linux-x64.tar.gz -L \
-  https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64-<version>.tar.gz
-tar xzf ./actions-runner-linux-x64.tar.gz
+cd ~/actions-runner
 # Registration token: GitHub repo -> Settings -> Actions -> Runners ->
 # New self-hosted runner (short-lived, generate a fresh one if this is
-# stale). Give it the "dungeonquest-vm" label when prompted - the
-# workflow's runs-on: [self-hosted, dungeonquest-vm] targets that label
-# specifically, not just any self-hosted runner, in case more are ever
-# added for other projects on the same account.
+# stale). Give it the "dungeonquest-vm" label - the workflow's
+# runs-on: [self-hosted, dungeonquest-vm] targets that label specifically,
+# not just any self-hosted runner, in case more are ever added for other
+# projects on the same account.
 ./config.sh --url https://github.com/gsbad/dungeon-quest --token <TOKEN> --labels dungeonquest-vm
 sudo ./svc.sh install
 sudo ./svc.sh start
 ```
 
+To set this up from scratch on a different VM: download
+`https://github.com/actions/runner/releases/latest`'s
+`actions-runner-linux-x64-<version>.tar.gz`, `tar xzf` it into a fresh
+`~/actions-runner`, `python3 -m pip install --user --upgrade pip` (Ubuntu's
+default python3 has no pip preinstalled), then the `config.sh`/`svc.sh`
+steps above.
+
 ### Passwordless sudo for the workflow's exact commands
 
-The runner (registered above, runs as `ubuntu`) needs to run a handful of
-root-only commands without an interactive password prompt - broad
-`ubuntu ALL=(ALL) NOPASSWD: ALL` would work but is far more than this
-needs. Add this instead via `sudo visudo -f /etc/sudoers.d/dungeonquest-deploy`:
+The runner (runs as `ubuntu`) needs to run a handful of root-only commands
+without an interactive password prompt. **On this VM, `ubuntu` already has
+unrestricted `(ALL) NOPASSWD: ALL` from Oracle's own cloud-init default**
+- discovered while setting this up, not something this project configured
+- so the workflow already works without anything further. The narrower
+rule below is added anyway as defense-in-depth/documentation of exactly
+what the workflow actually needs, in case the broad grant is ever tightened
+later; it's redundant, not required, on the VM as currently provisioned.
+
+`/etc/sudoers.d/dungeonquest-deploy` (mode 440, validated with `visudo -c`):
 
 ```
 ubuntu ALL=(root) NOPASSWD: /usr/bin/cp -r /home/ubuntu/actions-runner/_work/dungeon-quest/dungeon-quest/build/web/. /srv/dungeonquest-web/
