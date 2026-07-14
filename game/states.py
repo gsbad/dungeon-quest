@@ -1106,13 +1106,23 @@ class GameplayState:
             # fire while held" shape mobile's VirtualButton already had -
             # try_attack()/try_cast() already no-op on cooldown, so this is
             # safe to call every frame regardless of hold duration.
-            if self.input.is_action_held("ATTACK"):
+            # Stage K24: keys/mouse fetched once here and passed to all 4
+            # is_action_held() calls below, instead of each one fetching
+            # its own fresh pygame.key.get_pressed()/get_pressed() copy -
+            # up to 8 of those a frame collapsed to 2. Same class of
+            # per-frame-allocation cost as the font()/Puddle-surface bugs
+            # already found and fixed for the extended-session freeze, just
+            # on the desktop-only hold-to-fire path added after that fix,
+            # which the earlier soak test predates and never exercised.
+            keys = pygame.key.get_pressed()
+            mouse = pygame.mouse.get_pressed(num_buttons=3)
+            if self.input.is_action_held("ATTACK", keys, mouse):
                 self.player.try_attack()
-            if self.input.is_action_held("CAST_1"):
+            if self.input.is_action_held("CAST_1", keys, mouse):
                 self._attempt_cast(SPELL_ORDER[0], silent=True)
-            if self.input.is_action_held("CAST_2"):
+            if self.input.is_action_held("CAST_2", keys, mouse):
                 self._attempt_cast(SPELL_ORDER[1], silent=True)
-            if self.input.is_action_held("CAST_3"):
+            if self.input.is_action_held("CAST_3", keys, mouse):
                 self._attempt_cast(SPELL_ORDER[2], silent=True)
         else:
             atk_btn = self.input.attack_button

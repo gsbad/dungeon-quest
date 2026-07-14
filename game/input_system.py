@@ -688,23 +688,31 @@ class InputManager:
             dy *= 0.707
         return dx, dy
 
-    def is_action_held(self, action_name):
+    def is_action_held(self, action_name, keys=None, mouse=None):
         """Stage K23: continuous "is this action's bound input physically
         down right now" poll - separate from consume_action()'s one-shot
         edge trigger, for the PC hold-to-fire attack/spell loop in
         GameplayState.update() (mirrors mobile's VirtualButton.active,
         which already auto-fires while held). Works for either binding
         shape game.keybinds.BINDINGS can hold: a pygame keycode int, or a
-        "MOUSE1"/"MOUSE2"/"MOUSE3" string."""
+        "MOUSE1"/"MOUSE2"/"MOUSE3" string.
+
+        Stage K24: `keys`/`mouse` let a caller checking several actions in
+        the same frame (GameplayState.update() checks 4) pass in one
+        already-fetched pygame.key.get_pressed()/pygame.mouse.get_pressed()
+        instead of this method fetching its own fresh copy every single
+        call - up to 4x fewer of those per frame. Falls back to fetching
+        fresh if omitted, so any other caller doesn't need to change."""
         from game.keybinds import BINDINGS
         bound = BINDINGS.get(action_name)
         if bound is None:
             return False
         if isinstance(bound, str):
             button_i = int(bound[5:]) - 1
-            pressed = pygame.mouse.get_pressed(num_buttons=3)
+            pressed = mouse if mouse is not None else pygame.mouse.get_pressed(num_buttons=3)
             return 0 <= button_i < len(pressed) and pressed[button_i]
-        return pygame.key.get_pressed()[bound]
+        keys = keys if keys is not None else pygame.key.get_pressed()
+        return keys[bound]
 
     # ------------------------------------------------------------- raw events
     def begin_key_capture(self, callback):
