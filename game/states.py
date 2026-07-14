@@ -1133,6 +1133,14 @@ class GameplayState:
             if dash_btn.active and dash_btn.has_aim:
                 self.player.set_aim(dash_btn.aim_dx, dash_btn.aim_dy)
                 self.player.try_dash()
+            # Stage K24 follow-up: same shape again - _attempt_pickaxe()
+            # (unlike _attempt_dash()) has no failure-toast side effect to
+            # worry about spamming, so it's safe to call directly here
+            # instead of needing a silent-mode split.
+            pickaxe_btn = self.input.pickaxe_button
+            if pickaxe_btn.active and pickaxe_btn.has_aim:
+                self.player.set_aim(pickaxe_btn.aim_dx, pickaxe_btn.aim_dy)
+                self._attempt_pickaxe()
 
         self._update_pickup_spawns(dt)
         self._check_pickup_pickups()

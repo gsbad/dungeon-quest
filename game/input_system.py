@@ -3,7 +3,9 @@ import sys
 import pygame
 from enum import Enum, auto
 from game.theme import font
-from game.assets import create_spell_icon, create_sword_icon, create_potion_icon, create_dash_icon
+from game.assets import (
+    create_spell_icon, create_sword_icon, create_potion_icon, create_dash_icon, create_pickaxe_icon,
+)
 from game.items import ITEMS
 
 TAP_MAX_DURATION = 0.35
@@ -589,6 +591,20 @@ class InputManager:
         self.dash_button = VirtualButton(dash_cx, item_cy, dash_btn_radius, "", Action.DASH,
                                           icon=create_dash_icon(), aimable=True)
 
+        # Stage K24 follow-up: Pickaxe had no mobile control either, same
+        # gap as Dash - stacked directly above it (same cx, same radius) at
+        # the user's request ("ao lado direito do joystick"), rather than
+        # hunting for a second separate gap elsewhere on an already-tight
+        # HUD. Aimable for the same reason Dash is: try_break_tile() targets
+        # whatever tile is in front of the player along aim_dx/aim_dy
+        # (GameplayState._attempt_pickaxe()), so dragging to aim picks which
+        # tile actually gets hit instead of digging in a stale direction.
+        pickaxe_btn_radius = dash_btn_radius
+        pickaxe_gap = 8
+        pickaxe_cy = item_cy - (dash_btn_radius + pickaxe_gap + pickaxe_btn_radius)
+        self.pickaxe_button = VirtualButton(dash_cx, pickaxe_cy, pickaxe_btn_radius, "", Action.PICKAXE,
+                                             icon=create_pickaxe_icon(), aimable=True)
+
     def refresh_item_icons(self, player):
         """Stage K12: item_buttons are built once at InputManager
         construction (before any Player/save exists), defaulting to the
@@ -845,6 +861,9 @@ class InputManager:
                 # Same "no immediate fire, drag to aim" shape as the attack
                 # button above - GameplayState.update() polls active+has_aim.
                 claimed = "dash"
+            elif self.pickaxe_button.contains(x, y):
+                self.pickaxe_button.press(pid)
+                claimed = "pickaxe"
             else:
                 for i, btn in enumerate(self.spell_buttons):
                     if btn.contains(x, y):
@@ -880,6 +899,8 @@ class InputManager:
             self.attack_button.drag(pid, x, y)
         elif claimed == "dash":
             self.dash_button.drag(pid, x, y)
+        elif claimed == "pickaxe":
+            self.pickaxe_button.drag(pid, x, y)
         elif isinstance(claimed, tuple) and claimed[0] == "spell":
             self.spell_buttons[claimed[1]].drag(pid, x, y)
 
@@ -894,6 +915,8 @@ class InputManager:
             self.attack_button.release(pid)
         elif claimed == "dash":
             self.dash_button.release(pid)
+        elif claimed == "pickaxe":
+            self.pickaxe_button.release(pid)
         elif claimed == "pause":
             self.pause_button.release(pid)
         elif isinstance(claimed, tuple) and claimed[0] == "spell":
@@ -913,6 +936,7 @@ class InputManager:
             self._crosshair_timer -= dt
         self.attack_button.update(dt)
         self.dash_button.update(dt)
+        self.pickaxe_button.update(dt)
         self.pause_button.update(dt)
         for btn in self.spell_buttons:
             btn.update(dt)
@@ -938,6 +962,7 @@ class InputManager:
         self.joystick.draw(surface)
         self.attack_button.draw(surface)
         self.dash_button.draw(surface)
+        self.pickaxe_button.draw(surface)
         self.pause_button.draw(surface)
         for btn in self.spell_buttons:
             btn.draw(surface)
