@@ -1399,7 +1399,19 @@ def create_projectile_sprite(ptype="fireball"):
     return s
 
 
+_ITEM_SPRITE_CACHE = {}
+
+
 def create_item_sprite(itype="key"):
+    # Stage K23: was rebuilt from scratch on every call - game/enemy.py's
+    # GoldDrop.draw() calls this every frame for every gold pile on the
+    # ground, the same rebuild-every-draw shape already found and fixed in
+    # game/enemy.py's Puddle and game/theme.py's font() (see MEMORY on the
+    # extended-session freeze). Memoized by itype since none of the 3
+    # variants take any other parameter.
+    cached = _ITEM_SPRITE_CACHE.get(itype)
+    if cached is not None:
+        return cached
     s = pygame.Surface((16, 16), pygame.SRCALPHA)
     if itype == "key":
         # Key head
@@ -1417,6 +1429,7 @@ def create_item_sprite(itype="key"):
         pygame.draw.circle(s, GOLD, (8, 8), 6)
         pygame.draw.circle(s, (170, 130, 0), (8, 8), 6, 1)
         pygame.draw.circle(s, (255, 240, 160), (6, 6), 2)
+    _ITEM_SPRITE_CACHE[itype] = s
     return s
 
 

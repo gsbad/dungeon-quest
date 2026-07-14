@@ -760,18 +760,10 @@ class GameplayState:
                 self.next_state = "restart"
             elif self.input.tapped_rect(self._restart_button.rect):
                 self.next_state = "restart"
-        elif self.input.consume_action(Action.ATTACK):
-            self.player.try_attack()
         elif self.input.consume_action(Action.DASH):
             self._attempt_dash()
         elif self.input.consume_action(Action.PICKAXE):
             self._attempt_pickaxe()
-        elif self.input.consume_action(Action.CAST_1):
-            self._attempt_cast(SPELL_ORDER[0])
-        elif self.input.consume_action(Action.CAST_2):
-            self._attempt_cast(SPELL_ORDER[1])
-        elif self.input.consume_action(Action.CAST_3):
-            self._attempt_cast(SPELL_ORDER[2])
         elif self.input.consume_action(Action.CAST_SELECTED):
             self._attempt_cast(self.player.selected_spell)
         elif self.input.consume_action(Action.USE_1):
@@ -916,7 +908,15 @@ class GameplayState:
         cx = self.player.x + self.player.width / 2 + self.player.aim_dx * TILE
         cy = self.player.y + self.player.height / 2 + self.player.aim_dy * TILE
         col, row = int(cx // TILE), int(cy // TILE)
+        was_found = self.level._key_found
         self.level.try_break_tile(col, row, self.player, self.audio)
+        # Stage K23: fires exactly on the swing that flips _key_found (not
+        # on every dig, and not on a swing that lands after it's already
+        # been found) - try_break_tile()'s own "pickup" sound stays for the
+        # small immediate cue, this adds the bigger pose+fanfare on top.
+        if self.level._key_found and not was_found:
+            self.player.trigger_key_found_pose()
+            self.audio.play("victory")
 
     def _separate_from_player(self, other):
         """Stage K9: standard AABB de-penetration, split 50/50 - pushes
@@ -1095,6 +1095,22 @@ class GameplayState:
             pcx = self.player.x + self.player.width / 2
             pcy = self.player.y + self.player.height / 2
             self.player.set_aim(world_x - pcx, world_y - pcy)
+            # Stage K23: hold-to-fire for PC - attack/spell keys used to
+            # only register on the exact KEYDOWN event (handle_event's old
+            # consume_action(ATTACK/CAST_1/2/3) branches), so holding one
+            # down past the first swing did nothing until released and
+            # pressed again. Polled every frame here instead, same "auto-
+            # fire while held" shape mobile's VirtualButton already had -
+            # try_attack()/try_cast() already no-op on cooldown, so this is
+            # safe to call every frame regardless of hold duration.
+            if self.input.is_action_held("ATTACK"):
+                self.player.try_attack()
+            if self.input.is_action_held("CAST_1"):
+                self._attempt_cast(SPELL_ORDER[0], silent=True)
+            if self.input.is_action_held("CAST_2"):
+                self._attempt_cast(SPELL_ORDER[1], silent=True)
+            if self.input.is_action_held("CAST_3"):
+                self._attempt_cast(SPELL_ORDER[2], silent=True)
         else:
             atk_btn = self.input.attack_button
             if atk_btn.active and atk_btn.has_aim:

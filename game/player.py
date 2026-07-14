@@ -33,6 +33,11 @@ DASH_TRAIL_LEN = 7
 # spec ("cooldown de 1s").
 PICKAXE_COOLDOWN = 1.0
 
+# Stage K23: how long the "found the key" pose holds before normal control
+# returns - long enough to read as a deliberate beat, short enough not to
+# feel like a lockout on a hazardous floor.
+KEY_POSE_DURATION = 1.4
+
 # Stage E2/E3 hotbar - 3 spell slots (keys F/Q/R, already cast this way)
 # plus 3 item slots (keys 4/5/6, new). Slot background tint + a real pixel
 # icon (Stage F1, game/assets.py's create_spell_icon/create_potion_icon) -
@@ -208,6 +213,12 @@ class Player:
         # in Level (GameplayState._attempt_pickaxe() bridges the two), same
         # split try_attack()/get_attack_rect() already established.
         self.pickaxe_cooldown = 0.0
+
+        # Stage K23: the "found the hidden key" pose - turns to face the
+        # camera and holds the key overhead for KEY_POSE_DURATION (see
+        # trigger_key_found_pose()/update()/draw() below), same "temporary
+        # state overrides normal movement" shape as dashing/knockback.
+        self.key_pose_timer = 0.0
 
         self.floating_numbers = []  # Stage K6
 
@@ -536,8 +547,12 @@ class Player:
             # Stage K9: takes priority over everything else, including a
             # dash in progress - getting hit interrupts it (same cleanup
             # Stage K2's normal dash-end path does, so no stale trail).
+            # Stage K23: also cuts the key-found pose short, same reasoning
+            # - a hazard tick landing mid-celebration shouldn't leave the
+            # player stuck posing while taking free hits.
             self.dashing = False
             self.dash_trail = []
+            self.key_pose_timer = 0.0
             self.knockback_timer -= dt
             self.x += self.knockback_vx * dt
             self._resolve_collisions_x(walls)
@@ -546,6 +561,12 @@ class Player:
             ease = max(0.0, self.knockback_timer / KNOCKBACK_DURATION)
             self.knockback_vx *= ease
             self.knockback_vy *= ease
+        elif self.key_pose_timer > 0:
+            # Stage K23: movement locked for the duration, same "one
+            # committed motion" feel as dash/attack - direction is pinned
+            # to "down" (facing the camera) by trigger_key_found_pose()
+            # below and never re-derived from movement_vector here.
+            self.key_pose_timer -= dt
         elif self.dashing:
             # Stage J14: dash overrides WASD movement entirely for its short
             # duration - same "one committed motion" feel as the attack
@@ -621,6 +642,17 @@ class Player:
             return False
         self.pickaxe_cooldown = PICKAXE_COOLDOWN
         return True
+
+    def trigger_key_found_pose(self):
+        """Stage K23: called by GameplayState._attempt_pickaxe() exactly
+        once, the frame Level.try_break_tile()'s key branch actually fires
+        (not on every dig) - see update()/draw() for how the pose itself
+        plays out."""
+        self.key_pose_timer = KEY_POSE_DURATION
+        self.direction = "down"
+        self.dashing = False
+        self.dash_trail = []
+        self.attacking = False
 
     def can_dash(self):
         return (self.stats.dexterity >= DASH_DEX_REQ
@@ -708,6 +740,24 @@ class Player:
         sx = int(self.x - cam_x)
         sy = int(self.y - cam_y)
         surface.blit(sprite, (sx - 8, sy - 12))
+
+        if self.key_pose_timer > 0:
+            self._draw_key_pose(surface, sx, sy)
+
+    def _draw_key_pose(self, surface, sx, sy):
+        """Stage K23: a small key icon rising above the hero's head while
+        key_pose_timer counts down - the "arm raise" reads through the
+        icon's own motion (rises for the first ~35% of the pose, then
+        holds overhead) rather than needing a new sprite pose per
+        profession/costume in create_player_sprite."""
+        from game.assets import create_item_sprite
+        progress = 1.0 - (self.key_pose_timer / KEY_POSE_DURATION)
+        rise = min(1.0, progress / 0.35)
+        y_offset = int(18 - 18 * rise)
+        icon = create_item_sprite("key")
+        icon_x = sx + self.width // 2 - icon.get_width() // 2
+        icon_y = sy - 22 + y_offset
+        surface.blit(icon, (icon_x, icon_y))
 
     def _draw_dash_trail(self, surface, cam_x, cam_y):
         """Stage J14: a short fading "ghost" trail behind the hero during a

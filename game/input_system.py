@@ -633,6 +633,24 @@ class InputManager:
             dy *= 0.707
         return dx, dy
 
+    def is_action_held(self, action_name):
+        """Stage K23: continuous "is this action's bound input physically
+        down right now" poll - separate from consume_action()'s one-shot
+        edge trigger, for the PC hold-to-fire attack/spell loop in
+        GameplayState.update() (mirrors mobile's VirtualButton.active,
+        which already auto-fires while held). Works for either binding
+        shape game.keybinds.BINDINGS can hold: a pygame keycode int, or a
+        "MOUSE1"/"MOUSE2"/"MOUSE3" string."""
+        from game.keybinds import BINDINGS
+        bound = BINDINGS.get(action_name)
+        if bound is None:
+            return False
+        if isinstance(bound, str):
+            button_i = int(bound[5:]) - 1
+            pressed = pygame.mouse.get_pressed(num_buttons=3)
+            return 0 <= button_i < len(pressed) and pressed[button_i]
+        return pygame.key.get_pressed()[bound]
+
     # ------------------------------------------------------------- raw events
     def begin_key_capture(self, callback):
         """Stage K15: the Settings overlay calls this when the player

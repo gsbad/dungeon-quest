@@ -504,6 +504,15 @@ class Level:
         self._key_tile = None
         self._key_found = False
         self.dig_particles = []
+        # Stage K23: every floor (col,row) the player has ever swung the
+        # pickaxe at, regardless of whether it turned out to be the key -
+        # drawn every frame in draw() as a persistent "already checked here"
+        # patch. NOT a reveal: the key tile looks exactly like any other
+        # floor tile (dug or not) before it's actually dug - only presence
+        # in this set (which only grows through a real swing) marks it,
+        # same reasoning that removed the old always-on key-tile marker
+        # below (see draw()'s comment).
+        self._dug_tiles = set()
         # Gradual post-clear respawn (K14) - captured once in _build() from
         # the original 'E' spawns, so a respawned mob matches this level's
         # own roster/difficulty instead of a hardcoded fallback.
@@ -774,6 +783,7 @@ class Level:
         elif ch == '.' and not self._key_found and (col, row) == self._key_tile:
             self._key_found = True
             self.exit_open = True
+            self._dug_tiles.add((col, row))
             for _ in range(10):
                 self.dig_particles.append(Particle(col * TILE + TILE / 2, row * TILE + TILE / 2, ACCENT_GOLD))
             if audio_mgr:
@@ -789,6 +799,15 @@ class Level:
             # swing sound as a wall hit confirms every swing landed on
             # *something*, without granting a drop or revealing anything -
             # the key tile above stays the only tile that matters.
+            #
+            # Stage K23: also joins _dug_tiles - draw() paints a persistent
+            # patch on every tile in there (see its comment), so a player
+            # can see at a glance which floor tiles they've already tried
+            # instead of losing track across a whole level. Deliberately
+            # the exact same marker/logic for a miss as for the real key
+            # tile above - the two must be visually indistinguishable
+            # beforehand, or this would just be a slower way to reveal it.
+            self._dug_tiles.add((col, row))
             for _ in range(3):
                 self.dig_particles.append(Particle(col * TILE + TILE / 2, row * TILE + TILE / 2, (110, 90, 70)))
             if audio_mgr:
@@ -846,10 +865,18 @@ class Level:
                         surface.blit(create_cracked_wall_overlay(), (x, y))
                 else:
                     surface.blit(floor_tile, (x, y))
-                    # A subtle marker on the key's own tile - not glowing/
-                    # obvious from across the room, but a player who digs
-                    # near it should notice something's off underfoot.
-                    if not self._key_found and (col_i, row_i) == self._key_tile:
+                    # Stage K23: used to always show on the key's own tile
+                    # BEFORE it was ever dug - a permanent "something's off
+                    # underfoot" hint that, on reflection, is exactly a
+                    # location reveal (a careful player could just look for
+                    # the one different-looking floor tile instead of
+                    # searching). Now it means the opposite: presence in
+                    # _dug_tiles requires an actual pickaxe swing having
+                    # already landed here (try_break_tile), so the key tile
+                    # looks like every other undug tile until it's the
+                    # player's own dig history marking it - same for a real
+                    # find as for a miss.
+                    if (col_i, row_i) in self._dug_tiles:
                         surface.blit(create_dig_marker(), (x, y))
 
         if self.data["floor"] == "lava":
