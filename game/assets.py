@@ -1608,3 +1608,81 @@ def create_debuff_icon(effect_id):
         pygame.draw.circle(s, c, (7, 7), 4)
     _DEBUFF_ICON_CACHE[effect_id] = s
     return s
+
+
+_STANCE_ICON_CACHE = {}
+
+
+def create_stance_icon(profession):
+    """Stage K11: Postura badge - same solid-black-plate convention as
+    create_debuff_icon() above, but a deliberately bigger canvas (22x22 vs
+    14x14) per the user's explicit ask that this square read as "more
+    important" than an ordinary debuff/buff chip, since a Postura is
+    permanent rather than a ticking timer. One simple thematic glyph per
+    profession, colored with game/professions.py's existing TINTS (already
+    a per-profession accent color, previously unused anywhere)."""
+    if profession in _STANCE_ICON_CACHE:
+        return _STANCE_ICON_CACHE[profession]
+    from game.professions import TINTS
+    s = pygame.Surface((22, 22), pygame.SRCALPHA)
+    pygame.draw.rect(s, (10, 10, 12), (0, 0, 22, 22), border_radius=4)
+    c = TINTS.get(profession, (200, 200, 200))
+    pygame.draw.rect(s, c, (0, 0, 22, 22), 2, border_radius=4)
+
+    if profession == "Guerreiro":  # sword
+        pygame.draw.line(s, c, (11, 3), (11, 15), 3)
+        pygame.draw.line(s, c, (6, 8), (16, 8), 2)
+        pygame.draw.rect(s, c, (9, 15, 4, 4))
+    elif profession == "Assassino":  # twin daggers crossed
+        pygame.draw.line(s, c, (5, 5), (17, 17), 2)
+        pygame.draw.line(s, c, (17, 5), (5, 17), 2)
+    elif profession == "Mago":  # star
+        pygame.draw.line(s, c, (11, 3), (11, 19), 2)
+        pygame.draw.line(s, c, (4, 11), (18, 11), 2)
+        pygame.draw.line(s, c, (6, 6), (16, 16), 1)
+        pygame.draw.line(s, c, (16, 6), (6, 16), 1)
+    elif profession == "Feiticeiro":  # eye
+        pygame.draw.ellipse(s, c, (3, 8, 16, 8), 2)
+        pygame.draw.circle(s, c, (11, 12), 3)
+    elif profession == "Cavaleiro":  # shield
+        pygame.draw.polygon(s, c, [(11, 3), (18, 6), (18, 12), (11, 19), (4, 12), (4, 6)], 2)
+    elif profession == "Duelista":  # dancing twin blades (offset X)
+        pygame.draw.line(s, c, (5, 4), (14, 17), 2)
+        pygame.draw.line(s, c, (17, 5), (8, 18), 2)
+    elif profession == "Cavaleiro Arcano":  # sword + gem
+        pygame.draw.line(s, c, (11, 4), (11, 16), 3)
+        pygame.draw.polygon(s, c, [(11, 3), (14, 6), (11, 9), (8, 6)])
+    elif profession == "Paladino":  # sun cross
+        pygame.draw.circle(s, c, (11, 11), 5, 2)
+        pygame.draw.line(s, c, (11, 2), (11, 5), 2)
+        pygame.draw.line(s, c, (11, 17), (11, 20), 2)
+        pygame.draw.line(s, c, (2, 11), (5, 11), 2)
+        pygame.draw.line(s, c, (17, 11), (20, 11), 2)
+    elif profession == "Campeao":  # crown
+        pygame.draw.polygon(s, c, [(4, 15), (4, 8), (8, 11), (11, 5), (14, 11), (18, 8), (18, 15)], 2)
+    elif profession == "Monge":  # lotus/circle
+        pygame.draw.circle(s, c, (11, 11), 6, 2)
+        pygame.draw.circle(s, c, (11, 11), 2)
+    elif profession == "Xama":  # spirit mask
+        pygame.draw.circle(s, c, (11, 11), 6, 2)
+        pygame.draw.circle(s, c, (8, 10), 1)
+        pygame.draw.circle(s, c, (14, 10), 1)
+        pygame.draw.arc(s, c, (7, 11, 8, 5), 3.4, 6.0, 1)
+    elif profession == "Ranger":  # bow
+        pygame.draw.arc(s, c, (5, 2, 12, 18), -1.4, 1.4, 2)
+        pygame.draw.line(s, c, (7, 4), (7, 18), 1)
+    elif profession == "Arcanista":  # eclipse (two overlapping circles)
+        pygame.draw.circle(s, c, (9, 11), 6, 2)
+        pygame.draw.circle(s, (10, 10, 12), (13, 11), 6)
+        pygame.draw.circle(s, c, (13, 11), 6, 1)
+    elif profession == "Druida":  # leaf
+        pygame.draw.polygon(s, c, [(11, 3), (18, 11), (11, 19), (4, 11)], 2)
+        pygame.draw.line(s, c, (11, 5), (11, 17), 1)
+    elif profession == "Templario":  # cross
+        pygame.draw.line(s, c, (11, 3), (11, 19), 3)
+        pygame.draw.line(s, c, (5, 9), (17, 9), 3)
+    else:
+        pygame.draw.circle(s, c, (11, 11), 5, 2)
+
+    _STANCE_ICON_CACHE[profession] = s
+    return s

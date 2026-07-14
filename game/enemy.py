@@ -424,7 +424,7 @@ class Enemy:
             if proj.rect.colliderect(player.rect):
                 player.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
                 if proj.status_effect and random.random() < proj.status_chance:
-                    player.status.apply(proj.status_effect)
+                    player.try_apply_debuff(proj.status_effect)
                 if self.affix == "vampiric":
                     self.hp = min(self.max_hp, self.hp + proj.damage * 0.2)
                 proj.alive = False
@@ -501,7 +501,7 @@ class Enemy:
                 if melee_status:
                     effect_id, chance = melee_status
                     if random.random() < chance:
-                        player.status.apply(effect_id)
+                        player.try_apply_debuff(effect_id)
                 if self.affix == "vampiric":
                     self.hp = min(self.max_hp, self.hp + dmg * 0.2)
                 self.attack_cooldown = self.attack_cd_max

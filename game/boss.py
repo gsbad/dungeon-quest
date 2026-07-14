@@ -359,7 +359,7 @@ class Boss:
             if proj.rect.colliderect(player.rect):
                 player.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
                 if proj.status_effect and random.random() < proj.status_chance:
-                    player.status.apply(proj.status_effect)
+                    player.try_apply_debuff(proj.status_effect)
                 proj.alive = False
         self.projectiles = [p for p in self.projectiles if p.alive]
 
@@ -646,7 +646,7 @@ class CacodemonBoss:
             if proj.rect.colliderect(player.rect):
                 player.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
                 if proj.status_effect and random.random() < proj.status_chance:
-                    player.status.apply(proj.status_effect)
+                    player.try_apply_debuff(proj.status_effect)
                 proj.alive = False
         self.projectiles = [p for p in self.projectiles if p.alive]
 

@@ -578,7 +578,7 @@ class Level:
                     # effect landing on the floor, not a contact hit.
                     player.take_damage(round(player.max_hp / 6), dtype="magic")
                     if random.random() < 0.20:
-                        player.status.apply("poison")
+                        player.try_apply_debuff("poison")
 
         # Update gold drops - expire the unclaimed ones, collect the rest
         for g in self.gold_drops:

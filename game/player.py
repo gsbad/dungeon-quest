@@ -3,7 +3,7 @@ import math
 from game.assets import (
     create_player_sprite, create_projectile_sprite,
     create_spell_icon, create_potion_icon, create_debuff_icon,
-    create_sword_icon, create_dash_icon,
+    create_sword_icon, create_dash_icon, create_stance_icon,
 )
 from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL, mitigate
 from game.status_effects import StatusEffectCarrier
@@ -13,6 +13,7 @@ from game.combat_fx import (
     FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR, DOT_COLOR,
     knockback_vector, KNOCKBACK_DURATION,
 )
+from game.stances import stance_multiplier, stance_bonus
 
 TILE = 48
 
@@ -113,12 +114,13 @@ class Player:
         self.audio = audio_mgr
         self.stats = StatBlock(strength=10, dexterity=10, intelligence=10,
                                 wisdom=10, vigor=10, weapon_base=4, base_speed=190)
-        # Stage K10: status must exist before the max_hp/max_mana property
-        # reads below - both now go through self._mult(), which reads
-        # self.status. Moved up from its old spot further down (it used to
-        # not matter what order this was in, since nothing this early
-        # touched it).
+        # Stage K10/K11: status and profession must both exist before the
+        # max_hp/max_mana property reads below - they go through
+        # self._mult(), which reads self.status *and* (via
+        # stance_multiplier()) self.profession. Moved up from their old
+        # spots further down (order never mattered before this).
         self.status = StatusEffectCarrier()
+        self.profession = determine_profession(self.stats)
         self.hp = self.max_hp
         self.mana = self.max_mana
         self.width = 32
@@ -130,7 +132,6 @@ class Player:
         self.unspent_points = 0
         self.gold = 0
         self.inventory = {}
-        self.profession = determine_profession(self.stats)
         self.selected_spell = SPELL_ORDER[0]
         self.spell_cooldowns = {}
         # Pity counter for game/affixes.py's Paragon roll - not persisted
@@ -223,26 +224,25 @@ class Player:
         return self.name[0].upper() + self.name[1:]
 
     def stance_multiplier(self, field):
-        """Stage K10 stub, overridden for real once Stage K11's Postura
-        registry exists - a Postura is permanent (tied to self.profession,
-        never expires) so it's deliberately NOT part of self.status
-        (StatusEffectCarrier, timed-only). Every Player stat property below
-        already calls this alongside self.status, so K11 only has to teach
-        this one method to look profession up in STANCES - nothing else
-        needs to change."""
-        return 1.0
+        """Stage K11: a Postura is permanent (tied to self.profession, never
+        expires) so it's deliberately NOT part of self.status
+        (StatusEffectCarrier, timed-only) - this reads game/stances.py's
+        STANCES registry instead, keyed by whatever profession is currently
+        derived (same "derived, not stored" shape self.profession itself
+        already uses - a respec that changes profession changes the active
+        Postura for free, no special-case code needed)."""
+        return stance_multiplier(self.profession, field)
 
     def stance_bonus(self, field):
-        """Additive counterpart to stance_multiplier() above - same stub,
-        same reason."""
-        return 0.0
+        """Additive counterpart to stance_multiplier() above."""
+        return stance_bonus(self.profession, field)
 
     def _mult(self, field):
         """Combined timed-buff x permanent-Postura multiplier for one
         StatusEffectDef field - the one place every stat property below
-        reads through, so Stage K11/K12 both "just work" by populating
-        self.status.active / STANCES without any of these properties
-        changing again."""
+        reads through, so a new debuff (game/status_effects.py), potion
+        (Stage K12), or Postura (game/stances.py) all "just work" without
+        any of these properties changing again."""
         return self.status.multiplier(field) * self.stance_multiplier(field)
 
     def _bonus(self, field):
@@ -250,7 +250,16 @@ class Player:
 
     @property
     def speed(self):
-        return self.stats.speed * self.status.speed_multiplier * self.weather_speed_mult
+        return (self.stats.speed * self.status.speed_multiplier
+                * self.stance_multiplier("speed_mult") * self.weather_speed_mult)
+
+    @property
+    def dodge_chance(self):
+        """Stage K11: a wholly new mechanic (no potion/debuff grants this
+        today, only Duelista's Postura) - rolled once per incoming hit in
+        take_damage() below, same "block outright" shape enemy.py's
+        'warded' affix already uses for a monster-side dodge-alike."""
+        return self._bonus("dodge_chance_add")
 
     @property
     def max_hp(self):
@@ -389,11 +398,33 @@ class Player:
         center_y = cy + self.aim_dy * offset
         return pygame.Rect(center_x - size / 2, center_y - size / 2, size, size)
 
+    def try_apply_debuff(self, effect_id):
+        """Stage K11: debuff_resist_add (Paladino/Templario Posturas) rolls
+        a chance to shrug off an incoming debuff entirely before it's ever
+        applied - callers that represent a real enemy/hazard attack
+        (game/enemy.py, game/boss.py, game/level.py, game/states.py) should
+        use this instead of calling self.status.apply() directly. Debug
+        Mode's "apply everything" trigger deliberately keeps calling
+        status.apply() directly - a debug tool forcing state to inspect it
+        shouldn't itself be resistable."""
+        import random
+        resist = self._bonus("debuff_resist_add")
+        if resist > 0 and random.random() < resist:
+            return False
+        self.status.apply(effect_id)
+        return True
+
     def take_damage(self, amount, dtype="physical", knockback_from=None):
         if self.invincible or self.debug_invincible:
             return
+        # Stage K11: dodge (Duelista's Postura only, today) - a clean miss,
+        # no i-frames spent, no knockback, nothing. Same "roll once, block
+        # outright" shape as enemy.py's 'warded' affix.
+        import random
+        if self.dodge_chance > 0 and random.random() < self.dodge_chance:
+            return
         defense = self.physical_defense if dtype == "physical" else self.magic_defense
-        amount = mitigate(amount, defense) * self.status.damage_taken_multiplier
+        amount = mitigate(amount, defense) * self.status.damage_taken_multiplier * self.stance_multiplier("damage_taken_mult")
         self.hp -= amount
         self.invincible = True
         self.invincible_timer = self.invincible_duration
@@ -675,6 +706,7 @@ class Player:
 
         self._draw_status_chips(surface, dock_y + 46, mouse_pos)
         self._draw_hotbar(surface, touch_active, mouse_pos)
+        self._draw_stance_badge(surface, mouse_pos)
 
     def _draw_title_line(self, surface, save_state):
         # Stage G7: "Reputacao Profissao Nome", same style as the hero name
@@ -816,3 +848,35 @@ class Player:
             chip_rect = pygame.Rect(x, y, chip_w, chip_h)
             draw_tooltip(surface, mouse_pos, chip_rect, [name, desc], SW, SH)
             x += chip_w + gap
+
+    def _draw_stance_badge(self, surface, mouse_pos=None):
+        # Stage K11: a Postura is permanent (not a ticking timer like
+        # self.status.active's debuffs/future potion buffs), so it gets its
+        # own always-visible badge instead of living in that row - and per
+        # the user's explicit ask, a bigger square than those (46x46 here
+        # vs. the debuff row's 40x34 chips) to read as "this one doesn't
+        # expire." Aventureiro (no Postura yet, <20 attribute points spent)
+        # draws nothing - nothing to show.
+        from game.stances import STANCES, STANCE_DESCRIPTIONS
+        from game.theme import ACCENT_GOLD, SW, SH
+        from game.ui import draw_tooltip
+        if self.profession not in STANCES:
+            return
+        size = 46
+        # Left-aligned under the HP/mana/XP dock (matches its x=12 margin)
+        # rather than up near the top-right corner - that corner is shared
+        # with the browser-only Google-login pill (an HTML overlay, not
+        # drawn by pygame at all, so nothing in this file could avoid it by
+        # reading its rect) and gets crowded fast at that canvas scale.
+        x = 12
+        y = 90
+        badge = pygame.Surface((size, size), pygame.SRCALPHA)
+        badge.fill((15, 15, 20, 210))
+        pygame.draw.rect(badge, ACCENT_GOLD, (0, 0, size, size), 2, border_radius=6)
+        surface.blit(badge, (x, y))
+        icon = create_stance_icon(self.profession)
+        surface.blit(icon, (x + size // 2 - icon.get_width() // 2, y + size // 2 - icon.get_height() // 2))
+        badge_rect = pygame.Rect(x, y, size, size)
+        draw_tooltip(surface, mouse_pos, badge_rect,
+                     [f"Postura ({self.profession})", STANCE_DESCRIPTIONS.get(self.profession, "")],
+                     SW, SH)

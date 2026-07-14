@@ -1009,19 +1009,19 @@ class GameplayState:
             self._cursed_ground_timer -= dt
             if self._cursed_ground_timer <= 0:
                 self._cursed_ground_timer = 8.0
-                self.player.status.apply("poison")
+                self.player.try_apply_debuff("poison")
 
         if self._weather_debuff_effect is not None:
             self._weather_debuff_timer -= dt
             if self._weather_debuff_timer <= 0:
                 weather_debuff = self.weather.defn["debuff"]
                 self._weather_debuff_timer = weather_debuff[1]
-                self.player.status.apply(self._weather_debuff_effect)
+                self.player.try_apply_debuff(self._weather_debuff_effect)
 
         # Storm lightning (Choque) - synced to the visible flash so the hit
         # reads as caused by the strike, not an invisible separate timer.
         if self.weather.consume_lightning() and random.random() < 0.40:
-            self.player.status.apply("shock")
+            self.player.try_apply_debuff("shock")
 
         hp_before = self.player.hp
         self.player.update(dt, self.level.walls, self.input.movement_vector())
