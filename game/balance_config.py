@@ -23,10 +23,20 @@ import game.items as items
 from game.spells import SPELLS
 from game.status_effects import STATUS_EFFECTS, ORIGINAL_DEBUFF_IDS
 from game.stances import STANCES
+import game.player as player
 
 _STATS_KEYS = {
     "mitigation_k", "xp_curve_base", "xp_curve_exp",
     "ml_growth_rate", "anti_farm_level_gap", "anti_farm_xp_mult",
+}
+
+# Stage K23: Dash (game/player.py's DASH_* module constants) - not a dict
+# entry like SPELLS/ITEMS, so this maps the admin panel's dotted field name
+# straight to the module attribute name, same setattr-on-the-module-object
+# approach _STATS_KEYS above already uses for game.stats.
+_DASH_KEYS = {
+    "dex_req": "DASH_DEX_REQ", "duration": "DASH_DURATION",
+    "speed": "DASH_SPEED", "cooldown": "DASH_COOLDOWN",
 }
 
 
@@ -58,6 +68,11 @@ def _apply_one(key, raw_value):
     if len(parts) == 3 and parts[0] == "spell" and parts[1] in SPELLS and parts[2] in SPELLS[parts[1]]:
         target = SPELLS[parts[1]]
         target[parts[2]] = type(target[parts[2]])(raw_value)
+        return
+
+    if len(parts) == 3 and parts[0] == "player" and parts[1] == "dash" and parts[2] in _DASH_KEYS:
+        attr = _DASH_KEYS[parts[2]]
+        setattr(player, attr, type(getattr(player, attr))(raw_value))
         return
 
     if len(parts) == 2 and parts[0] == "stats" and parts[1] in _STATS_KEYS:

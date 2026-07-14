@@ -55,6 +55,14 @@ BALANCE_DEFAULTS = {
     "spell.fireball.mana_cost": 8, "spell.fireball.cooldown": 2.0, "spell.fireball.spell_base": 12,
     "spell.frost_nova.mana_cost": 12, "spell.frost_nova.cooldown": 3.0, "spell.frost_nova.spell_base": 14,
     "spell.healing_light.mana_cost": 15, "spell.healing_light.cooldown": 7.0, "spell.healing_light.heal_frac": 0.25,
+    # Stage K23: Dash (game/player.py's DASH_* constants) - not a mana-cost
+    # SPELLS entry (no mana cost, gated on Destreza instead), but tunable
+    # from the admin panel's Magias tab alongside the 3 above. "player" (not
+    # "spell") prefix since it doesn't live in game/spells.py's SPELLS dict,
+    # but the same 3-part player.dash.<field> shape as spell.<id>.<field> so
+    # the admin page's groupEntities() renders it as its own "dash"
+    # collapsible block instead of one unlabeled flat list.
+    "player.dash.dex_req": 18, "player.dash.duration": 0.18, "player.dash.speed": 780, "player.dash.cooldown": 3.5,
     # Stage K16: monster combat stats + xp/gold-per-kill, one line per etype
     # (same dotted-key shape as item/difficulty/spell above).
     "monster.goblin.strength": 3, "monster.goblin.dexterity": 0, "monster.goblin.vigor": 0, "monster.goblin.luck": 0, "monster.goblin.weapon_base": 5.5, "monster.goblin.base_speed": 110, "monster.goblin.base_xp": 8, "monster.goblin.gold_drop": 3,
@@ -131,6 +139,70 @@ BALANCE_DEFAULTS = {
     "stance.Druida.hp_regen_flat_pct": 0.02, "stance.Druida.mana_regen_flat_pct": 0.02, "stance.Druida.speed_mult": 1.1, "stance.Druida.max_hp_mult": 1.1,
     "stance.Templario.damage_taken_mult": 0.85, "stance.Templario.debuff_resist_add": 0.2, "stance.Templario.hp_regen_flat_pct": 0.03,
 }
+
+
+# Stage K23: pre-rendered PNG snapshots of every monster/item's current
+# PROCEDURAL sprite (game/assets.py's create_enemy_sprite()/
+# create_potion_icon(), generated with no override active), so the admin
+# panel's pixel editor (openPixelEditor() below) has something real to
+# start from instead of a blank canvas for every entity that's never been
+# manually overridden yet - which is every entity, on a fresh DB. This
+# backend can't import pygame/game/ to render these live (runs isolated
+# from game/ - see BALANCE_DEFAULTS above), so they're a static snapshot
+# generated once with a local pygame and pasted in; a monster's 48x48
+# sprite is downscaled to the editor's native 16x16 grid (lossy, but a
+# starting point to paint over, not meant to be pixel-identical - items
+# are already native 16x16, no downscale needed). Stale if create_*_sprite
+# art changes later; regenerate by re-running the same snippet against a
+# current checkout if that ever matters enough to bother.
+SPRITE_DEFAULTS = {
+    "monster.acolito": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAWElEQVQ4jWNgGGjAiEsiJ8LqLzJ/yopjzNjUMVHqApwGRKWkYGWjAxZ8puPTSNCAZXPmENTMwECFMMAaC+gxAAPYYoL6LsBlOy5XUNcFhGzH5gqKXTDwAADGgBVde0aGkQAAAABJRU5ErkJggg==",
+    "monster.aranha": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA9klEQVQ4jWNgGAUUA2YGBgYGZTGtFb/+/Hzy++/PJ8RoYmVmk5YWVKj/++/PR7igOJ9MgayQcg8rM5s0TMxU0f6vqaL9X2TN6OoY0U2W4Jct/PXn55NnEly9Fr8lGRgYGBhOsD5n4Hv4wlqCX6bgxccnE77+/HQCpgfFAGSbsYmfvn+QGV2MRVlMayW64LVn56y0pIyOoWvGphYDyAop93Cz85rDXILsGmUxrRXIYYQCWJnZpGEKBLlFQwS5RUPQDWZlZpOWFVLuQZdjEOQWDZEVUu6BsTEUoBmCrB5uACHN6IawMrNJw7wKB9zsfBb4NJOqjigAACzXRqwqaGuyAAAAAElFTkSuQmCC",
+    "monster.chimera": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAv0lEQVQ4jWNgoAdIjZEsQOYb6fKYe7sIBTMwMDAwEWOAsR6vhaQYmzSM7+smEgpjE2XA5l1vVs/sUV8F4/sgGcBIjAFPLlj9ReYf2f6ZobD/ptzzV7+eskiKsUk/f/XrKT4DZAyOMXclqaEYAtPDZKcrWMjPxSKNXSt2kNJzAs5mZGBgYPA1E+05dOV9f3WE0iNiDSmbd4sZbgDMEFsdwUJiNCEDeCxsPvW6hFjbsRpANQALbVw01V1AfS/QHQAAdCc6pgupm90AAAAASUVORK5CYII=",
+    "monster.dark_horse": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAaElEQVQ4jWNgGAVkgSlWx/7C2IzkaGy+Ec3AwMDA8PLdfWa4pLiQ4l/s2hhQ1IgLKf599+7dX5h6RpjEy3f3mYkxBBm8fHefGe4FYjWjOJuBgYEJlwTZAOYSZBdhE8NwAblg4A0YeAAAH4wmVZBYipgAAAAASUVORK5CYII=",
+    "monster.dark_knight": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAeklEQVQ4jWNgoBAwoguoqVn9xafh1q1jzDglCWnGpoYFm6J5DAxYDUpiYMCwHasB2BTiAhgGEOMNZAAPRBeX9L8MDAwMjx5dxqtBTk6XgYGBgWHPnpnMWF2AN5QhBuB2ITmxwERIAyFAcULCGo3YFOIymGIvUGzAwAMAI3og9Yw/C4gAAAAASUVORK5CYII=",
+    "monster.dark_skeleton": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAaklEQVQ4jWNgGGjAiE3QxcXvLzbxPXs2MRM0EaZ5hdVfuCEwNjaDmXAZFHGMmRkbmygD3r1799fFxe8vOo1NLW3CAJsBuMRxhgE+TciABZ8kMU6mOAzwemHPnk3MRAUcIRfgCwe8LhgaAAC5+T2l229ETwAAAABJRU5ErkJggg==",
+    "monster.death_knight": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAeklEQVQ4jWNgoBAwoguIi8v8xafh5csnzDglCWnGpoYFm6InT25hNUhGRg3DdqwGYFOIC2AYQIw3kAE8ELW0jP4yMDAwvH37Cq8GYWExBgYGBoZr184xY3UB3lCGGIDbheTEAhMhDYQAxQkJazRiU4jLYIq9QLEBAw8Abugh1CPsVxwAAAAASUVORK5CYII=",
+    "monster.elemental_pedra": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAfUlEQVQ4jWNgGGjAiEsiKSL4LzJ/3oq1zNjUMVHqAooNQPECurOxAXSvMGLT+OjpMwY5aSkGfGIwg7B6AaYww+wDQ4bZBxQxdEBUGDx6+gynHAs+jTNOCUBtF8CpBmcgYgsHBgbMQMTpBVx+RgfUTUjzVqxlRnciriQ8eAAA6hgndjiBxe8AAAAASUVORK5CYII=",
+    "monster.feiticeira": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAWElEQVQ4jWNgGGjAiEvCVDvpLzL/9NV5zNjUMVHqApwGxC+djZWNDljwmY5PI0EDFkanEtTMwECFMMAaC+gxAAPYYoL6LsBlOy5XUNcFhGzH5gqKXTDwAACkShZXXNmt+gAAAABJRU5ErkJggg==",
+    "monster.fire_hound": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAaElEQVQ4jWNgGAVkgb8r1P7C2IzkaJw+6Q0DAwMDQ86xd8xwySlWQn+xa2NAUTPFSujvu3fv/sLUM8Ikco69YybGEGSQc+wdM9wLxGpGcTYDAwMTLgmyAcwlyC7CJobhAnLBwBsw8AAA0tUqphKCahEAAAAASUVORK5CYII=",
+    "monster.goblin": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAhUlEQVQ4jcWRwQ2AIAxFn+LBxI04OkAX8uxCHYIFXIMBuJB4IiERi8aD/wT9v7/wC39jKAdRySrqRCVbDUWjog5gqslC5EBe1pmUkgOo7+aA3vSWZuoJehhaxTuT8m/T4EmI5pMsgxY3mm4P8DmDyxYA4hEBCFtwAH73rzZzabAMPmfwP07LOkBuDBC6ugAAAABJRU5ErkJggg==",
+    "monster.imp": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABRklEQVQ4jbWSv07CUBTGv/uH9qYBIwohgANTBxOdSGjYnNxVArO8gA9CggOrK8HwHERmN9gkUhftQA0JbW/rVCzagon62845373n3O8e4D9IE1I7oPQyKY5C45I5xho5xhpJ8U6qqvpUF0ImxVFIXPKQ0qt2qXSfU1VojGG2XOLONJu27z84wDy2q55KDdKEGGFsWZbs6brs6bq0LGvdXQHKFc47ClAGIh7Yvj8+VdXRiaKM0oQYfWN9F/qGsT5YFWIGAOEkLBS9B8G4wFhbo/Q4y9i5nsnspeinx5PF4qjAeRsAJo7TlIC9MQEAzD2v6wTB8+NqVdcYi5Ywdd3Wq5RD0/O6UR94VPQi5e2blMMko6au2wrfHvJtDxJd/mF9g/AXtmliN/FPuS4WB/ucl3crt3CRz3fOstmbX11SEcKoCFH7mv8AsM1qCmBhFPkAAAAASUVORK5CYII=",
+    "monster.lyzardman": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAiElEQVQ4jWNgGPKAEZeEWo7LX2T+rSl7mLGpY8Jn+pYKLhQD0Q1lYGBgYMFngE/HN4IuwOoFbDbhMgSnF3gURfE5jrABX+6/pswAYl2D1wCYRnyuwTBA1EatB8Y+V7ycGVfoYwAWbnZpSQ/dFSzc7NLosYArVhBOVRELQbaZZMCjIhZCtmZKAQCEHSO4bI63kwAAAABJRU5ErkJggg==",
+    "monster.ogro": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAY0lEQVQ4jWNgGGjAiEsix0/tLzJ/yqZbzNjUMVHqArwGVDQ1ETSABV0A3eno4uheYYJJYtPYUVeH1VZk9bQNA7oYgJEOcAUiDOBKDyggzE7ub5id3F9cfGRAsRdwugAff3ABAMInIoDQyFmzAAAAAElFTkSuQmCC",
+    "monster.serpente": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAzklEQVQ4jWNgGAUkAQV3hR4Fd4UeZDEWQpqEtYRDFD0Ue9n42GQYGBgYdEQYGA7wscncWn0rgoGBgYGRWI0woCPCwHDlDQPDsYZjzFhdgEsjDFx5w8Bwc9XNcBgfxQVsfGzSJkUmj3C56tenX09urLoR/uXJlxMwMbgL2PjYpPVS9I7h0vjm6pvVz44/6//16ddTZDm4C0yKTB6iOxufRhQXsPGxSSNrJkYjigHoTr8055IVIY0wwIQu8OvTryfEaoYDaOg/hIaDNEmaKQUAQrtiALtiIH0AAAAASUVORK5CYII=",
+    "monster.skeleton": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAcElEQVQ4jWNgGGjAiE3wyZMnf7GJy8jIMBM0Eab5GAMD3BAYG5vBTLgMsmJgYMbGRgcs2ATfvXv399u3bwxcXFwMyDQ2QJswwGYALnGcYYBPEzLAGgYwQIyTKQ4DvF6QkZFhJirgCLkAXzjgdcHQAACd+EJcRqvXVQAAAABJRU5ErkJggg==",
+    "monster.treant": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA8UlEQVQ4jWNgoBAw45KQlOUrMI1WXaloKlb48+UPhi+ffp7Apo4Ru2beAvtu815ksYOlJ4ufP/48AV0tEzYDNHwUCokRQzFAV0FoBT8XmwU2RchATpSngJ+L1RzGZ0SX5GBjlvnNwcRg3mqMYuPJ6rP9rD/+Mbx8/33Nx2+/TmA1gIGBgYGdlUlaXoy3UEiCJ5TTTJCBgYGB4cX+F8f/fv795OGrz/0/f/97SsiVDAwMDAz8XGwWLgYyf10MZP7KifIU4FKHNRYYGBgYXAxk/iLz91x4gjXKscYCKYBiAzC8gOx0mLOxiWEFsEAjV36IAgC+u0tBq2NRWwAAAABJRU5ErkJggg==",
+    "monster.troll": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAY0lEQVQ4jWNgGGjAiEsittDzLzJ/cf92ZmzqmCh1AV4DiuNrCRrAgi6A7nR0cXSvMMEksWnsXdiM1VZk9bQNA7oYgJEOcAUiDOBKDyjAK8rqr1eU1V9cfGRAsRdwugAff3ABAGCmJJv62RxXAAAAAElFTkSuQmCC",
+    "monster.verme": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAw0lEQVQ4jWNgGAUkAV8btR5fG7UeZDEWQpr0VMRCfG3Ue/l52GUYGBgY3n/8ysDPoyuzZMflCLwGoGtElRMPZWDAYQA+jQwMDAyC/NwMS3ZcCsfqBX5udukYD72VuFz18cvPJ4t3XAp/9OLjCQwD+LnZpXNCzY7h0njpzsvVh84/7P/49edTZDm4ATmhZsfQnY1PI4oB/Nzs0siaidGIYgC606esPmVFSCMMMKELfPzy8wmxmhkYGBgYGRhQA5AU26kCAHttZCvI4RuKAAAAAElFTkSuQmCC",
+    "monster.zumbi": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAaklEQVQ4jWNgGGjAiE0wpyHiLzbxKQ0rmAmaCNOspiYDNwTGxmYwEy6Dbt16woyNTZQB7969+5vTEPEXncamljZhgM0AXOI4wwCfJmTAgk+SGCdTHAZ4vTClYQUzUQFHyAX4wgGvC4YGAACx2UHxBu+tOQAAAABJRU5ErkJggg==",
+    "item.antidote": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZxktCPiPTfxcwgYM9RgCuDTjMoQFm6IoNzc4e9muXfjMGwSBOAwMwBoLhEIeGVCckAYeAAAEjBU1w8TAmQAAAABJRU5ErkJggg==",
+    "item.elixir_arcane": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZwXI7fuPTXzDIycM9RgCuDTjMoQFmyIbGyM4+8iRc/jMGwSBOAwMwBoLhEIeGVCckAYeAAA8rhVxjMztcwAAAABJRU5ErkJggg==",
+    "item.elixir_champion": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ11fr/Efm7hm4A0M9RgCuDTjMoQFmyINowA4+8a5DfjMGwSBOAwMwBoLhEIeGVCckAYeAABlgBVxTKhMOQAAAABJRU5ErkJggg==",
+    "item.elixir_crimson": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZy3gkvuPTTzh2yMM9RgCuDTjMoQFmyIbIyM4+8i5c/jMGwSBOAwMwBoLhEIeGVCckAYeAAAmQhV7Pw2gmgAAAABJRU5ErkJggg==",
+    "item.elixir_guardian": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAU0lEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ9lUrPqPTfxIRxiGegwBXJpxGcKC1QU25ggNR07iM28QBOIwMABrLBAKeWRAcUIaeAAAR+kVbGAWS1EAAAAASUVORK5CYII=",
+    "item.elixir_hunter": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVElEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ7k1Gf3HJr6r7hyGegwBXJpxGcKCTZGNjRGcfeTIOXzmDYJAHAYGYI0FQiGPDChOSAMPAC0OFXHX0rr0AAAAAElFTkSuQmCC",
+    "item.health_potion": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ53Q0PiPTdzixg0M9RgCuDTjMoQFmyJzNzc4++SuXfjMGwSBOAwMwBoLhEIeGVCckAYeAAAgdRVYiNNpiQAAAABJRU5ErkJggg==",
+    "item.mana_potion": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ2lEXfqPTfzGMj0M9RgCuDTjMoQFmyI3N104e9euy/jMGwSBOAwMwBoLhEIeGVCckAYeAAA74RVi4oYyOAAAAABJRU5ErkJggg==",
+    "item.potion_black": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ0lKyvzHJv78+RMM9RgCuDTjMoQFmyJdXSM4+/Llc/jMGwSBOAwMwBoLhEIeGVCckAYeAAAR2RWPs7fLtwAAAABJRU5ErkJggg==",
+    "item.potion_brown": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ+W5Kf/HJj5p110M9RgCuDTjMoQFmyIbI2U4+8i5u/jMGwSBOAwMwBoLhEIeGVCckAYeAAA4IRWK94+r3wAAAABJRU5ErkJggg==",
+    "item.potion_cyan": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ8lt2fcfm/gjHycM9RgCuDTjMoQFm6IAI104e8O5y/jMGwSBOAwMwBoLhEIeGVCckAYeAABXaxVsld8dcwAAAABJRU5ErkJggg==",
+    "item.potion_darkblue": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVElEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ0nqNv3HJv78ch2GegwBXJpxGcKCTZGuuRucffnkLnzmDYJAHAYGYI0FQiGPDChOSAMPAB2RFXG4Dh8lAAAAAElFTkSuQmCC",
+    "item.potion_darkred": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ+Xxi/zHJj7p4xsM9RgCuDTjMoQFmyIbZWU4+8jdu/jMGwSBOAwMwBoLhEIeGVCckAYeAAAvfxWZ1D5wGQAAAABJRU5ErkJggg==",
+    "item.potion_gold": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ11aKvcfm7he9CMM9RgCuDTjMoQFmyJdczc4+/LJXfjMGwSBOAwMwBoLhEIeGVCckAYeAABdoRVxXm3ibwAAAABJRU5ErkJggg==",
+    "item.potion_gray": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVElEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ1VUNPzHJt7R0YChHkMAl2ZchrBgU2RjYwNnHzlyBJ95gyAQh4EBWGOBUMgjA4oT0sADAEkkFWdbSahfAAAAAElFTkSuQmCC",
+    "item.potion_green": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ2lMs/mPTfxG1hEM9RgCuDTjMoQFmyI3Nzc4e9euXfjMGwSBOAwMwBoLhEIeGVCckAYeAAAJyBVJQ/PloQAAAABJRU5ErkJggg==",
+    "item.potion_orange": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVElEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ92pkPuPTVyl4xGGegwBXJpxGcKCTZGyuQ2cfffkEXzmDYJAHAYGYI0FQiGPDChOSAMPAGRZFYVn821mAAAAAElFTkSuQmCC",
+    "item.potion_pink": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZz3MW/Ufm7j8pDAM9RgCuDTjMoQFmyI5Nw04+9GuG/jMGwSBOAwMwBoLhEIeGVCckAYeAACXThWPqJtY6gAAAABJRU5ErkJggg==",
+    "item.potion_purple": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVElEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ1VobPmPTbzjhg+GegwBXJpxGcKCTZGNmxGcfWTXOXzmDYJAHAYGYI0FQiGPDChOSAMPAEBaFWdUFVFRAAAAAElFTkSuQmCC",
+    "item.potion_ruby": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ+0TsfmPTdzpzREM9RgCuDTjMoQFmyIjGxs4+9yRI/jMGwSBOAwMwBoLhEIeGVCckAYeAAAzYhVxL/SCEQAAAABJRU5ErkJggg==",
+    "item.potion_silver": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ61av/M/NvGwQHcM9RgCuDTjMoQFmyJzUyM4++Tpc/jMGwSBOAwMwBoLhEIeGVCckAYeAACPKxV9ZwPWwQAAAABJRU5ErkJggg==",
+    "item.potion_turquoise": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ8ktmPYfm/ijhCwM9RgCuDTjMoQFmyI3G3M4e9eRk/jMGwSBOAwMwBoLhEIeGVCckAYeAAA76xVinx5qVgAAAABJRU5ErkJggg==",
+    "item.potion_violet": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ02zOfEfm3jWEQsM9RgCuDTjMoQFmyIjNw04+9yuG/jMGwSBOAwMwBoLhEIeGVCckAYeAABn4hV7PjWnvwAAAABJRU5ErkJggg==",
+    "item.potion_white": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ126dP0/NnE9PU0M9RgCuDTjMoQFmyINDQ04+8aNG/jMGwSBOAwMwBoLhEIeGVCckAYeAADRjBWjH4T/agAAAABJRU5ErkJggg==",
+    "item.potion_yellow": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAVUlEQVQ4jWNgoBAw4pLoaar4j8wvqevAqpaJUhdQbABWZ905Ifcfm7iKxSMM9RgCuDTjMoQFmyJljQA4++6NDfjMGwSBOAwMwBoLhEIeGVCckAYeAAB5AxWAGXeAaQAAAABJRU5ErkJggg==",
+}
+# total entries: 45
 
 
 def _load_jwt_secret() -> str:
@@ -485,6 +557,17 @@ def get_appearance():
         return {row.key: row.data_url for row in rows}
 
 
+@app.get("/appearance/defaults")
+def get_appearance_defaults():
+    """Stage K23: public, no auth - only ever consumed by the admin page's
+    pixel editor (loadAppearance() below), as a fallback so an entity that
+    was never overridden shows its actual current in-game look instead of
+    a blank canvas. Not fetched by the game itself (game/net.py has no
+    caller for this) - the game already knows its own procedural sprites
+    without asking the backend."""
+    return SPRITE_DEFAULTS
+
+
 class AppearanceUpdateBody(BaseModel):
     data_url: str
 
@@ -628,7 +711,7 @@ const TABS = [
 function categoryOf(key) {
   const seg = key.split(".")[0];
   const map = {stats: "geral", difficulty: "dificuldade", item: "itens", spell: "magias",
-               monster: "monstros", buff: "buffs", debuff: "debuffs", stance: "posturas"};
+               player: "magias", monster: "monstros", buff: "buffs", debuff: "debuffs", stance: "posturas"};
   return map[seg] || "geral";
 }
 
@@ -657,6 +740,14 @@ function switchTab(tabId) {
 // the game itself calls, no auth needed for reading) so openPixelEditor()
 // can pre-populate its grid with whatever's already there.
 let appearanceCache = {};
+// Stage K23: pre-rendered snapshots of each entity's actual current
+// procedural sprite (GET /appearance/defaults) - openPixelEditor() falls
+// back to this when appearanceCache has nothing for the key, i.e. every
+// entity that's never been manually overridden. Without this the editor
+// opened on a totally blank canvas for anything not already overridden,
+// which in practice was every entity on first use - it looked broken/empty
+// even though nothing was actually wrong.
+let defaultsCache = {};
 
 async function loadAppearance() {
   try {
@@ -664,6 +755,12 @@ async function loadAppearance() {
     appearanceCache = await res.json();
   } catch (e) {
     appearanceCache = {};
+  }
+  try {
+    const res = await fetch(API + "/appearance/defaults");
+    defaultsCache = await res.json();
+  } catch (e) {
+    defaultsCache = {};
   }
 }
 
@@ -793,7 +890,11 @@ function openPixelEditor(key) {
   document.getElementById("pe-title").textContent = "Editando: " + key;
   document.getElementById("pe-status").textContent = "";
   dataCtx.clearRect(0, 0, PIXEL_GRID, PIXEL_GRID);
-  const existing = appearanceCache[key];
+  // Stage K23: an actual admin override wins if one exists; otherwise fall
+  // back to the entity's real current procedural sprite (defaultsCache)
+  // instead of leaving the canvas blank - only if NEITHER exists (an
+  // unrecognized key) does this stay empty.
+  const existing = appearanceCache[key] || defaultsCache[key];
   if (existing) {
     const img = new Image();
     img.onload = () => { dataCtx.drawImage(img, 0, 0, PIXEL_GRID, PIXEL_GRID); redrawView(); };
