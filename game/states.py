@@ -1123,6 +1123,16 @@ class GameplayState:
                 if btn.active and btn.has_aim:
                     self.player.set_aim(btn.aim_dx, btn.aim_dy)
                     self._attempt_cast(SPELL_ORDER[i], silent=True)
+            # Stage K24: same "touch+drag to aim, auto-fires while held"
+            # shape as atk_btn above - try_dash() directly (not
+            # _attempt_dash(), which also flashes a "bloqueada"/"em
+            # recarga" toast on failure - fine for a single keyboard press,
+            # but held every frame here it would just re-flash that same
+            # toast continuously while on cooldown instead of once).
+            dash_btn = self.input.dash_button
+            if dash_btn.active and dash_btn.has_aim:
+                self.player.set_aim(dash_btn.aim_dx, dash_btn.aim_dy)
+                self.player.try_dash()
 
         self._update_pickup_spawns(dt)
         self._check_pickup_pickups()
@@ -1403,7 +1413,14 @@ class GameplayState:
         # set. InputManager.draw() already re-checks touch_active itself
         # before drawing the virtual joystick/buttons, so this doesn't
         # change anything about when THOSE show up.
-        self.input.draw(self.screen)
+        # Stage K24: hide_controls=True while any overlay above is showing -
+        # the joystick/attack/spell/item buttons used to draw on top of
+        # every one of them (this call happens after all the overlay draws
+        # above), covering menu buttons on mobile and looking wrong under
+        # the pause dim too.
+        menu_open = (self.paused or self.paperdoll_open or self.items_open
+                     or self.debug_panel_open or self.leaderboard_open or self.settings_open)
+        self.input.draw(self.screen, hide_controls=menu_open)
 
     def _spawn_pickup(self, kind, at=None):
         sprite = self._pickup_sprites[kind]

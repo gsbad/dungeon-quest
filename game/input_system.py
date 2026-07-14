@@ -3,7 +3,7 @@ import sys
 import pygame
 from enum import Enum, auto
 from game.theme import font
-from game.assets import create_spell_icon, create_sword_icon, create_potion_icon
+from game.assets import create_spell_icon, create_sword_icon, create_potion_icon, create_dash_icon
 from game.items import ITEMS
 
 TAP_MAX_DURATION = 0.35
@@ -567,6 +567,28 @@ class InputManager:
                                  icon=create_potion_icon(item_id))
             self.item_buttons.append(btn)
 
+        # Stage K24: Dash had no mobile control at all - PC's default binding
+        # is a mouse click (game/keybinds.py), which has no touch equivalent,
+        # and the spell arc around the attack button (above) is already
+        # fully packed edge-to-edge across its whole safe 180-90 degree
+        # sweep (any wider and it clips the spell buttons or, further right,
+        # the screen edge itself). The one clean gap left on this whole HUD
+        # is between the joystick's hit-circle and the item row - this sizes
+        # and centers itself in that exact gap from their own geometry
+        # rather than a hand-picked coordinate, so it stays correct if
+        # either one ever moves.
+        dash_btn_radius = 30
+        joystick_edge = self.joystick.cx + self.joystick.radius * 1.4
+        items_edge = item_cx0 - item_spacing - item_btn_radius
+        dash_cx = (joystick_edge + items_edge) / 2
+        # Stage J14: dashes along the current aim vector - aimable=True so
+        # dragging this button (same "touch then drag to aim" the attack/
+        # fireball/frost_nova buttons already use) sets that direction,
+        # instead of dashing along whatever aim was last set by some other
+        # button.
+        self.dash_button = VirtualButton(dash_cx, item_cy, dash_btn_radius, "", Action.DASH,
+                                          icon=create_dash_icon(), aimable=True)
+
     def refresh_item_icons(self, player):
         """Stage K12: item_buttons are built once at InputManager
         construction (before any Player/save exists), defaulting to the
@@ -818,6 +840,11 @@ class InputManager:
                 self.pause_button.press(pid)
                 self._press_action(Action.PAUSE)
                 claimed = "pause"
+            elif self.dash_button.contains(x, y):
+                self.dash_button.press(pid)
+                # Same "no immediate fire, drag to aim" shape as the attack
+                # button above - GameplayState.update() polls active+has_aim.
+                claimed = "dash"
             else:
                 for i, btn in enumerate(self.spell_buttons):
                     if btn.contains(x, y):
@@ -851,6 +878,8 @@ class InputManager:
             self.joystick.drag(pid, x, y)
         elif claimed == "attack":
             self.attack_button.drag(pid, x, y)
+        elif claimed == "dash":
+            self.dash_button.drag(pid, x, y)
         elif isinstance(claimed, tuple) and claimed[0] == "spell":
             self.spell_buttons[claimed[1]].drag(pid, x, y)
 
@@ -863,6 +892,8 @@ class InputManager:
             self.joystick.release(pid)
         elif claimed == "attack":
             self.attack_button.release(pid)
+        elif claimed == "dash":
+            self.dash_button.release(pid)
         elif claimed == "pause":
             self.pause_button.release(pid)
         elif isinstance(claimed, tuple) and claimed[0] == "spell":
@@ -881,6 +912,7 @@ class InputManager:
         if self._crosshair_timer > 0:
             self._crosshair_timer -= dt
         self.attack_button.update(dt)
+        self.dash_button.update(dt)
         self.pause_button.update(dt)
         for btn in self.spell_buttons:
             btn.update(dt)
@@ -891,12 +923,21 @@ class InputManager:
         self._actions.clear()
         self._taps.clear()
 
-    def draw(self, surface):
+    def draw(self, surface, hide_controls=False):
         self._draw_crosshair(surface)
         if not self.touch_active:
             return
+        # Stage K24: called with hide_controls=True while any menu/pause
+        # overlay is open (GameplayState.draw()) - the joystick/attack/
+        # spell/item buttons used to always draw last, on top of every
+        # overlay, since this ran unconditionally after all of them. A
+        # closed menu doesn't need this flag at all (touch_active alone
+        # already gates everything below on desktop).
+        if hide_controls:
+            return
         self.joystick.draw(surface)
         self.attack_button.draw(surface)
+        self.dash_button.draw(surface)
         self.pause_button.draw(surface)
         for btn in self.spell_buttons:
             btn.draw(surface)
