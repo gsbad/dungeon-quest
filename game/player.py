@@ -32,6 +32,12 @@ DASH_TRAIL_LEN = 7
 # profession can dig; the cooldown is the only pacing knob per the user's
 # spec ("cooldown de 1s").
 PICKAXE_COOLDOWN = 1.0
+# Stage K24: how long the swing icon (draw()'s _draw_pickaxe_swing) stays
+# up per use - deliberately much shorter than the 1s cooldown above, a
+# quick flash rather than something that could still be showing on the
+# next swing. Same length as attack_duration, the melee swing's own
+# window, so both actions read at the same "snap" speed.
+PICKAXE_SWING_DURATION = 0.25
 
 # Stage K23: how long the "found the key" pose holds before normal control
 # returns - long enough to read as a deliberate beat, short enough not to
@@ -213,6 +219,14 @@ class Player:
         # in Level (GameplayState._attempt_pickaxe() bridges the two), same
         # split try_attack()/get_attack_rect() already established.
         self.pickaxe_cooldown = 0.0
+        # Stage K24: swing feedback - melee attack visibly swings the sword
+        # (the "_atk" sprite pose below), but the pickaxe never had any
+        # equivalent, it just silently went on cooldown. A full swing pose
+        # per profession/direction (like attack has) is a lot of new rig
+        # art for a 4th action; draw() instead flashes the pickaxe icon
+        # near the player along the aim direction for this timer's
+        # duration - same "show what just happened" goal, cheaper asset.
+        self.pickaxe_swing_timer = 0.0
 
         # Stage K23: the "found the hidden key" pose - turns to face the
         # camera and holds the key overhead for KEY_POSE_DURATION (see
@@ -619,6 +633,8 @@ class Player:
             self.attack_cooldown -= dt
         if self.pickaxe_cooldown > 0:
             self.pickaxe_cooldown -= dt
+        if self.pickaxe_swing_timer > 0:
+            self.pickaxe_swing_timer -= dt
 
         # Invincibility
         if self.invincible:
@@ -641,6 +657,7 @@ class Player:
         if self.pickaxe_cooldown > 0:
             return False
         self.pickaxe_cooldown = PICKAXE_COOLDOWN
+        self.pickaxe_swing_timer = PICKAXE_SWING_DURATION
         return True
 
     def trigger_key_found_pose(self):
@@ -743,6 +760,24 @@ class Player:
 
         if self.key_pose_timer > 0:
             self._draw_key_pose(surface, sx, sy)
+
+        if self.pickaxe_swing_timer > 0:
+            self._draw_pickaxe_swing(surface, sx, sy)
+
+    def _draw_pickaxe_swing(self, surface, sx, sy):
+        """Stage K24: a quick pickaxe-icon flash out along the aim
+        direction while pickaxe_swing_timer counts down - melee attack has
+        a real "_atk" swing pose baked into every profession's sprite rig,
+        the pickaxe doesn't (see try_pickaxe()'s comment for why an icon
+        overlay instead of a new rig pose), but the goal is the same: make
+        the swing itself visible, not just its eventual effect on a tile."""
+        from game.assets import create_pickaxe_icon
+        progress = 1.0 - (self.pickaxe_swing_timer / PICKAXE_SWING_DURATION)
+        offset = 18 + 10 * min(1.0, progress / 0.5)  # jabs outward, then holds
+        icon = create_pickaxe_icon()
+        icon_x = sx + self.width / 2 + self.aim_dx * offset - icon.get_width() / 2
+        icon_y = sy + self.height / 2 + self.aim_dy * offset - icon.get_height() / 2
+        surface.blit(icon, (icon_x, icon_y))
 
     def _draw_key_pose(self, surface, sx, sy):
         """Stage K23: a small key icon rising above the hero's head while
