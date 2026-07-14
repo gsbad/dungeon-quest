@@ -79,6 +79,15 @@ STATUS_EFFECTS = {
     "shock":    StatusEffectDef(5.0, None, None, None, 1.0, 1.15, frozenset({"antidote"})),
 }
 
+# Stage K20: the 7 ids above, as a single shared source of truth - before
+# this, game/debug_panel.py, game/balance_config.py, and (soon)
+# game/paperdoll.py's Help tab each redeclared this same set locally to
+# split STATUS_EFFECTS into "debuff"/"buff" halves. Declared right after
+# the dict literal above (before Stage K12's buffs get merged in below) so
+# it reads as "these are the keys already in STATUS_EFFECTS at this point
+# in the file" rather than a hardcoded list that could drift from it.
+ORIGINAL_DEBUFF_IDS = frozenset(STATUS_EFFECTS.keys())
+
 
 def _buff(duration, **kwargs):
     """Stage K12: every new potion/elixir buff below is a pure stat

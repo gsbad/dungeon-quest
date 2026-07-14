@@ -791,7 +791,21 @@ class Player:
         # full 3 picks), which used to shift every label after the item
         # group (dash's "X" would've slid left into "3"'s spot) when read
         # positionally out of the old fixed-length _HOTBAR_KEYS.
-        _spell_key = {"fireball": "F", "frost_nova": "Q", "healing_light": "R"}
+        # Stage K20: read live from game.keybinds instead of a hardcoded
+        # letter - Stage K15's remap makes any of these move, and this
+        # label went stale (still showing the OLD key) the moment it did.
+        import game.keybinds as keybinds
+
+        def _key_label(action_name):
+            # SPACE is the one default long enough to not fit this badge's
+            # width comfortably - abbreviated here only (Settings/Help have
+            # room for the full name). Anything a player rebinds it to
+            # instead is shown as-is; only the specific default is special-
+            # cased, not a general truncation rule.
+            label = keybinds.display_key(action_name)
+            return "SPC" if label == "SPACE" else label
+
+        _spell_action = {"fireball": "CAST_1", "frost_nova": "CAST_2", "healing_light": "CAST_3"}
         item_i = 0
         for i, (kind, key, rect) in enumerate(hotbar_slots(self)):
             # Stage H10: on touch devices, both spell casting and item use
@@ -838,14 +852,14 @@ class Player:
                 surface.blit(dim, (icon_x, icon_y))
 
             if kind == "attack":
-                key_label = "SPC"
+                key_label = _key_label("ATTACK")
             elif kind == "spell":
-                key_label = _spell_key.get(key, "?")
+                key_label = _key_label(_spell_action.get(key, ""))
             elif kind == "item":
                 item_i += 1
                 key_label = str(item_i)
             else:  # dash
-                key_label = "X"
+                key_label = _key_label("DASH")
             key_surf = f_key.render(key_label, True, (255, 255, 255))
             key_bg = pygame.Rect(rect.x - 2, rect.y - 2, key_surf.get_width() + 4, key_surf.get_height() + 2)
             pygame.draw.rect(surface, (20, 20, 30), key_bg, border_radius=3)

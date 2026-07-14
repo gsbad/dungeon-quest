@@ -23,7 +23,7 @@ import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
 from game.ui import Panel, draw_text, Carousel
 from game.input_system import Action
-from game.status_effects import STATUS_EFFECTS, STATUS_HELP
+from game.status_effects import STATUS_EFFECTS, STATUS_HELP, ORIGINAL_DEBUFF_IDS
 from game.items import ITEMS
 from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER
 from game.affixes import make_paragon, make_champion
@@ -61,9 +61,11 @@ _WEATHER_DEBUFFS = ("chill", "heat", "shock")
 # The 7 debuffs that existed before Stage K12 (already covered by
 # _all_debuffs_row below) - everything else in STATUS_EFFECTS is one of
 # K12's new potion/elixir buffs, each getting its own individual-activate
-# row (the K13 plan's "ativar cada buff individualmente").
-_ORIGINAL_DEBUFFS = frozenset({"poison", "slow", "weakness", "burn", "chill", "heat", "shock"})
-_NEW_BUFF_IDS = [k for k in STATUS_EFFECTS if k not in _ORIGINAL_DEBUFFS]
+# row (the K13 plan's "ativar cada buff individualmente"). Stage K20:
+# ORIGINAL_DEBUFF_IDS now lives in game/status_effects.py, the single
+# shared source of truth for this split (was redeclared locally here,
+# game/balance_config.py, and game/paperdoll.py's Help tab).
+_NEW_BUFF_IDS = [k for k in STATUS_EFFECTS if k not in ORIGINAL_DEBUFF_IDS]
 
 
 def _profession_recipe(name):

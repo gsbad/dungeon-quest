@@ -21,16 +21,8 @@ from game.difficulty import DIFFICULTIES
 from game.items import ITEMS
 import game.items as items
 from game.spells import SPELLS
-from game.status_effects import STATUS_EFFECTS
+from game.status_effects import STATUS_EFFECTS, ORIGINAL_DEBUFF_IDS
 from game.stances import STANCES
-
-# Stage K16: the 7 debuffs that existed before Stage K12 - everything else
-# in STATUS_EFFECTS is one of K12's potion/elixir buffs. Both share the
-# same dict/StatusEffectDef shape; this only decides which dotted-key
-# prefix ("debuff." vs "buff.") a given effect_id answers to, mirroring
-# backend/app/main.py's BALANCE_DEFAULTS split (built for the same reason -
-# the admin panel's separate Buffs/Debuffs tabs, Stage K17).
-_ORIGINAL_DEBUFFS = frozenset({"poison", "slow", "weakness", "burn", "chill", "heat", "shock"})
 
 _STATS_KEYS = {
     "mitigation_k", "xp_curve_base", "xp_curve_exp",
@@ -91,12 +83,12 @@ def _apply_one(key, raw_value):
         return
 
     # Stage K16: debuff.<id>.<field> and buff.<id>.<field> both resolve
-    # into the SAME STATUS_EFFECTS dict (see _ORIGINAL_DEBUFFS above) -
-    # StatusEffectDef is a namedtuple (immutable), so unlike every dict-of-
-    # dicts case above this needs a ._replace() + reassignment into the
-    # dict rather than an in-place field set.
+    # into the SAME STATUS_EFFECTS dict (see ORIGINAL_DEBUFF_IDS import
+    # above) - StatusEffectDef is a namedtuple (immutable), so unlike every
+    # dict-of-dicts case above this needs a ._replace() + reassignment into
+    # the dict rather than an in-place field set.
     if len(parts) == 3 and parts[0] in ("debuff", "buff") and parts[1] in STATUS_EFFECTS:
-        is_debuff = parts[1] in _ORIGINAL_DEBUFFS
+        is_debuff = parts[1] in ORIGINAL_DEBUFF_IDS
         if (parts[0] == "debuff") != is_debuff:
             return  # e.g. "buff.poison.*" - wrong prefix for this id, ignore
         defn = STATUS_EFFECTS[parts[1]]

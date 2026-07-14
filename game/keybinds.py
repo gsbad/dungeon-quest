@@ -60,6 +60,19 @@ def key_name(key_code):
     return pygame.key.name(key_code).upper()
 
 
+def display_key(action_name):
+    """Stage K20: the label every UI that shows a remappable action's key
+    (hotbar slots in game/player.py, the Help tab's shortcut list and
+    Magias tab in game/paperdoll.py) should call instead of a hardcoded
+    literal - those all baked in "F"/"X"/"C"/etc. before Stage K15's
+    remapping existed, which went stale the moment a player actually
+    rebound one. Falls back to the action name itself for a typo'd/
+    non-remappable name rather than raising, same defensive shape
+    ACTION_LABELS.get() callers already use elsewhere."""
+    key_code = BINDINGS.get(action_name)
+    return key_name(key_code) if key_code is not None else action_name
+
+
 def set_binding(name, key_code):
     BINDINGS[name] = key_code
 

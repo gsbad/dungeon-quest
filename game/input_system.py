@@ -82,20 +82,29 @@ class Action(Enum):
 # panel) are intentionally left out - they're testing tools, not player
 # controls. Add a new keybinding here when adding one above to keep the
 # Help tab expansible without any layout change.
+#
+# Stage K20: entries for a Stage K15-remappable action carry a 3rd field -
+# the game.keybinds action name - instead of a hardcoded key literal. The
+# literal 2nd-position label still shown for these is only the DEFAULT
+# (used before the player's live binding is known); game/paperdoll.py's
+# Help tab resolves the 3rd field to the CURRENT key via
+# keybinds.display_key() at render time, so a remap doesn't leave this
+# list showing a stale key. Non-remappable entries (WASD, mouse, item
+# slots, TAB, ESC, F11/F12) have no 3rd field and just show their literal.
 HELP_ENTRIES = [
     ("WASD / Setas", "Mover o personagem"),
     ("Mouse", "Mirar ataques/feiticos na direcao do cursor"),
-    ("ESPACO", "Atacar corpo a corpo"),
-    ("F", "Conjurar Bola de Fogo"),
-    ("Q", "Conjurar Nova de Gelo"),
-    ("R", "Conjurar Luz Curativa / Reiniciar (na tela de pausa ou de morte)"),
-    ("X", "Investida (Dash)"),
-    ("E", "Picareta - quebra blocos e cava em busca da chave escondida"),
+    ("ESPACO", "Atacar corpo a corpo", "ATTACK"),
+    ("F", "Conjurar Bola de Fogo", "CAST_1"),
+    ("Q", "Conjurar Nova de Gelo", "CAST_2"),
+    ("R", "Conjurar Luz Curativa / Reiniciar (na tela de pausa ou de morte)", "CAST_3"),
+    ("X", "Investida (Dash)", "DASH"),
+    ("E", "Picareta - quebra blocos e cava em busca da chave escondida", "PICKAXE"),
     ("1 / 2 / 3", "Usar item (slots do hotbar)"),
-    ("C", "Abrir/fechar o menu Personagem"),
-    ("I", "Abrir/fechar o menu Itens"),
-    ("H (no menu Itens)", "Marcar/desmarcar o item selecionado para o hotbar (max. 3)"),
-    ("L", "Abrir/fechar o Ranking (requer login Google)"),
+    ("C", "Abrir/fechar o menu Personagem", "PAPERDOLL"),
+    ("I", "Abrir/fechar o menu Itens", "ITEMS"),
+    ("H (no menu Itens)", "Marcar/desmarcar o item selecionado para o hotbar (max. 3)", "TOGGLE_HOTBAR"),
+    ("L", "Abrir/fechar o Ranking (requer login Google)", "LEADERBOARD"),
     ("Icone de engrenagem", "Configuracoes - remapear teclas de acao (PC, so pelo mouse/toque)"),
     ("TAB", "Trocar de aba dentro de um menu"),
     ("ESC", "Pausar o jogo / fechar o menu aberto"),

@@ -4,7 +4,7 @@ from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BOR
 from game.ui import Panel, draw_text, Carousel
 from game.assets import (
     create_player_sprite, create_attribute_icon, create_level_thumbnail,
-    create_debuff_icon, create_spell_icon, create_trophy_icon,
+    create_debuff_icon, create_spell_icon, create_trophy_icon, create_stance_icon,
 )
 from game.achievements import ACHIEVEMENTS, check_unlocks
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
@@ -21,9 +21,11 @@ ATLAS_ORDER = sorted(LEVEL_MAPS.keys())
 
 BESTIARY_ORDER = MOB_IDS + BOSS_IDS
 
-# Keyboard hotkey shown per SPELL_ORDER slot in the Magias tab below - must
-# match game/input_system.py's KEYDOWN bindings (K_f/K_q/K_r -> CAST_1/2/3).
-SPELL_KEYS = ["F", "Q", "R"]
+# game.keybinds action name per SPELL_ORDER slot in the Magias tab below -
+# Stage K20: was a hardcoded ["F", "Q", "R"] literal list, which went
+# stale the moment Stage K15's remap actually moved one of these; now
+# resolved live via keybinds.display_key() at render time instead.
+SPELL_ACTIONS = ["CAST_1", "CAST_2", "CAST_3"]
 
 # (StatBlock field name, on-screen label). Order matches the plan's
 # STR/DEX/INT/WIS/VIG/SOR convention.
@@ -485,7 +487,9 @@ class Paperdoll:
             icon = pygame.transform.scale(create_spell_icon(spell_id), (28, 28))
             surface.blit(icon, (self.px + 20, y - 4))
 
-            draw_text(surface, f"{SPELL_KEYS[i]} - {spell['name']}", f_name, (230, 225, 240),
+            import game.keybinds as keybinds
+            spell_key = keybinds.display_key(SPELL_ACTIONS[i])
+            draw_text(surface, f"{spell_key} - {spell['name']}", f_name, (230, 225, 240),
                       spell_cx, y, shadow=False)
             draw_text(surface, spell["description"], f_body, (195, 195, 210),
                       spell_cx, y + 22, shadow=False)
@@ -685,14 +689,42 @@ class Paperdoll:
 
     def _help_pages(self):
         """Page list for the Help tab's carousel (Stage J3). Each page is
-        {"kind": ..., "title": ...} plus kind-specific fields - the debuff
-        listing (Stage J4) is a different kind from the shortcut chunks, so
-        _draw_help dispatches per page rather than assuming one layout."""
-        per_page = 8
-        return [{"kind": "debuffs", "title": "DEBUFFS"}] + [
-            {"kind": "shortcuts", "title": "ATALHOS", "entries": HELP_ENTRIES[i:i + per_page]}
-            for i in range(0, len(HELP_ENTRIES), per_page)
+        {"kind": ..., "title": ...} plus kind-specific fields - the status-
+        effect/postura listings are different kinds from the shortcut
+        chunks, so _draw_help dispatches per page rather than assuming one
+        layout.
+
+        Stage K20: the single "DEBUFFS" page used to just iterate every
+        STATUS_HELP entry - fine at 7 entries, but Stage K12 grew that dict
+        to 29 (7 debuffs + 22 potion/elixir buffs), which silently ran the
+        list off the bottom of the panel with no way to reach the rest and
+        left "DEBUFFS" as a misleading title for a list that was now
+        mostly buffs. Split into properly paginated Debuffs/Buffs pages
+        (same STATUS_DISPLAY color per entry either way), plus a new
+        Posturas page (Stage K11's STANCE_DESCRIPTIONS had no player-
+        facing surface at all before this beyond the tiny badge tooltip)."""
+        per_page_shortcuts = 8
+        per_page_status = 5  # icon+name+wrapped-description rows are taller than a shortcut row
+
+        from game.status_effects import STATUS_HELP, ORIGINAL_DEBUFF_IDS
+        debuff_ids = [k for k in STATUS_HELP if k in ORIGINAL_DEBUFF_IDS]
+        buff_ids = [k for k in STATUS_HELP if k not in ORIGINAL_DEBUFF_IDS]
+
+        from game.stances import STANCE_DESCRIPTIONS
+        stance_names = list(STANCE_DESCRIPTIONS.keys())
+
+        pages = []
+        for i in range(0, len(debuff_ids), per_page_status):
+            pages.append({"kind": "status", "title": "DEBUFFS", "ids": debuff_ids[i:i + per_page_status]})
+        for i in range(0, len(buff_ids), per_page_status):
+            pages.append({"kind": "status", "title": "BUFFS (POCOES/ELIXIRES)", "ids": buff_ids[i:i + per_page_status]})
+        for i in range(0, len(stance_names), per_page_status):
+            pages.append({"kind": "stances", "title": "POSTURAS", "names": stance_names[i:i + per_page_status]})
+        pages += [
+            {"kind": "shortcuts", "title": "ATALHOS", "entries": HELP_ENTRIES[i:i + per_page_shortcuts]}
+            for i in range(0, len(HELP_ENTRIES), per_page_shortcuts)
         ]
+        return pages
 
     def _draw_help(self, surface, top):
         cx = self.px + _PANEL_W // 2
@@ -710,16 +742,27 @@ class Paperdoll:
             key_x = self.px + 38
             desc_x = self.px + 190
             y = top + 42
-            for key_label, description in page["entries"]:
+            import game.keybinds as keybinds
+            for entry in page["entries"]:
+                key_label, description = entry[0], entry[1]
+                if len(entry) == 3:
+                    # Stage K20: entry[2] is a game.keybinds action name -
+                    # show the player's CURRENT binding, not the default
+                    # literal in entry[0] (stale the moment they remap it).
+                    key_label = keybinds.display_key(entry[2])
                 draw_text(surface, key_label, f_key, ACCENT_GOLD, key_x, y, shadow=False, align="left")
                 for line in self._wrap_text(description, f_desc, self.px + _PANEL_W - 38 - desc_x):
                     draw_text(surface, line, f_desc, (210, 210, 225), desc_x, y, shadow=False, align="left")
                     y += 17
                 y += 12
-        elif page["kind"] == "debuffs":
-            # Stage J4: what monster/boss/weather afflictions do and how to
-            # cure them - the info previously only discoverable by suffering
-            # through each one. Icon + colored name + prose description.
+        elif page["kind"] == "status":
+            # Stage J4/K20: what monster/boss/weather afflictions AND
+            # (Stage K12) potion/elixir buffs do - the info previously only
+            # discoverable by suffering through/drinking each one. Icon +
+            # colored name + prose description, same STATUS_DISPLAY color
+            # a debuff's HUD chip already uses (game/player.py's
+            # _draw_status_chips), so this reads as "the same thing you
+            # see in combat" rather than a disconnected reference list.
             from game.status_effects import STATUS_DISPLAY, STATUS_HELP
             f_name = font(15, bold=True)
             f_desc = font(13)
@@ -728,7 +771,8 @@ class Paperdoll:
             text_x = icon_x + icon_size + 12
             desc_max_w = self.px + _PANEL_W - 38 - text_x
             y = top + 40
-            for effect_id, (name, description) in STATUS_HELP.items():
+            for effect_id in page["ids"]:
+                name, description = STATUS_HELP[effect_id]
                 icon = pygame.transform.scale(create_debuff_icon(effect_id), (icon_size, icon_size))
                 surface.blit(icon, (icon_x, y))
                 _, color = STATUS_DISPLAY[effect_id]
@@ -738,6 +782,28 @@ class Paperdoll:
                     draw_text(surface, line, f_desc, (205, 205, 220), text_x, dy, shadow=False, align="left")
                     dy += 15
                 y = max(y + 44, dy + 12)
+        elif page["kind"] == "stances":
+            # Stage K20: Posturas (Stage K11) had zero player-facing
+            # surface before this beyond the small HUD badge's hover
+            # tooltip - same icon+name+prose layout as the status page
+            # above, just sourced from game/stances.py instead.
+            from game.stances import STANCE_DESCRIPTIONS
+            f_name = font(15, bold=True)
+            f_desc = font(13)
+            icon_size = 32
+            icon_x = self.px + 36
+            text_x = icon_x + icon_size + 12
+            desc_max_w = self.px + _PANEL_W - 38 - text_x
+            y = top + 40
+            for profession in page["names"]:
+                icon = pygame.transform.scale(create_stance_icon(profession), (icon_size, icon_size))
+                surface.blit(icon, (icon_x, y))
+                draw_text(surface, profession, f_name, ACCENT_GOLD, text_x, y - 1, shadow=False, align="left")
+                dy = y + 18
+                for line in self._wrap_text(STANCE_DESCRIPTIONS[profession], f_desc, desc_max_w):
+                    draw_text(surface, line, f_desc, (205, 205, 220), text_x, dy, shadow=False, align="left")
+                    dy += 15
+                y = max(y + 48, dy + 12)
 
         self.help_carousel.draw(surface, font(13), indicator_y=self.py + _PANEL_H - 48)
         f_hint = font(14)
