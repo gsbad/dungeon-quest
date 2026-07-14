@@ -806,7 +806,25 @@ class InputManager:
             if event.key == pygame.K_F12:
                 self._press_action(Action.MUTE)
 
-        elif event.type == pygame.MOUSEBUTTONDOWN:
+        # Stage K24: `and not self.touch_active` on all 3 mouse branches
+        # below - measured live with a real Playwright touchscreen tap
+        # (not theorized): a genuine touch on a touchscreen ALSO fires a
+        # synthetic/"ghost" MOUSEBUTTONDOWN (standard browser legacy-
+        # compatibility behavior for pages that only listen for mouse
+        # events), which this code used to process as if it were real
+        # desktop mouse input. That's what "a mira vermelha nao coincide
+        # com onde o usuario esta tocando" actually was: the red crosshair
+        # (this branch's only job) was drawn at the *ghost* mouse event's
+        # position, a separate/differently-timed event from the real touch
+        # the player saw feedback for elsewhere - and since Dash defaults
+        # to MOUSE1, every real tap anywhere on the touch HUD was also
+        # silently firing a Dash attempt via the BINDINGS loop below
+        # (confirmed: tapping the joystick's exact center produced an
+        # "Investida bloqueada" toast, Dash's own failure message).
+        # touch_active is one-way (set by the first real FINGERDOWN, never
+        # cleared) - once a session is confirmed touch, mouse events for
+        # the rest of it are always ghosts, never real input.
+        elif event.type == pygame.MOUSEBUTTONDOWN and not self.touch_active:
             # Stage K22: any remappable action (Dash by default - see
             # game/keybinds.py's DEFAULT_BINDINGS) can now be bound to a
             # mouse button, checked the same way the KEYDOWN branch above
@@ -821,22 +839,16 @@ class InputManager:
                     self._press_action(Action[action_name])
 
             if event.button == 1:
-                # Deliberately doesn't set touch_active - a PC mouse click
-                # still needs to register taps (menu buttons, paperdoll
-                # +/-), but it shouldn't make the mobile-only joystick/
-                # attack/pause/paperdoll overlay pop up on desktop. Real
-                # touchscreens send FINGERDOWN separately (see below), so
-                # this doesn't affect mobile.
                 pos = _corrected_mouse_pos(event.pos)
                 self._mouse_screen_pos = pos
                 self._crosshair_pos = pos
                 self._crosshair_timer = self._CROSSHAIR_DURATION
                 self._pointer_down("mouse", *pos)
-        elif event.type == pygame.MOUSEMOTION:
+        elif event.type == pygame.MOUSEMOTION and not self.touch_active:
             pos = _corrected_mouse_pos(event.pos)
             self._mouse_screen_pos = pos
             self._pointer_move("mouse", *pos)
-        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and not self.touch_active:
             self._pointer_up("mouse")
 
         elif event.type == pygame.FINGERDOWN:
