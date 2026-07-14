@@ -1,6 +1,13 @@
 # Dungeon Quest 🗡️
 
-Um action-RPG 2D top-down estilo Zelda, feito em Python com pygame — projeto indie pessoal, sem dependências de assets externos (todo sprite é pixel art gerada em código).
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Deploy](https://github.com/gsbad/dungeon-quest/actions/workflows/deploy.yml/badge.svg)](https://github.com/gsbad/dungeon-quest/actions/workflows/deploy.yml)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+[![Jogar agora](https://img.shields.io/badge/jogar-online-brightgreen)](https://129.80.222.127.sslip.io)
+
+Um action-RPG 2D top-down estilo Zelda, feito em Python com pygame — projeto indie pessoal, sem dependências de assets externos (todo sprite é pixel art gerada em código). Roda no navegador (PC e celular) e é jogável agora em **https://129.80.222.127.sslip.io**.
+
+![Gameplay](docs/assets/gameplay.gif)
 
 ---
 
@@ -13,15 +20,19 @@ Uma campanha em **3 atos** (13 fases, incluindo uma secreta), com sistema de atr
 - **3 atos, 4 bosses únicos** — cada um com sprite, sala e padrão de ataque próprios (Senhor da Guerra Orc, Necromante, Rei das Sombras, e o Cacodemônio da fase secreta).
 - **20 arquétipos de monstro comuns**, cada um com seu próprio rig visual e "magia"/ataque de acordo com a natureza dele (veneno, gelo, choque, fogo, fraqueza...), espalhados pelas 12 fases de combate.
 - **Atributos e profissões**: FOR/DES/INT/SAB/VIG/SOR determinam 16 profissões possíveis (5 puras + 10 híbridas + Aventureiro), sem nada "guardado" — é só a leitura dos pontos gastos.
+- **Combate mirado no mouse (PC) / toque-e-arraste (celular)**: ataque corpo a corpo, Bola de Fogo, Nova de Gelo e a nova Investida (Dash) seguem a direção real do cursor/arraste, não só 4 direções fixas.
+- **Dash**: mobilidade baseada em Destreza, dano de contato, e um rastro fantasma que se apaga atrás do herói.
 - **Magias**: Bola de Fogo, Nova de Gelo, Luz Curativa — desbloqueadas por requisito de atributo.
 - **Status effects**: Veneno, Lentidão, Fraqueza, Fogo, Frio, Calor e Choque, com cura por Antídoto onde faz sentido.
 - **5 dificuldades** (Normal → Inferno), cada uma a mesma campanha com monstros mais fortes, chance de Campeões, afixos de fase inteira e enrage de boss mais cedo — desbloqueadas sequencialmente.
 - **Paragon**: spawn raro (3%, com pity) de monstro comum upgradado, x4 XP/ouro.
 - **Clima dinâmico** por fase (neblina, chuva, neve, tempestade, cinzas...).
-- **Paperdoll** com 5 abas: Status, Magias, Bestiário (mobs/bosses descobertos), Atlas (fases já visitadas) e Ajuda.
-- **Save/load** persistente (personagem, economia, progressão por dificuldade).
-- **Painel de debug** (`F1`, PC apenas) pra testar atributos, economia e dificuldade sem precisar re-jogar a campanha inteira.
-- Roda no navegador (PC e celular, via Pygbag/WebAssembly), com login Google e sync de save na nuvem.
+- **Paperdoll** com 6 abas: Status, Magias, Bestiário, Atlas, Conquistas e Ajuda (com uma listagem ilustrada de todos os debuffs).
+- **Leaderboard online** (requer login Google) — ranking por Nível, Horas Jogadas, Conquistas ou Ouro.
+- **God mode de debug vira Super Sayajin** 🐉 — easter egg visual, não só um flag invisível.
+- **Save/load** persistente, local e (opcionalmente) sincronizado na nuvem via login Google.
+- **Painel de debug** (`F1`, PC apenas) pra testar atributos, economia, dificuldade e status effects sem precisar re-jogar a campanha inteira.
+- Roda no navegador (PC e celular, via Pygbag/WebAssembly) — deploy automático via GitHub Actions a cada push em `main` (ver [`docs/deploy.md`](docs/deploy.md)).
 
 ---
 
@@ -30,15 +41,22 @@ Uma campanha em **3 atos** (13 fases, incluindo uma secreta), com sistema de atr
 | Tecla | Ação |
 |---|---|
 | W / A / S / D ou ↑↓←→ | Mover personagem |
-| ESPAÇO | Atacar |
-| 1 / 2 / 3 | Conjurar magia (se desbloqueada) |
-| C | Abrir Paperdoll (Status/Magias/Bestiário/Atlas/Ajuda) |
+| Mouse | Mirar ataque/magias na direção do cursor |
+| F | Atacar corpo a corpo |
+| R | Conjurar Bola de Fogo |
+| Q | Conjurar Nova de Gelo |
+| X | Conjurar Luz Curativa |
+| ESPAÇO | Investida (Dash) |
+| 1 / 2 / 3 | Usar poção (Vida / Mana / Antídoto) |
+| C | Abrir Paperdoll (Status/Magias/Bestiário/Atlas/Conquistas/Ajuda) |
 | I | Abrir Itens |
-| ESC | Pausar / Menu |
+| L | Abrir Ranking (requer login Google) |
+| ESC / clique fora do painel | Pausar / fechar o menu aberto |
 | ENTER | Confirmar menus |
 | F1 | Painel de debug (dev, só PC) |
+| F11 / F12 | Tela cheia / mudo |
 
-No navegador/celular, assim que a tela é tocada aparecem controles virtuais (joystick + botão de ataque + pausa).
+No navegador/celular, assim que a tela é tocada aparecem controles virtuais: joystick (mover), botão de ataque e magias (toque e arraste para mirar, dispara automaticamente enquanto segurar), botões de item, e um botão de pausa.
 
 ---
 
@@ -123,31 +141,70 @@ python -m pygbag --bind <IP-do-PC-na-rede> --port 8001 main.py
   jogo (mensagem "Ready to start! Please click/touch page").
 - **Controles no celular:** assim que qualquer toque/clique é detectado, aparecem
   controles virtuais na tela — um joystick analógico (canto inferior esquerdo)
-  para mover o personagem, um botão "ATK" (canto inferior direito) para atacar
-  e um botão de pausa (canto superior direito). Nos menus, basta tocar
-  diretamente nas opções de texto. No navegador do PC os controles de teclado
-  continuam funcionando normalmente (os virtuais só aparecem se você usar
-  mouse/toque).
+  para mover o personagem, um botão de ataque e um arco de 3 botões de magia
+  (canto inferior direito - toque e arraste para mirar, dispara automaticamente
+  enquanto segurar, respeitando o cooldown), uma fileira de botões de item, e
+  um botão de pausa (canto superior direito). Nos menus, basta tocar
+  diretamente nas opções de texto, ou tocar fora do painel para fechá-lo. No
+  navegador do PC os controles de teclado/mouse continuam funcionando
+  normalmente (os virtuais só aparecem se você usar toque).
 - A primeira execução baixa o runtime do Pygbag (Pyodide); é necessário ter internet
   nesse primeiro build.
+
+---
+
+## 🏗️ Arquitetura
+
+O jogo roda inteiramente no cliente (nenhuma chamada de rede no caminho crítico de jogar); um backend FastAPI opcional cuida só de login/sync de save/leaderboard, hospedado numa VM Oracle Cloud com deploy automático via GitHub Actions. Visão detalhada de módulos, fluxo de dados e a decisão de ser offline-first em [`docs/architecture.md`](docs/architecture.md); passo a passo de deploy/CI em [`docs/deploy.md`](docs/deploy.md).
+
+---
+
+## 🎨 Iconografia
+
+Todo ícone abaixo é pixel art gerada em código (`game/assets.py`), sem nenhum arquivo de imagem externo:
+
+| | | | |
+|---|---|---|---|
+| ![Veneno](docs/assets/debuff_poison.png) Veneno | ![Lentidão](docs/assets/debuff_slow.png) Lentidão | ![Fraqueza](docs/assets/debuff_weakness.png) Fraqueza | ![Fogo](docs/assets/debuff_burn.png) Fogo |
+| ![Frio](docs/assets/debuff_chill.png) Frio | ![Calor](docs/assets/debuff_heat.png) Calor | ![Choque](docs/assets/debuff_shock.png) Choque | ![Investida](docs/assets/icon_dash.png) Investida (Dash) |
+
+E o easter egg do god mode de debug — sprite normal vs. "Super Sayajin":
+
+<p>
+  <img src="docs/assets/hero_normal.png" width="72" alt="Herói normal">
+  <img src="docs/assets/hero_super_saiyan.png" width="72" alt="Herói em modo Super Sayajin">
+</p>
 
 ---
 
 ## 📁 Estrutura do Projeto
 
 ```
-trab-uninter-game/
-├── main.py                 ← Ponto de entrada
+dungeon-quest/
+├── main.py                  ← Ponto de entrada
 ├── requirements.txt
 ├── README.md
+├── LICENSE
+├── CONTRIBUTING.md
+├── .github/
+│   └── workflows/
+│       └── deploy.yml        ← CI/CD: build + deploy automático a cada push em main
 ├── docs/
-│   ├── design.md            ← Documento vivo de design/balanceamento
-│   └── save-schema.md        ← Formato do arquivo de save
+│   ├── architecture.md        ← Visão geral de módulos/fluxo de dados/deploy (onboarding)
+│   ├── design.md               ← Documento vivo de design/balanceamento
+│   ├── deploy.md                 ← Deploy manual + CI/CD + acesso à VM
+│   ├── save-schema.md             ← Formato do arquivo de save
+│   └── assets/                     ← Ícones/GIFs renderizados para esta documentação
 ├── tools/
-│   └── balance_sim.py        ← Simulador headless de curva de XP/combate
+│   └── balance_sim.py               ← Simulador headless de curva de XP/combate
+├── backend/                          ← FastAPI: login Google, sync de save, leaderboard, painel admin
+│   ├── app/
+│   │   ├── main.py
+│   │   └── models.py
+│   └── requirements.txt
 └── game/
     ├── states.py             ← Menu, Gameplay, GameOver, Vitória
-    ├── player.py             ← Personagem jogável
+    ├── player.py             ← Personagem jogável (ataque/dash/magias/hotbar)
     ├── enemy.py               ← Inimigos comuns (IA, ataques, status effects)
     ├── boss.py                ← Bosses (fases, padrões de ataque, projéteis)
     ├── level.py                ← Mapas e carregamento de fases (LEVEL_MAPS)
@@ -162,15 +219,18 @@ trab-uninter-game/
     ├── weather.py                      ← Clima dinâmico por fase
     ├── reputation.py                    ← Reputação/facções
     ├── bestiary.py                       ← Dados do Bestiário (nome/descrição/discovery)
-    ├── paperdoll.py                       ← UI do painel do personagem (5 abas)
-    ├── debug_panel.py                      ← Painel de debug (F1)
-    ├── save.py                              ← Persistência (save/load)
-    ├── camera.py                             ← Câmera suave
-    ├── audio.py                               ← Som
-    ├── input_system.py                         ← Teclado/mouse/touch unificados
-    ├── theme.py                                 ← Paleta de cores e fontes
-    ├── ui.py                                     ← Componentes de UI reutilizáveis
-    └── assets.py                                  ← Sprites/tiles pixel art gerados em código
+    ├── leaderboard.py                     ← Overlay + busca do ranking online
+    ├── balance_config.py                   ← Aplica overrides vindos do painel admin
+    ├── net.py                                ← Ponte pyodide/emscripten para o backend
+    ├── paperdoll.py                           ← UI do painel do personagem (6 abas)
+    ├── debug_panel.py                          ← Painel de debug (F1)
+    ├── save.py                                  ← Persistência (save/load)
+    ├── camera.py                                 ← Câmera suave
+    ├── audio.py                                   ← Som
+    ├── input_system.py                             ← Teclado/mouse/touch unificados
+    ├── theme.py                                     ← Paleta de cores e fontes
+    ├── ui.py                                         ← Componentes de UI reutilizáveis
+    └── assets.py                                      ← Sprites/ícones pixel art gerados em código
 ```
 
 ---
