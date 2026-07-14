@@ -10,6 +10,13 @@ name: Deploy to Oracle Cloud VM
 on:
   push:
     branches: [main]
+    # Doc-only pushes don't need a full pygbag rebuild + service restart -
+    # confirmed this triggers needlessly by watching the very docs commit
+    # that added this filter run the whole pipeline for a README change.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
   workflow_dispatch: {}
 
 concurrency:
