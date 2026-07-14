@@ -165,7 +165,7 @@ python -m pygbag --bind <IP-do-PC-na-rede> --port 8001 main.py
 
 ## 🏗️ Arquitetura
 
-O jogo roda inteiramente no cliente (nenhuma chamada de rede no caminho crítico de jogar); um backend FastAPI opcional cuida só de login/sync de save/leaderboard, hospedado numa VM Oracle Cloud com deploy automático via GitHub Actions. Visão detalhada de módulos, fluxo de dados e a decisão de ser offline-first em [`docs/architecture.md`](docs/architecture.md); passo a passo de deploy/CI em [`docs/deploy.md`](docs/deploy.md).
+O jogo roda inteiramente no cliente (nenhuma chamada de rede no caminho crítico de jogar); um backend FastAPI opcional cuida só de login/sync de save/leaderboard, hospedado numa VM Oracle Cloud com deploy automático via GitHub Actions. Visão detalhada de módulos, fluxo de dados e a decisão de ser offline-first em [`docs/architecture.md`](docs/architecture.md); passo a passo de deploy/CI em [`docs/deploy.md`](docs/deploy.md). Modo cooperativo ainda não existe — [`docs/coop-feasibility.md`](docs/coop-feasibility.md) é um estudo de viabilidade (arquitetura recomendada, o que mudaria, estimativa de esforço), não uma feature implementada.
 
 ---
 
