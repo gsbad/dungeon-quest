@@ -3,6 +3,7 @@ import math
 from game.assets import (
     create_player_sprite, create_projectile_sprite,
     create_spell_icon, create_potion_icon, create_debuff_icon,
+    create_sword_icon, create_dash_icon,
 )
 from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL, mitigate
 from game.status_effects import StatusEffectCarrier
@@ -10,6 +11,16 @@ from game.professions import determine_profession
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
 
 TILE = 48
+
+# Stage J14: Dash - a DEX-gated mobility/damage move, not part of the
+# mana-based SPELLS system (game/spells.py) since it's physical/agility
+# themed like attack_cooldown/speed above, not magic - no mana cost, no
+# spell_base, gated directly on dexterity instead of SPELLS[...]["req"].
+DASH_DEX_REQ = 18
+DASH_DURATION = 0.18
+DASH_SPEED = 780
+DASH_COOLDOWN = 3.5
+DASH_TRAIL_LEN = 7
 
 # Stage E2/E3 hotbar - 3 spell slots (keys F/Q/R, already cast this way)
 # plus 3 item slots (keys 4/5/6, new). Slot background tint + a real pixel
@@ -24,7 +35,13 @@ _HOTBAR_GROUP_GAP = 16
 # Below the top-center "Inimigos: N" / exit-hint text (game/level.py draws
 # it at y=12) - the hotbar used to sit right on top of it.
 _HOTBAR_Y = 34
-_HOTBAR_KEYS = ["F", "Q", "R", "4", "5", "6"]
+# Stage J14 hotbar remap: F is melee attack (new slot, was unbound in the
+# hotbar), R is now Fireball (was F), Q stays Nova de Gelo, X is now Luz
+# Curativa (was R - freed up so R could become Fireball), 1/2/3 are the
+# potions (were 4/5/6), SPC is the new Dash spell (was plain ATTACK on
+# Space). Order matches hotbar_slots() below: attack, then SPELL_ORDER's
+# fixed fireball/frost_nova/healing_light, then the 3 items, then dash.
+_HOTBAR_KEYS = ["F", "R", "Q", "X", "1", "2", "3", "SPC"]
 # Stage G1: slot background is always black (contrast for the icon, not a
 # per-spell/item tint) - the old _SPELL_COLOR/_ITEM_COLOR dicts are gone,
 # nothing else read them.
@@ -32,28 +49,38 @@ _HOTBAR_BOX_COLOR = (15, 15, 18)
 
 
 def hotbar_slots():
-    """[(kind, id, rect), ...] for the 6 hotbar slots (3 spells + 3 items) -
-    a fixed layout derived only from SPELL_ORDER/ITEMS and screen width, not
-    from any Player instance, so GameplayState's tap handling and Player's
-    own drawing always agree on the exact same rects without either side
-    needing to own the other's state. Two groups (spells, items) separated
-    by _HOTBAR_GROUP_GAP (Stage G2) instead of one contiguous row."""
+    """[(kind, id, rect), ...] for all hotbar slots - a fixed layout derived
+    only from SPELL_ORDER/ITEMS and screen width, not from any Player
+    instance, so GameplayState's tap handling and Player's own drawing
+    always agree on the exact same rects without either side needing to
+    own the other's state. Groups (attack, spells, items, dash) separated
+    by _HOTBAR_GROUP_GAP (Stage G2), left to right.
+
+    Stage J14: "attack" (melee, key F) and "dash" (key SPACE) are new
+    single-slot groups bookending the original spell/item groups - neither
+    is keyed off SPELL_ORDER/ITEMS (there's exactly one of each), so `key`
+    is None for both; _draw_hotbar below branches on `kind` instead."""
     from game.theme import SW
     from game.items import ITEMS
     spell_ids = [("spell", s) for s in SPELL_ORDER]
     item_ids = [("item", i) for i in ITEMS]
+    attack_w = _HOTBAR_SLOT
     spell_w = len(spell_ids) * _HOTBAR_SLOT + (len(spell_ids) - 1) * _HOTBAR_GAP
     item_w = len(item_ids) * _HOTBAR_SLOT + (len(item_ids) - 1) * _HOTBAR_GAP
-    total_w = spell_w + _HOTBAR_GROUP_GAP + item_w
+    dash_w = _HOTBAR_SLOT
+    total_w = attack_w + _HOTBAR_GROUP_GAP + spell_w + _HOTBAR_GROUP_GAP + item_w + _HOTBAR_GROUP_GAP + dash_w
     x0 = SW // 2 - total_w // 2
-    slots = []
+    slots = [("attack", None, pygame.Rect(x0, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT))]
+    spell_x0 = x0 + attack_w + _HOTBAR_GROUP_GAP
     for i, (kind, key) in enumerate(spell_ids):
-        x = x0 + i * (_HOTBAR_SLOT + _HOTBAR_GAP)
+        x = spell_x0 + i * (_HOTBAR_SLOT + _HOTBAR_GAP)
         slots.append((kind, key, pygame.Rect(x, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT)))
-    item_x0 = x0 + spell_w + _HOTBAR_GROUP_GAP
+    item_x0 = spell_x0 + spell_w + _HOTBAR_GROUP_GAP
     for i, (kind, key) in enumerate(item_ids):
         x = item_x0 + i * (_HOTBAR_SLOT + _HOTBAR_GAP)
         slots.append((kind, key, pygame.Rect(x, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT)))
+    dash_x0 = item_x0 + item_w + _HOTBAR_GROUP_GAP
+    slots.append(("dash", None, pygame.Rect(dash_x0, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT)))
     return slots
 
 class Player:
@@ -104,6 +131,18 @@ class Player:
         self.attack_duration = 0.25
         self.attack_cooldown = 0
         self.attack_range = 60
+
+        # Stage J14: Dash - see DASH_* constants above the class for tuning.
+        # dash_trail holds recent (x, y, direction) snapshots for the fading
+        # ghost effect (Player.draw() below); _dash_hit_ids is per-activation
+        # (cleared in try_dash()) so a single dash only damages each enemy
+        # once even though contact is checked every frame it's moving.
+        self.dashing = False
+        self.dash_timer = 0.0
+        self.dash_cooldown = 0.0
+        self.dash_dx, self.dash_dy = 0.0, 1.0
+        self.dash_trail = []
+        self._dash_hit_ids = set()
 
         self.invincible = False
         self.invincible_timer = 0
@@ -271,26 +310,44 @@ class Player:
         if tick_dmg and not self.debug_invincible:
             self.hp -= tick_dmg
 
-        dx, dy = movement_vector
+        if self.dash_cooldown > 0:
+            self.dash_cooldown -= dt
 
-        # Horizontal facing wins over vertical when both are held (matches
-        # the original WASD priority order).
-        if dx > 0.05:
-            self.direction = "right"
-        elif dx < -0.05:
-            self.direction = "left"
-        elif dy > 0.05:
-            self.direction = "down"
-        elif dy < -0.05:
-            self.direction = "up"
+        if self.dashing:
+            # Stage J14: dash overrides WASD movement entirely for its short
+            # duration - same "one committed motion" feel as the attack
+            # animation, not a speed boost layered on top of steering.
+            self.dash_timer -= dt
+            self.dash_trail.append((self.x, self.y, self.direction))
+            if len(self.dash_trail) > DASH_TRAIL_LEN:
+                self.dash_trail.pop(0)
+            self.x += self.dash_dx * DASH_SPEED * dt
+            self._resolve_collisions_x(walls)
+            self.y += self.dash_dy * DASH_SPEED * dt
+            self._resolve_collisions_y(walls)
+            if self.dash_timer <= 0:
+                self.dashing = False
+        else:
+            dx, dy = movement_vector
 
-        # Move X
-        self.x += dx * self.speed * dt
-        self._resolve_collisions_x(walls)
+            # Horizontal facing wins over vertical when both are held
+            # (matches the original WASD priority order).
+            if dx > 0.05:
+                self.direction = "right"
+            elif dx < -0.05:
+                self.direction = "left"
+            elif dy > 0.05:
+                self.direction = "down"
+            elif dy < -0.05:
+                self.direction = "up"
 
-        # Move Y
-        self.y += dy * self.speed * dt
-        self._resolve_collisions_y(walls)
+            # Move X
+            self.x += dx * self.speed * dt
+            self._resolve_collisions_x(walls)
+
+            # Move Y
+            self.y += dy * self.speed * dt
+            self._resolve_collisions_y(walls)
 
         # Attack timers
         if self.attacking:
@@ -316,6 +373,28 @@ class Player:
             self.audio.play("attack")
             return True
         return False
+
+    def can_dash(self):
+        return (self.stats.dexterity >= DASH_DEX_REQ
+                and self.dash_cooldown <= 0 and not self.dashing)
+
+    def try_dash(self):
+        """Stage J14: dashes along the current aim_dx/aim_dy vector (mouse
+        angle on PC, drag-aim on mobile - same source J13 already set up),
+        multidirectional by design per the user's ask. Contact damage
+        against enemies/boss is resolved by the caller (GameplayState),
+        matching the existing split where Player never owns combat
+        resolution - see get_attack_rect()/try_attack() above."""
+        if not self.can_dash():
+            return False
+        self.dashing = True
+        self.dash_timer = DASH_DURATION
+        self.dash_dx, self.dash_dy = self.aim_dx, self.aim_dy
+        self.dash_cooldown = DASH_COOLDOWN
+        self.dash_trail = []
+        self._dash_hit_ids = set()
+        self.audio.play("attack")
+        return True
 
     def _resolve_collisions_x(self, walls):
         r = self.rect
@@ -361,6 +440,9 @@ class Player:
         if self.invincible and int(self.flash_timer * 8) % 2 == 0:
             return
 
+        if self.dash_trail:
+            self._draw_dash_trail(surface, cam_x, cam_y)
+
         key = self.direction
         if self.attacking:
             key = self.direction + "_atk"
@@ -373,6 +455,23 @@ class Player:
         sx = int(self.x - cam_x)
         sy = int(self.y - cam_y)
         surface.blit(sprite, (sx - 8, sy - 12))
+
+    def _draw_dash_trail(self, surface, cam_x, cam_y):
+        """Stage J14: a short fading "ghost" trail behind the hero during a
+        dash - each dash_trail entry is a past (x, y, direction) snapshot,
+        drawn oldest-to-newest with increasing alpha via a per-copy
+        set_alpha() (same principle as a mouse-cursor trail), so the dash
+        reads as a fast, deliberate streak rather than a plain teleport."""
+        n = len(self.dash_trail)
+        for i, (tx, ty, tdir) in enumerate(self.dash_trail):
+            ghost = self._get_sprite(tdir)
+            if tdir == "left":
+                ghost = pygame.transform.flip(self._get_sprite("right"), True, False)
+            ghost = ghost.copy()
+            ghost.set_alpha(int(160 * (i + 1) / n))
+            gx = int(tx - cam_x)
+            gy = int(ty - cam_y)
+            surface.blit(ghost, (gx - 8, gy - 12))
 
     def draw_hud(self, surface, save_state=None, touch_active=False):
         # HP/mana/XP bars - stats.py's bigger hp range (see Stage A3) no
@@ -437,6 +536,7 @@ class Player:
             # harder-to-tap duplicates - skip drawing them entirely.
             if touch_active:
                 continue
+            on_cooldown = False
             if kind == "spell":
                 locked = bool(missing_requirements(self.stats, key))
                 on_cooldown = self.spell_cooldowns.get(key, 0) > 0
@@ -444,10 +544,19 @@ class Player:
                 usable = not locked and not on_cooldown and affordable
                 icon = create_spell_icon(key)
                 selected = self.selected_spell == key
-            else:
+            elif kind == "item":
                 count = self.inventory.get(key, 0)
                 usable = count > 0
                 icon = create_potion_icon(key)
+                selected = False
+            elif kind == "attack":
+                usable = self.attack_cooldown <= 0
+                icon = create_sword_icon()
+                selected = False
+            else:  # kind == "dash"
+                on_cooldown = self.dash_cooldown > 0
+                usable = self.stats.dexterity >= DASH_DEX_REQ and not on_cooldown
+                icon = create_dash_icon()
                 selected = False
 
             pygame.draw.rect(surface, _HOTBAR_BOX_COLOR, rect, border_radius=6)
@@ -470,6 +579,12 @@ class Player:
 
             if kind == "spell" and on_cooldown:
                 cd_frac = min(1.0, self.spell_cooldowns[key] / SPELLS[key]["cooldown"]) if SPELLS[key]["cooldown"] else 1.0
+                wipe_h = int(rect.height * cd_frac)
+                wipe = pygame.Surface((rect.width, wipe_h), pygame.SRCALPHA)
+                wipe.fill((0, 0, 0, 160))
+                surface.blit(wipe, (rect.x, rect.bottom - wipe_h))
+            elif kind == "dash" and on_cooldown:
+                cd_frac = min(1.0, self.dash_cooldown / DASH_COOLDOWN)
                 wipe_h = int(rect.height * cd_frac)
                 wipe = pygame.Surface((rect.width, wipe_h), pygame.SRCALPHA)
                 wipe.fill((0, 0, 0, 160))

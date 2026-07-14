@@ -1445,6 +1445,26 @@ def create_sword_icon():
     return s
 
 
+_DASH_ICON_CACHE = None
+
+
+def create_dash_icon():
+    """Forward chevron + speed lines, same 16x16 SRCALPHA/manual-rect style
+    as create_sword_icon - used by the hotbar's new Dash slot (Stage J14)."""
+    global _DASH_ICON_CACHE
+    if _DASH_ICON_CACHE is not None:
+        return _DASH_ICON_CACHE
+    s = pygame.Surface((16, 16), pygame.SRCALPHA)
+    chevron = (230, 245, 255)
+    trail = (140, 200, 230)
+    pygame.draw.line(s, chevron, (6, 3), (12, 8), 2)
+    pygame.draw.line(s, chevron, (6, 13), (12, 8), 2)
+    for i, x in enumerate((1, 3, 5)):
+        pygame.draw.line(s, trail, (x, 8), (x + 2, 8), max(1, 2 - i))
+    _DASH_ICON_CACHE = s
+    return s
+
+
 _TROPHY_ICON_CACHE = {}
 _TROPHY_TIER_COLORS = {
     "bronze": (180, 110, 60),

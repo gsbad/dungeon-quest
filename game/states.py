@@ -3,7 +3,7 @@ import sys
 import math
 import time
 import random
-from game.player import Player, hotbar_slots
+from game.player import Player, hotbar_slots, DASH_DEX_REQ
 from game.items import ITEMS, use_item
 from game.level import Level, LEVEL_MAPS
 from game.boss import Boss, CacodemonBoss, Projectile
@@ -743,6 +743,8 @@ class GameplayState:
                 self.next_state = "restart"
         elif self.input.consume_action(Action.ATTACK):
             self.player.try_attack()
+        elif self.input.consume_action(Action.DASH):
+            self._attempt_dash()
         elif self.input.consume_action(Action.CAST_1):
             self._attempt_cast(SPELL_ORDER[0])
         elif self.input.consume_action(Action.CAST_2):
@@ -769,8 +771,12 @@ class GameplayState:
                 continue
             if kind == "spell":
                 self._attempt_cast(key)
-            else:
+            elif kind == "item":
                 use_item(self.player, key)
+            elif kind == "attack":
+                self.player.try_attack()
+            elif kind == "dash":
+                self._attempt_dash()
             return
 
     def _dev_jump(self, delta):
@@ -841,6 +847,18 @@ class GameplayState:
             text = f"{spell['name']} em recarga"
         elif self.player.mana < spell["mana_cost"]:
             text = f"Mana insuficiente para {spell['name']}"
+        else:
+            return
+        self.msg_timer, self.msg_text = 1.6, text
+
+    def _attempt_dash(self):
+        if self.player.try_dash():
+            return
+        # Same "don't fail silently" reasoning as _cast_fail_message above.
+        if self.player.stats.dexterity < DASH_DEX_REQ:
+            text = f"Investida bloqueada: requer DES {DASH_DEX_REQ}"
+        elif self.player.dash_cooldown > 0:
+            text = "Investida em recarga"
         else:
             return
         self.msg_timer, self.msg_text = 1.6, text
@@ -1047,6 +1065,24 @@ class GameplayState:
         # Fireball is credited exactly the same as one killed by melee -
         # this used to only grant xp/gold on the melee path.
         cast_targets = list(self.level.enemies) + ([self.boss] if self.boss else [])
+
+        # Stage J14: Dash contact damage - checked every frame the dash is
+        # moving (not just on activation) since it travels DASH_SPEED*dt per
+        # frame and could overlap an enemy mid-dash rather than exactly on
+        # press. player._dash_hit_ids (cleared once per dash in try_dash())
+        # caps it to one hit per enemy per activation, same idea as a melee
+        # swing not re-hitting every frame it's held "attacking".
+        if self.player.dashing:
+            for target in cast_targets:
+                if not getattr(target, "alive", True) or id(target) in self.player._dash_hit_ids:
+                    continue
+                if self.player.rect.colliderect(target.rect):
+                    self.player._dash_hit_ids.add(id(target))
+                    dmg, is_crit = self.player.stats.roll_physical()
+                    target.take_damage(dmg, dtype="physical", crit=is_crit)
+                    if not target.alive and hasattr(target, "etype"):
+                        self.level.credit_kill(self.player, target)
+
         for proj in self.player_projectiles:
             proj.update(dt, self.level.walls)
             if not proj.alive:
