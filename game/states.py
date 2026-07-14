@@ -896,21 +896,40 @@ class GameplayState:
             import game.save as save
             save.update_browser_title(self.player)
 
+        # Stage J12: a click that lands outside whatever the panel's own
+        # handle_tap() just claimed (backdrop, not one of its buttons)
+        # closes the menu - same "same shortcut, ESC, or click" trio the
+        # user asked for, alongside the key that opened it and ESC (both
+        # already handled above in handle_event()).
         if self.paperdoll_open:
             self.paperdoll.handle_tap(self.input, self.player, self.save_state)
+            if self.input.any_unconsumed_tap():
+                self.toggle_paperdoll()
+                return
             self.paperdoll.handle_keys(self.input, self.player, self.save_state)
             return
         if self.items_open:
             self.items.handle_tap(self.input, self.player, self.save_state)
+            if self.input.any_unconsumed_tap():
+                self.toggle_items()
+                return
             self.items.handle_keys(self.input, self.player, self.save_state)
             return
         if self.debug_panel_open:
             self.debug_panel.handle_tap(self.input)
+            if self.input.any_unconsumed_tap():
+                self.debug_panel_open = False
+                if self.debug_panel.consume_difficulty_dirty():
+                    self._dev_jump(0)
+                return
             self.debug_panel.handle_keys(self.input, self)
             return
         if self.leaderboard_open:
             self.leaderboard.update()
             self.leaderboard.handle_tap(self.input)
+            if self.input.any_unconsumed_tap():
+                self.toggle_leaderboard()
+                return
             self.leaderboard.handle_keys(self.input)
             return
         if self.paused:

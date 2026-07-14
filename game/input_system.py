@@ -464,6 +464,16 @@ class InputManager:
                 return True
         return False
 
+    def any_unconsumed_tap(self):
+        """Stage J12: "click closes the menu" - callers check this AFTER
+        letting a panel's own handle_tap() consume clicks on its buttons
+        (tapped_rect() pops a tap the instant it matches a rect), so a tap
+        still sitting here means it landed somewhere the panel didn't
+        claim - the backdrop, effectively - and the menu should close.
+        Doesn't consume anything itself; _taps already gets cleared once
+        per frame by update() regardless."""
+        return bool(self._taps)
+
     # ---------------------------------------------------------------- movement
     def movement_vector(self):
         if self.joystick.active:
@@ -568,31 +578,41 @@ class InputManager:
 
     def _pointer_down(self, pid, x, y):
         claimed = None
-        if self.joystick.contains(x, y):
-            self.joystick.press(pid, x, y)
-            claimed = "joystick"
-        elif self.attack_button.contains(x, y):
-            self.attack_button.press(pid)
-            self._press_action(Action.ATTACK)
-            claimed = "attack"
-        elif self.pause_button.contains(x, y):
-            self.pause_button.press(pid)
-            self._press_action(Action.PAUSE)
-            claimed = "pause"
-        else:
-            for i, btn in enumerate(self.spell_buttons):
-                if btn.contains(x, y):
-                    btn.press(pid)
-                    self._press_action(btn.action)
-                    claimed = ("spell", i)
-                    break
+        # Stage J12: these hit-tests are for the mobile-only virtual
+        # controls, which are invisible on PC (touch_active is deliberately
+        # never set by a mouse click - see MOUSEBUTTONDOWN above). Without
+        # this guard, a plain desktop click anywhere near where the
+        # joystick/attack/spell/item buttons WOULD be on mobile (e.g. the
+        # joystick's generous radius*1.4 hit circle at the bottom-left) got
+        # silently claimed and never became a tap - so "click outside a
+        # panel closes it" could randomly eat clicks depending on screen
+        # position, even though nothing was drawn there.
+        if self.touch_active:
+            if self.joystick.contains(x, y):
+                self.joystick.press(pid, x, y)
+                claimed = "joystick"
+            elif self.attack_button.contains(x, y):
+                self.attack_button.press(pid)
+                self._press_action(Action.ATTACK)
+                claimed = "attack"
+            elif self.pause_button.contains(x, y):
+                self.pause_button.press(pid)
+                self._press_action(Action.PAUSE)
+                claimed = "pause"
             else:
-                for i, btn in enumerate(self.item_buttons):
+                for i, btn in enumerate(self.spell_buttons):
                     if btn.contains(x, y):
                         btn.press(pid)
                         self._press_action(btn.action)
-                        claimed = ("item", i)
+                        claimed = ("spell", i)
                         break
+                else:
+                    for i, btn in enumerate(self.item_buttons):
+                        if btn.contains(x, y):
+                            btn.press(pid)
+                            self._press_action(btn.action)
+                            claimed = ("item", i)
+                            break
 
         self._pointers[pid] = {
             "x": x, "y": y,
