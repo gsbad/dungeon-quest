@@ -39,7 +39,13 @@ jobs:
 
       - name: Deploy web bundle
         run: |
-          sudo cp -r build/web/. /srv/dungeonquest-web/
+          # --delete: without it, an old build's leftover files (e.g. an
+          # .apk named after a previous checkout folder - the runner's
+          # dungeon-quest.apk vs. a dev machine's differently-named one,
+          # discovered on this workflow's very first real run) would just
+          # accumulate in /srv/dungeonquest-web forever instead of being
+          # replaced.
+          sudo rsync -a --delete build/web/. /srv/dungeonquest-web/
           sudo chown -R root:root /srv/dungeonquest-web
           sudo chmod -R a+rX /srv/dungeonquest-web
 
@@ -54,5 +60,16 @@ jobs:
 
       - name: Health check
         run: |
-          sleep 2
-          curl -fsS https://129.80.222.127.sslip.io/health
+          # Retries instead of a single fixed sleep - this flaked once on
+          # the very first real run (backend not quite listening yet right
+          # after restart, on a small VM under extra load from the pygbag
+          # build that just ran), so a plain `sleep 2; curl -f` isn't
+          # reliable enough to trust as a gate.
+          for i in 1 2 3 4 5; do
+            if curl -fsS https://129.80.222.127.sslip.io/health; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "health check failed after retries" >&2
+          exit 1

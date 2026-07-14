@@ -28,11 +28,21 @@ still work unchanged.
 
 ### One-time runner setup on the VM
 
-**Done as of 2026-07-13** (this session): the runner package (v2.335.1) is
-downloaded and extracted at `~/actions-runner` on the VM, `python3-pip` is
-installed, and the sudoers rule below is already in place. The only step
-left is registration, which needs a short-lived token only the GitHub UI
-can mint:
+**Done as of 2026-07-14**: registered, running as a systemd service
+(`actions.runner.gsbad-dungeon-quest.dungeon-quest-vm.service`), and
+confirmed end-to-end with a real deploy run. The first run did surface
+two real bugs, both already fixed in the workflow: it deploys with
+`rsync --delete` now, not `cp -r` (a plain `cp` never removes files a
+previous build doesn't produce anymore - concretely, an `.apk` named
+after a different checkout folder than the runner's own left behind and
+un-served, but not cleaned up), and the health check retries a few times
+instead of one `sleep 2; curl -f` (that one-shot version flaked once on
+this VM's modest specs, right after a restart competing with the
+`pygbag --build` that had just run).
+
+For reference, this is the one-time setup that already happened here -
+only useful again if the runner ever needs re-registering from scratch
+(token expired mid-setup, moved to a different VM, etc.):
 
 ```bash
 ssh -i ~/.ssh/dungeonquest_vm ubuntu@129.80.222.127
@@ -69,14 +79,14 @@ later; it's redundant, not required, on the VM as currently provisioned.
 `/etc/sudoers.d/dungeonquest-deploy` (mode 440, validated with `visudo -c`):
 
 ```
-ubuntu ALL=(root) NOPASSWD: /usr/bin/cp -r /home/ubuntu/actions-runner/_work/dungeon-quest/dungeon-quest/build/web/. /srv/dungeonquest-web/
+ubuntu ALL=(root) NOPASSWD: /usr/bin/rsync -a --delete /home/ubuntu/actions-runner/_work/dungeon-quest/dungeon-quest/build/web/. /srv/dungeonquest-web/
 ubuntu ALL=(root) NOPASSWD: /usr/bin/chown -R root\:root /srv/dungeonquest-web
 ubuntu ALL=(root) NOPASSWD: /usr/bin/chmod -R a+rX /srv/dungeonquest-web
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart dungeonquest-backend
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl reload caddy
 ```
 
-(Adjust the `cp` source path if the runner's work directory ends up
+(Adjust the `rsync` source path if the runner's work directory ends up
 different from the default `_work/<repo>/<repo>` layout - `pwd` inside a
 running job, or the first workflow run's log, will show the real path.)
 
