@@ -1512,6 +1512,31 @@ _POTION_COLORS = {
     "health_potion": ((200, 40, 40), (255, 110, 110)),
     "mana_potion": ((40, 90, 210), (110, 160, 255)),
     "antidote": ((50, 160, 80), (140, 230, 150)),
+    # Stage K12: each new potion's bottle is tinted after its own name
+    # ("Pocao Preta" is black, etc.) so the color IS the identity - no
+    # separate icon glyph needed, same as the 3 originals above.
+    "potion_black":     ((25, 25, 28), (70, 70, 78)),
+    "potion_orange":    ((220, 120, 30), (255, 175, 90)),
+    "potion_purple":    ((120, 40, 180), (180, 110, 230)),
+    "potion_white":     ((210, 210, 215), (250, 250, 255)),
+    "potion_green":     ((40, 150, 60), (110, 220, 130)),
+    "potion_darkblue":  ((25, 45, 130), (70, 100, 200)),
+    "potion_yellow":    ((220, 200, 30), (255, 240, 110)),
+    "potion_gray":      ((120, 120, 128), (180, 180, 188)),
+    "potion_silver":    ((170, 175, 185), (225, 228, 235)),
+    "potion_brown":     ((110, 70, 35), (170, 120, 70)),
+    "potion_darkred":   ((110, 15, 20), (170, 50, 55)),
+    "potion_violet":    ((150, 60, 200), (200, 130, 240)),
+    "potion_ruby":      ((190, 20, 60), (240, 80, 120)),
+    "potion_cyan":      ((30, 180, 190), (110, 230, 235)),
+    "potion_pink":      ((225, 110, 170), (255, 180, 210)),
+    "potion_gold":      ((210, 165, 30), (255, 220, 100)),
+    "potion_turquoise": ((30, 160, 150), (100, 220, 205)),
+    "elixir_crimson":   ((160, 10, 30), (220, 60, 80)),
+    "elixir_arcane":    ((80, 30, 190), (140, 90, 240)),
+    "elixir_guardian":  ((60, 120, 170), (120, 180, 225)),
+    "elixir_hunter":    ((70, 130, 50), (130, 190, 100)),
+    "elixir_champion":  ((215, 175, 40), (255, 225, 120)),
 }
 
 

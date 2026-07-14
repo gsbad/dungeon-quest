@@ -4,7 +4,7 @@ import math
 import time
 import random
 from game.player import Player, hotbar_slots, DASH_DEX_REQ
-from game.items import ITEMS, use_item
+from game.items import use_item
 from game.level import Level, LEVEL_MAPS
 from game.boss import Boss, CacodemonBoss, Projectile
 from game.enemy import Particle, Enemy
@@ -593,6 +593,10 @@ class GameplayState:
 
         self.camera.x = self.player.x - SW//2
         self.camera.y = self.player.y - SH//2
+        # Stage K12: touch item-buttons are built before any Player exists
+        # (InputManager construction) - repoint their icons at whichever 3
+        # items this player actually has selected.
+        self.input.refresh_item_icons(self.player)
 
         # Paragon rolls (Stage B3) - upgrades some already-spawned enemies
         # in place; Level itself stays unaware Paragon exists at all. Then
@@ -762,14 +766,23 @@ class GameplayState:
         elif self.input.consume_action(Action.CAST_SELECTED):
             self._attempt_cast(self.player.selected_spell)
         elif self.input.consume_action(Action.USE_1):
-            use_item(self.player, list(ITEMS)[0])
+            self._use_hotbar_item(0)
         elif self.input.consume_action(Action.USE_2):
-            use_item(self.player, list(ITEMS)[1])
+            self._use_hotbar_item(1)
         elif self.input.consume_action(Action.USE_3):
-            use_item(self.player, list(ITEMS)[2])
+            self._use_hotbar_item(2)
+
+    def _use_hotbar_item(self, slot):
+        # Stage K12: keys 1/2/3 use whichever item is in that hotbar slot
+        # (player.hotbar_items), not a fixed ITEMS-dict-order index anymore -
+        # ITEMS grew to ~25 entries, so "the first 3" stopped meaning
+        # "whatever's shown in the hotbar" the moment selection became
+        # player-editable.
+        if slot < len(self.player.hotbar_items):
+            use_item(self.player, self.player.hotbar_items[slot])
 
     def _handle_hotbar_taps(self):
-        for kind, key, rect in hotbar_slots():
+        for kind, key, rect in hotbar_slots(self.player):
             # Neither slot kind is drawn on touch (see Player._draw_hotbar) -
             # the spell_buttons/item_buttons rows handle that input instead,
             # so skip the now-invisible tap targets to match.
@@ -1153,7 +1166,7 @@ class GameplayState:
             # the level ends immediately (victory screen), so there's no
             # gameplay window to walk over a dropped coin. Particle burst
             # instead, for the visual payoff.
-            self.player.gold += self.boss.gold_reward
+            self.player.credit_gold(self.boss.gold_reward)
             for _ in range(15):
                 self.level_up_particles.append(
                     Particle(self.boss.x + self.boss.width/2,

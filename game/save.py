@@ -20,7 +20,7 @@ import copy
 from game.player import Player
 from game.professions import determine_profession
 
-SAVE_VERSION = 6
+SAVE_VERSION = 7
 _KEY = "dungeon_quest_save"
 _NATIVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_save.json")
 
@@ -46,6 +46,7 @@ def new_game_state():
         "settings": {"muted": False},
         "gold": 0,
         "inventory": {},
+        "hotbar_items": ["health_potion", "mana_potion", "antidote"],
     }
 
 
@@ -110,6 +111,12 @@ def _migrate(data):
     if data["version"] < 6:
         data["progression"]["levels_seen"] = data["progression"].get("levels_seen", [])
         data["version"] = 6
+    if data["version"] < 7:
+        # Stage K12: hotbar item selection (max 3) is now player-editable -
+        # existing saves get the exact 3 potions the hotbar always showed
+        # before this was selectable, so nobody's hotbar changes on load.
+        data["hotbar_items"] = data.get("hotbar_items", ["health_potion", "mana_potion", "antidote"])
+        data["version"] = 7
     return data
 
 
@@ -155,6 +162,7 @@ def character_from_state(state, x, y, audio_mgr):
     p.unspent_points = char["unspent_points"]
     p.gold = state.get("gold", 0)
     p.inventory = dict(state.get("inventory", {}))
+    p.hotbar_items = list(state.get("hotbar_items", ["health_potion", "mana_potion", "antidote"]))
     p.hp = p.max_hp
     p.mana = p.max_mana
     return p
@@ -176,6 +184,7 @@ def sync_character(state, player):
 def sync_economy(state, player):
     state["gold"] = player.gold
     state["inventory"] = dict(player.inventory)
+    state["hotbar_items"] = list(player.hotbar_items)
 
 
 def sync_counters(state, player):
@@ -226,7 +235,7 @@ def merge_states(local, remote, local_synced_at, remote_updated_at):
     for kills/boss_kills (additive/never-regress) vs. what sync_economy()
     already established for gold/inventory (flat overwrite):
 
-    - character/gold/inventory/settings/current_difficulty: whichever side
+    - character/gold/inventory/hotbar_items/settings/current_difficulty: whichever side
       wrote more recently than our last known sync point wins wholesale. If
       the server has moved forward since we last synced (another device
       wrote), the server's version wins; otherwise our own local edits (made
@@ -248,6 +257,7 @@ def merge_states(local, remote, local_synced_at, remote_updated_at):
         merged["character"] = remote["character"]
         merged["gold"] = remote["gold"]
         merged["inventory"] = remote["inventory"]
+        merged["hotbar_items"] = remote.get("hotbar_items", merged["hotbar_items"])
         merged["settings"] = remote["settings"]
         merged["progression"]["current_difficulty"] = remote["progression"]["current_difficulty"]
 

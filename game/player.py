@@ -46,30 +46,32 @@ _HOTBAR_Y = 6
 # still the potions, and Dash (new in J14, didn't exist pre-J14) moved to
 # X since Space went back to attack. Order matches hotbar_slots() below:
 # attack, then SPELL_ORDER's fixed fireball/frost_nova/healing_light, then
-# the 3 items, then dash.
-_HOTBAR_KEYS = ["SPC", "F", "Q", "R", "1", "2", "3", "X"]
+# up to 3 items, then dash. (Key labels themselves are now derived per-kind
+# in _draw_hotbar, Stage K12 - see that method's comment.)
 # Stage G1: slot background is always black (contrast for the icon, not a
 # per-spell/item tint) - the old _SPELL_COLOR/_ITEM_COLOR dicts are gone,
 # nothing else read them.
 _HOTBAR_BOX_COLOR = (15, 15, 18)
 
 
-def hotbar_slots():
+def hotbar_slots(player):
     """[(kind, id, rect), ...] for all hotbar slots - a fixed layout derived
-    only from SPELL_ORDER/ITEMS and screen width, not from any Player
-    instance, so GameplayState's tap handling and Player's own drawing
-    always agree on the exact same rects without either side needing to
-    own the other's state. Groups (attack, spells, items, dash) separated
-    by _HOTBAR_GROUP_GAP (Stage G2), left to right.
+    from SPELL_ORDER/player.hotbar_items and screen width. Groups (attack,
+    spells, items, dash) separated by _HOTBAR_GROUP_GAP (Stage G2), left to
+    right.
 
     Stage J14: "attack" (melee, key F) and "dash" (key SPACE) are new
     single-slot groups bookending the original spell/item groups - neither
     is keyed off SPELL_ORDER/ITEMS (there's exactly one of each), so `key`
-    is None for both; _draw_hotbar below branches on `kind` instead."""
+    is None for both; _draw_hotbar below branches on `kind` instead.
+
+    Stage K12: ITEMS grew from 3 to ~25 entries (new potions/elixirs), so
+    this can no longer iterate ITEMS wholesale - the item group now shows
+    only `player.hotbar_items` (max 3, picked in the Items overlay), same
+    shape as before for anyone who hasn't touched the new selection UI."""
     from game.theme import SW
-    from game.items import ITEMS
     spell_ids = [("spell", s) for s in SPELL_ORDER]
-    item_ids = [("item", i) for i in ITEMS]
+    item_ids = [("item", i) for i in player.hotbar_items]
     attack_w = _HOTBAR_SLOT
     spell_w = len(spell_ids) * _HOTBAR_SLOT + (len(spell_ids) - 1) * _HOTBAR_GAP
     item_w = len(item_ids) * _HOTBAR_SLOT + (len(item_ids) - 1) * _HOTBAR_GAP
@@ -104,6 +106,10 @@ def _item_tooltip_line(item_id):
         parts.append(f"Restaura {round(item['heal_mana_frac'] * 100)}% da mana")
     if "cures" in item:
         parts.append("Cura: " + ", ".join(sorted(item["cures"])))
+    if "buff" in item:
+        from game.status_effects import STATUS_HELP
+        _, desc = STATUS_HELP.get(item["buff"], (item["buff"], ""))
+        parts.append(desc)
     return " | ".join(parts) if parts else ""
 
 
@@ -132,6 +138,11 @@ class Player:
         self.unspent_points = 0
         self.gold = 0
         self.inventory = {}
+        # Stage K12: which item ids show up in the hotbar's item group (max
+        # 3, enforced by merchant.py's toggle UI, not here) - defaults to
+        # the original 3 potions so a player who never opens "SEUS ITENS"
+        # sees the exact hotbar the game always had.
+        self.hotbar_items = ["health_potion", "mana_potion", "antidote"]
         self.selected_spell = SPELL_ORDER[0]
         self.spell_cooldowns = {}
         # Pity counter for game/affixes.py's Paragon roll - not persisted
@@ -301,7 +312,10 @@ class Player:
 
     @property
     def hp_regen(self):
-        return self.stats.hp_regen + self._bonus("hp_regen_flat_pct") * self.max_hp
+        # Stage K12: hp_regen_mult (Pocao Rosa) multiplies the base regen,
+        # same shape mana_regen_mult already had below - hp_regen_flat_pct
+        # (Postura layer) stays a separate additive term, same as mana's.
+        return self.stats.hp_regen * self._mult("hp_regen_mult") + self._bonus("hp_regen_flat_pct") * self.max_hp
 
     @property
     def mana_regen(self):
@@ -320,6 +334,9 @@ class Player:
     def gain_xp(self, amount):
         if self.level >= MAX_LEVEL:
             return
+        # Stage K12: Pocao Dourada (buff_gold's xp_gain_mult) - same _mult()
+        # aggregation every other derived stat reads through.
+        amount *= self._mult("xp_gain_mult")
         self.xp += amount
         self.xp_earned_total += amount
         while self.level < MAX_LEVEL and self.xp >= xp_to_next(self.level):
@@ -327,6 +344,14 @@ class Player:
             self.level += 1
             self.unspent_points += POINTS_PER_LEVEL
             self.pending_level_up += 1
+
+    def credit_gold(self, amount):
+        """Stage K12: Pocao Turquesa (buff_gold_gain's gold_gain_mult) - every
+        gold credit (boss reward, dropped-coin pickup) should go through this
+        instead of a bare `player.gold += n`, same reasoning as gain_xp()
+        above needing the xp_gain_mult multiplier applied at the one place
+        XP is actually granted."""
+        self.gold += round(amount * self._mult("gold_gain_mult"))
 
     def use_item(self, item_id):
         from game.items import use_item as _use_item
@@ -729,7 +754,14 @@ class Player:
         from game.ui import draw_tooltip
         f_key = font(11, bold=True)
         f_count = font(11, bold=True)
-        for i, (kind, key, rect) in enumerate(hotbar_slots()):
+        # Stage K12: key labels are derived per-kind, not by flat slot index -
+        # player.hotbar_items can hold fewer than 3 entries (nothing forces a
+        # full 3 picks), which used to shift every label after the item
+        # group (dash's "X" would've slid left into "3"'s spot) when read
+        # positionally out of the old fixed-length _HOTBAR_KEYS.
+        _spell_key = {"fireball": "F", "frost_nova": "Q", "healing_light": "R"}
+        item_i = 0
+        for i, (kind, key, rect) in enumerate(hotbar_slots(self)):
             # Stage H10: on touch devices, both spell casting and item use
             # have their own dedicated button rows next to the joystick
             # (game/input_system.py's spell_buttons/item_buttons), so the
@@ -773,7 +805,16 @@ class Player:
                 dim.fill((0, 0, 0, 130))
                 surface.blit(dim, (icon_x, icon_y))
 
-            key_surf = f_key.render(_HOTBAR_KEYS[i], True, (255, 255, 255))
+            if kind == "attack":
+                key_label = "SPC"
+            elif kind == "spell":
+                key_label = _spell_key.get(key, "?")
+            elif kind == "item":
+                item_i += 1
+                key_label = str(item_i)
+            else:  # dash
+                key_label = "X"
+            key_surf = f_key.render(key_label, True, (255, 255, 255))
             key_bg = pygame.Rect(rect.x - 2, rect.y - 2, key_surf.get_width() + 4, key_surf.get_height() + 2)
             pygame.draw.rect(surface, (20, 20, 30), key_bg, border_radius=3)
             surface.blit(key_surf, (key_bg.x + 2, key_bg.y + 1))

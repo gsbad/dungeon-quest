@@ -65,6 +65,7 @@ class Action(Enum):
     USE_1 = auto()
     USE_2 = auto()
     USE_3 = auto()
+    TOGGLE_HOTBAR = auto()
     DEV_NEXT_LEVEL = auto()
     DEV_PREV_LEVEL = auto()
     DEBUG_PANEL = auto()
@@ -91,6 +92,7 @@ HELP_ENTRIES = [
     ("1 / 2 / 3", "Usar item (slots do hotbar)"),
     ("C", "Abrir/fechar o menu Personagem"),
     ("I", "Abrir/fechar o menu Itens"),
+    ("H (no menu Itens)", "Marcar/desmarcar o item selecionado para o hotbar (max. 3)"),
     ("L", "Abrir/fechar o Ranking (requer login Google)"),
     ("TAB", "Trocar de aba dentro de um menu"),
     ("ESC", "Pausar o jogo / fechar o menu aberto"),
@@ -516,6 +518,19 @@ class InputManager:
                                  icon=create_potion_icon(item_id))
             self.item_buttons.append(btn)
 
+    def refresh_item_icons(self, player):
+        """Stage K12: item_buttons are built once at InputManager
+        construction (before any Player/save exists), defaulting to the
+        first 3 ITEMS - health/mana/antidote, same order as Player's default
+        hotbar_items. Once a save loads (or the player edits their hotbar
+        selection in the Items overlay), the touch buttons' icons need to
+        be repointed at whatever's actually in player.hotbar_items so
+        tapping one fires (via Action.USE_n -> GameStateManager._use_hotbar_item)
+        the item it visibly shows, not a stale default."""
+        for i, btn in enumerate(self.item_buttons):
+            if i < len(player.hotbar_items):
+                btn.icon = create_potion_icon(player.hotbar_items[i])
+
     # ------------------------------------------------------------------ actions
     def _press_action(self, action):
         self._actions.add(action)
@@ -608,6 +623,11 @@ class InputManager:
                 self._press_action(Action.ITEMS)
             if event.key == pygame.K_l:
                 self._press_action(Action.LEADERBOARD)
+            if event.key == pygame.K_h:
+                # Stage K12: only meaningful inside the Items overlay ("seus
+                # itens" row -> toggle hotbar selection), consumed nowhere
+                # else - safe to bind globally like every other menu action.
+                self._press_action(Action.TOGGLE_HOTBAR)
             if event.key == pygame.K_f:
                 # Stage K1: reverted back to Bola de Fogo (Stage J14 had
                 # moved this to melee attack - Space owns that again now).

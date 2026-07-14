@@ -584,7 +584,7 @@ class Level:
         for g in self.gold_drops:
             g.update(dt)
             if g.alive and g.rect.colliderect(player.rect):
-                player.gold += g.amount
+                player.credit_gold(g.amount)
                 g.alive = False
                 if audio_mgr:
                     audio_mgr.play("pickup")
