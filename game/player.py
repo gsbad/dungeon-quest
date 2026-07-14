@@ -33,9 +33,10 @@ _HOTBAR_GAP = 6
 # the normal _HOTBAR_GAP within each group - makes the "magias | itens"
 # split readable at a glance instead of one undifferentiated row of 6.
 _HOTBAR_GROUP_GAP = 16
-# Below the top-center "Inimigos: N" / exit-hint text (game/level.py draws
-# it at y=12) - the hotbar used to sit right on top of it.
-_HOTBAR_Y = 34
+# Stage K7: moved up close to the top edge - the "Inimigos: N" counter
+# that used to occupy this top-center spot (game/level.py) is gone, so the
+# hotbar no longer needs to sit below it.
+_HOTBAR_Y = 6
 # Stage K1: reverted Stage J14's remap - SPACE is melee attack again, F is
 # Fireball again, Q stays Nova de Gelo, R is Luz Curativa again, 1/2/3 are
 # still the potions, and Dash (new in J14, didn't exist pre-J14) moved to

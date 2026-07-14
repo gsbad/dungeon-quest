@@ -700,11 +700,12 @@ class Level:
 
         # Top-center, clear of the HP/mana/XP dock (top-left) and the
         # sound/fullscreen/pause buttons (top-right).
-        living = [e for e in self.enemies if e.alive]
-        if living and self.data["type"] == "combat":
-            txt = f.render(f"Inimigos: {len(living)}", True, (255,100,100))
-            surface.blit(txt, (surface.get_width()//2 - txt.get_width()//2, 12))
-        elif self.exit_open:
+        # Stage K7: the "Inimigos: N" kill counter is gone - that top-center
+        # spot is now the hotbar's (moved up from _HOTBAR_Y=34 to make room
+        # for it here originally; now freed up again). Stage K14's dig-for-
+        # a-key exit will make "kill count" not even the win condition
+        # anymore, so this wasn't just cosmetic to drop.
+        if self.exit_open:
             # Stage H4: same tofu-box glyph bug as boss.py's ENRAIVECIDO -
             # pygame's default font has no U+2B06 glyph.
             txt = f.render("Encontre a Saida!", True, (100, 255, 180))
