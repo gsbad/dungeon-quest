@@ -907,14 +907,14 @@ class GameplayState:
         # (vx, vy), so this is the only spot that needed to change.
         px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
         speed = 320
-        dmg = self.player.stats.magic_damage(spell["spell_base"])
+        dmg = self.player.magic_damage(spell["spell_base"])
         self.player_projectiles.append(
             Projectile(px, py, self.player.aim_dx * speed, self.player.aim_dy * speed, dmg, (255, 120, 20))
         )
 
     def _cast_frost_nova(self, spell, radius=110):
         px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
-        dmg = self.player.stats.magic_damage(spell["spell_base"])
+        dmg = self.player.magic_damage(spell["spell_base"])
         targets = list(self.level.enemies)
         if self.boss:
             targets.append(self.boss)
@@ -1065,7 +1065,7 @@ class GameplayState:
                 # every swing flashed the boss even from across the map,
                 # never actually connecting. Only call it on an actual hit.
                 if atk_rect.colliderect(self.boss.rect):
-                    dmg, is_crit = self.player.stats.roll_physical()
+                    dmg, is_crit = self.player.roll_physical()
                     self.boss.take_damage(dmg, dtype="physical", crit=is_crit,
                                            knockback_from=(self.player.x + self.player.width / 2,
                                                             self.player.y + self.player.height / 2))
@@ -1127,7 +1127,7 @@ class GameplayState:
                     continue
                 if self.player.rect.colliderect(target.rect):
                     self.player._dash_hit_ids.add(id(target))
-                    dmg, is_crit = self.player.stats.roll_physical()
+                    dmg, is_crit = self.player.roll_physical()
                     target.take_damage(dmg, dtype="physical", crit=is_crit,
                                         knockback_from=(self.player.x + self.player.width / 2,
                                                          self.player.y + self.player.height / 2))

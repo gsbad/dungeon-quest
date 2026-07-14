@@ -603,7 +603,7 @@ class Level:
                     continue
                 if enemy.affix == "warded" and random.random() < 0.25:
                     continue  # blocked - Paragon affix
-                dmg, is_crit = player.stats.roll_physical()
+                dmg, is_crit = player.roll_physical()
                 enemy.take_damage(dmg, dtype="physical", crit=is_crit,
                                    knockback_from=(player.x + player.width / 2, player.y + player.height / 2))
                 if not enemy.alive:

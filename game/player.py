@@ -113,8 +113,14 @@ class Player:
         self.audio = audio_mgr
         self.stats = StatBlock(strength=10, dexterity=10, intelligence=10,
                                 wisdom=10, vigor=10, weapon_base=4, base_speed=190)
+        # Stage K10: status must exist before the max_hp/max_mana property
+        # reads below - both now go through self._mult(), which reads
+        # self.status. Moved up from its old spot further down (it used to
+        # not matter what order this was in, since nothing this early
+        # touched it).
+        self.status = StatusEffectCarrier()
         self.hp = self.max_hp
-        self.mana = self.stats.max_mana
+        self.mana = self.max_mana
         self.width = 32
         self.height = 36
 
@@ -124,7 +130,6 @@ class Player:
         self.unspent_points = 0
         self.gold = 0
         self.inventory = {}
-        self.status = StatusEffectCarrier()
         self.profession = determine_profession(self.stats)
         self.selected_spell = SPELL_ORDER[0]
         self.spell_cooldowns = {}
@@ -217,21 +222,85 @@ class Player:
             return "Heroi"
         return self.name[0].upper() + self.name[1:]
 
+    def stance_multiplier(self, field):
+        """Stage K10 stub, overridden for real once Stage K11's Postura
+        registry exists - a Postura is permanent (tied to self.profession,
+        never expires) so it's deliberately NOT part of self.status
+        (StatusEffectCarrier, timed-only). Every Player stat property below
+        already calls this alongside self.status, so K11 only has to teach
+        this one method to look profession up in STANCES - nothing else
+        needs to change."""
+        return 1.0
+
+    def stance_bonus(self, field):
+        """Additive counterpart to stance_multiplier() above - same stub,
+        same reason."""
+        return 0.0
+
+    def _mult(self, field):
+        """Combined timed-buff x permanent-Postura multiplier for one
+        StatusEffectDef field - the one place every stat property below
+        reads through, so Stage K11/K12 both "just work" by populating
+        self.status.active / STANCES without any of these properties
+        changing again."""
+        return self.status.multiplier(field) * self.stance_multiplier(field)
+
+    def _bonus(self, field):
+        return self.status.bonus(field) + self.stance_bonus(field)
+
     @property
     def speed(self):
         return self.stats.speed * self.status.speed_multiplier * self.weather_speed_mult
 
     @property
     def max_hp(self):
-        return self.stats.max_hp
+        return self.stats.max_hp * self._mult("max_hp_mult")
 
     @property
     def attack_damage(self):
-        return self.stats.physical_damage
+        return self.stats.physical_damage * self._mult("physical_damage_mult")
+
+    def magic_damage(self, spell_base):
+        return round(self.stats.magic_damage(spell_base) * self._mult("magic_damage_mult"))
+
+    def roll_physical(self):
+        """Player-level reimplementation of StatBlock.roll_physical() (not
+        a thin delegate to it) - crit chance needs to read this class's own
+        `crit_chance` property (which adds crit_chance_add on top of
+        StatBlock's luck-derived base), and damage needs physical_damage_mult,
+        neither of which StatBlock.roll_physical() knows about. Every melee/
+        dash hit (game/level.py, game/states.py) should call this instead of
+        `player.stats.roll_physical()` to get Postura/potion bonuses."""
+        import random
+        is_crit = random.random() < self.crit_chance
+        dmg = self.attack_damage
+        if is_crit:
+            dmg = round(dmg * self.stats.crit_damage_mult)
+        return dmg, is_crit
+
+    @property
+    def physical_defense(self):
+        return self.stats.physical_defense * self._mult("physical_defense_mult")
+
+    @property
+    def magic_defense(self):
+        return self.stats.magic_defense * self._mult("magic_defense_mult")
+
+    @property
+    def crit_chance(self):
+        return min(0.60, self.stats.crit_chance + self._bonus("crit_chance_add"))
+
+    @property
+    def hp_regen(self):
+        return self.stats.hp_regen + self._bonus("hp_regen_flat_pct") * self.max_hp
+
+    @property
+    def mana_regen(self):
+        return self.stats.mana_regen * self._mult("mana_regen_mult") + self._bonus("mana_regen_flat_pct") * self.max_mana
 
     @property
     def max_mana(self):
-        return self.stats.max_mana
+        return self.stats.max_mana * self._mult("max_mana_mult")
 
     @property
     def xp_frac(self):
@@ -277,11 +346,14 @@ class Player:
         if not self.can_cast(spell_id):
             return False
         spell = SPELLS[spell_id]
-        self.mana -= spell["mana_cost"]
+        # Stage K10: mana_cost_mult < 1.0 (e.g. a "-10% custo de mana"
+        # Postura) makes this cheaper; nothing sets it below 1.0 yet.
+        self.mana -= spell["mana_cost"] * self._mult("mana_cost_mult")
         # Haste (Destreza) speeds up spell cooldowns the same way it speeds
         # up melee attack_cooldown - one stat for "attack speed" and "cast
-        # speed" instead of a second, parallel system.
-        self.spell_cooldowns[spell_id] = spell["cooldown"] * (1 - self.stats.haste)
+        # speed" instead of a second, parallel system. attack_speed_mult
+        # (Stage K10) stacks on top - >1.0 shortens the cooldown further.
+        self.spell_cooldowns[spell_id] = spell["cooldown"] * (1 - self.stats.haste) / self._mult("attack_speed_mult")
         return True
 
     @property
@@ -320,7 +392,7 @@ class Player:
     def take_damage(self, amount, dtype="physical", knockback_from=None):
         if self.invincible or self.debug_invincible:
             return
-        defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
+        defense = self.physical_defense if dtype == "physical" else self.magic_defense
         amount = mitigate(amount, defense) * self.status.damage_taken_multiplier
         self.hp -= amount
         self.invincible = True
@@ -342,8 +414,8 @@ class Player:
             self.knockback_timer = KNOCKBACK_DURATION
 
     def update(self, dt, walls, movement_vector):
-        self.mana = min(self.max_mana, self.mana + self.stats.mana_regen * dt)
-        self.hp = min(self.max_hp, self.hp + self.stats.hp_regen * dt)
+        self.mana = min(self.max_mana, self.mana + self.mana_regen * dt)
+        self.hp = min(self.max_hp, self.hp + self.hp_regen * dt)
 
         for spell_id in list(self.spell_cooldowns):
             self.spell_cooldowns[spell_id] = max(0.0, self.spell_cooldowns[spell_id] - dt)
@@ -447,7 +519,7 @@ class Player:
         if self.attack_cooldown <= 0 and not self.attacking:
             self.attacking = True
             self.attack_timer = self.attack_duration
-            self.attack_cooldown = self.stats.attack_cooldown
+            self.attack_cooldown = self.stats.attack_cooldown / self._mult("attack_speed_mult")
             self.audio.play("attack")
             return True
         return False
