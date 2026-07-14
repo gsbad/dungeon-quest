@@ -9,6 +9,7 @@ from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL, mitig
 from game.status_effects import StatusEffectCarrier
 from game.professions import determine_profession
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
+from game.combat_fx import FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR, DOT_COLOR
 
 TILE = 48
 
@@ -143,6 +144,8 @@ class Player:
         self.dash_dx, self.dash_dy = 0.0, 1.0
         self.dash_trail = []
         self._dash_hit_ids = set()
+
+        self.floating_numbers = []  # Stage K6
 
         self.invincible = False
         self.invincible_timer = 0
@@ -290,11 +293,16 @@ class Player:
         if self.invincible or self.debug_invincible:
             return
         defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
-        amount = mitigate(amount, defense)
-        self.hp -= amount * self.status.damage_taken_multiplier
+        amount = mitigate(amount, defense) * self.status.damage_taken_multiplier
+        self.hp -= amount
         self.invincible = True
         self.invincible_timer = self.invincible_duration
         self.audio.play("hurt")
+        # Stage K6: floating damage number.
+        number_color = PHYSICAL_COLOR if dtype == "physical" else MAGIC_COLOR
+        self.floating_numbers.append(
+            FloatingNumber(self.x + self.width / 2, self.y, amount, number_color)
+        )
 
     def update(self, dt, walls, movement_vector):
         self.mana = min(self.max_mana, self.mana + self.stats.mana_regen * dt)
@@ -309,6 +317,18 @@ class Player:
         tick_dmg = self.status.update(dt)
         if tick_dmg and not self.debug_invincible:
             self.hp -= tick_dmg
+            # Stage K6: floating damage number for the DoT tick itself -
+            # take_damage() is bypassed here (see comment above), so this
+            # is the only place that can show it.
+            self.floating_numbers.append(
+                FloatingNumber(self.x + self.width / 2, self.y, tick_dmg, DOT_COLOR)
+            )
+
+        # Stage K6: floating damage numbers (age/prune every frame,
+        # regardless of source - take_damage()/the DoT tick above only add).
+        self.floating_numbers = [n for n in self.floating_numbers if n.alive]
+        for n in self.floating_numbers:
+            n.update(dt)
 
         if self.dash_cooldown > 0:
             self.dash_cooldown -= dt
@@ -443,6 +463,11 @@ class Player:
         return cached
 
     def draw(self, surface, cam_x, cam_y):
+        # Stage K6: drawn before the invincibility-flash early return below,
+        # so the number doesn't itself flicker in sync with the hero sprite.
+        for n in self.floating_numbers:
+            n.draw(surface, cam_x, cam_y)
+
         # Flash when invincible
         if self.invincible and int(self.flash_timer * 8) % 2 == 0:
             return

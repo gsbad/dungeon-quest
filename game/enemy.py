@@ -6,6 +6,7 @@ from game.player import TILE
 from game.stats import StatBlock, ENEMY_ARCHETYPES, BASE_XP, GOLD_DROPS, scale_archetype, mitigate
 from game.status_effects import StatusEffectCarrier
 from game.affixes import AFFIXES
+from game.combat_fx import FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR, DOT_COLOR
 
 # Stage K5: display name shown above a regular enemy's head (draw() below).
 # Duplicated from game/bestiary.py's BESTIARY[etype]["name"] rather than
@@ -342,6 +343,7 @@ class Enemy:
         self.attack_range = 50
         self.alive = True
         self.particles = []
+        self.floating_numbers = []
         self.projectiles = []
         self.projectile_sprite = create_projectile_sprite("fireball")
         # Puddle timer - any archetype whose flavor opts in (goblin, and
@@ -362,6 +364,16 @@ class Enemy:
             amount = mitigate(amount, defense)
         self.hp -= amount
         self.hit_flash = 0.15
+        # Stage K6: floating damage number - dtype=None means this call came
+        # from a DoT tick (see the comment above), which gets its own dark
+        # orange color distinct from a direct physical/magic hit.
+        if dtype is None:
+            number_color = DOT_COLOR
+        elif dtype == "physical":
+            number_color = PHYSICAL_COLOR
+        else:
+            number_color = MAGIC_COLOR
+        self.floating_numbers.append(FloatingNumber(self.x + 16, self.y, amount, number_color))
         # Spawn hit particles - a crit gets extra gold-tinted particles on
         # top of the normal red hit-spray, same visual language as the
         # existing level-up/gold-pickup particle bursts.
@@ -389,6 +401,11 @@ class Enemy:
         self.particles = [p for p in self.particles if p.life > 0]
         for p in self.particles:
             p.update(dt)
+
+        # Stage K6: floating damage numbers
+        self.floating_numbers = [n for n in self.floating_numbers if n.alive]
+        for n in self.floating_numbers:
+            n.update(dt)
 
         # Update projectiles
         for proj in self.projectiles:
@@ -546,6 +563,8 @@ class Enemy:
     def draw(self, surface, cam_x, cam_y):
         for p in self.particles:
             p.draw(surface, cam_x, cam_y)
+        for n in self.floating_numbers:
+            n.draw(surface, cam_x, cam_y)
 
         if not self.alive:
             return

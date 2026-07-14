@@ -7,6 +7,7 @@ from game.enemy import Particle
 from game.theme import font, TITLE_PAUSE
 from game.ui import ProgressBar
 from game.stats import StatBlock, mitigate
+from game.combat_fx import FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR
 
 def _draw_boss_hud_box(surface, screen_w, label_text, label_color, hud_bar, hp, max_hp, bar_color):
     """Stage G3: black 80%-opacity box wrapping the boss name + HP bar,
@@ -137,6 +138,7 @@ class Boss:
         self.speed = self.stats.speed
         self.projectiles = []
         self.particles = []
+        self.floating_numbers = []
 
         # Charge attack state (orc_warlord's "charge" pattern, Stage D6) -
         # None outside a charge; windup->dashing while it plays out, taking
@@ -192,8 +194,12 @@ class Boss:
         if self.hit_flash > 0.05:
             return
         defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
-        self.hp -= mitigate(amount, defense)
+        mitigated = mitigate(amount, defense)
+        self.hp -= mitigated
         self.hit_flash = 0.12
+        # Stage K6: floating damage number.
+        number_color = PHYSICAL_COLOR if dtype == "physical" else MAGIC_COLOR
+        self.floating_numbers.append(FloatingNumber(self.x + 48, self.y, mitigated, number_color))
         for _ in range(10):
             color = (200,50,200) if self.phase == 1 else (255,100,0)
             self.particles.append(Particle(self.x+48, self.y+48, color))
@@ -329,6 +335,11 @@ class Boss:
         for p in self.particles:
             p.update(dt)
 
+        # Stage K6: floating damage numbers
+        self.floating_numbers = [n for n in self.floating_numbers if n.alive]
+        for n in self.floating_numbers:
+            n.update(dt)
+
         # Update projectiles
         for proj in self.projectiles:
             proj.update(dt, walls)
@@ -401,6 +412,8 @@ class Boss:
     def draw(self, surface, cam_x, cam_y):
         for p in self.particles:
             p.draw(surface, cam_x, cam_y)
+        for n in self.floating_numbers:
+            n.draw(surface, cam_x, cam_y)
 
         for proj in self.projectiles:
             proj.draw(surface, cam_x, cam_y)
@@ -490,6 +503,7 @@ class CacodemonBoss:
         self.speed = 100
         self.projectiles = []
         self.particles = []
+        self.floating_numbers = []
         # No summon pattern of its own, but GameplayState's boss branch
         # (Stage D6) checks every boss for pending_summons unconditionally.
         self.pending_summons = []
@@ -518,8 +532,12 @@ class CacodemonBoss:
         if self.hit_flash > 0.05:
             return
         defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
-        self.hp -= mitigate(amount, defense)
+        mitigated = mitigate(amount, defense)
+        self.hp -= mitigated
         self.hit_flash = 0.12
+        # Stage K6: floating damage number.
+        number_color = PHYSICAL_COLOR if dtype == "physical" else MAGIC_COLOR
+        self.floating_numbers.append(FloatingNumber(self.x + self.width / 2, self.y, mitigated, number_color))
         # Create damage particles
         particle_color = (255, 215, 0) if crit else (255, 100, 0)
         for _ in range(4):
@@ -586,6 +604,11 @@ class CacodemonBoss:
             p.update(dt)
         self.particles = [p for p in self.particles if p.life > 0]
 
+        # Stage K6: floating damage numbers
+        for n in self.floating_numbers:
+            n.update(dt)
+        self.floating_numbers = [n for n in self.floating_numbers if n.alive]
+
         if self.hp <= 0:
             self.alive = False
 
@@ -651,6 +674,8 @@ class CacodemonBoss:
         # Draw particles
         for p in self.particles:
             p.draw(surface, cam_x, cam_y)
+        for n in self.floating_numbers:
+            n.draw(surface, cam_x, cam_y)
 
     def draw_hud(self, surface, screen_w):
         """Boss HP bar + name, boxed, at the bottom of the screen (Stage G3)."""
