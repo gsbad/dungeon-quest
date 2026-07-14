@@ -1166,25 +1166,6 @@ def create_logo_sprite(scale=4):
     return s
 
 
-def create_victory_hero_sprite(scale=4):
-    SC = scale
-    s = pygame.Surface((16*SC, 20*SC), pygame.SRCALPHA)
-    # reuse small player colors: tunic green
-    # torso
-    for (x,y) in [(5,6),(6,6),(7,6),(8,6),(9,6),(10,6),(4,7),(5,7),(6,7),(7,7),(8,7),(9,7),(10,7),(11,7)]:
-        pygame.draw.rect(s, (34,160,34), (x*SC,y*SC,SC,SC))
-    # head
-    for (x,y) in [(6,2),(7,2),(8,2),(9,2),(5,3),(6,3),(7,3),(8,3),(9,3),(10,3)]:
-        pygame.draw.rect(s, (220,170,110), (x*SC,y*SC,SC,SC))
-    # raised sword (hero holding up)
-    pygame.draw.rect(s, (200,200,220), (12*SC,0*SC,2*SC,10*SC))
-    pygame.draw.rect(s, (180,140,60), (10*SC,8*SC,6*SC,2*SC))
-    # shield at side
-    pygame.draw.rect(s, (50,100,200), (2*SC,7*SC,4*SC,6*SC))
-    pygame.draw.rect(s, (220,180,80), (3*SC,9*SC,2*SC,2*SC))
-    return s
-
-
 def create_tile(tile_type):
     s = pygame.Surface((48, 48))
     if tile_type == "grass":

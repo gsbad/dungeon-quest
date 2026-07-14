@@ -17,7 +17,7 @@ from game.settings_overlay import SettingsOverlay
 from game.weather import WeatherSystem
 from game.assets import (
     create_heart_sprite, create_mana_orb_sprite, create_logo_sprite,
-    create_victory_hero_sprite, create_player_sprite,
+    create_player_sprite,
 )
 from game.input_system import Action, FullscreenButton, PaperdollButton, ItemsButton, LeaderboardButton, SettingsButton
 from game.audio import SoundButton
@@ -481,11 +481,14 @@ class StageCompleteState:
         self.player = player
         self.continue_button = TextButton("[ ENTER ] - Continuar", SW // 2, SH - 90)
         self._xp_bar = ProgressBar(320, 14, (40, 40, 40), (140, 140, 140), border_width=2)
-        # Stage K4: create_victory_hero_sprite() was imported but never
-        # actually called anywhere - a fitting, already-built asset for
-        # exactly this "you cleared it" screen (raised sword + shield),
-        # purely decorative between the XP readout and the continue prompt.
-        self._hero_portrait = create_victory_hero_sprite(scale=6)
+        # Stage K23: was create_victory_hero_sprite() - a generic green-
+        # tunic hero raising a sword, same regardless of who's actually
+        # playing. Replaced with the player's real Paperdoll look (same
+        # create_player_sprite(..., profession) call game/paperdoll.py's
+        # _portrait_for() uses for the character panel) so this screen
+        # shows the hero the player actually built, not a placeholder.
+        self._hero_portrait = pygame.transform.scale(
+            create_player_sprite("down", False, self.player.profession), (120, 120))
 
     def handle_event(self, event):
         if self.input.consume_action(Action.CONFIRM):
