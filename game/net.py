@@ -350,3 +350,20 @@ def trigger_balance_fetch():
     resolves, it live-patches ITEMS/DIFFICULTIES/SPELLS/game.stats in
     place. No JWT needed - /balance is a public endpoint, same as /health."""
     _track(_fetch_and_apply_balance())
+
+
+async def _fetch_and_apply_appearance():
+    try:
+        config = await fetch_json("/appearance", "GET")
+    except Exception:
+        return  # offline/backend down - every entity keeps its procedural look
+    import game.appearance_overrides as appearance_overrides
+    appearance_overrides.apply_overrides(config)
+
+
+def trigger_appearance_fetch():
+    """Stage K18: same fire-and-forget-at-boot shape as
+    trigger_balance_fetch() above, for the admin panel's pixel-editor
+    overrides (public /appearance endpoint) instead of numeric balance
+    values."""
+    _track(_fetch_and_apply_appearance())

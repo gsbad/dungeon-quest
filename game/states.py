@@ -1706,6 +1706,7 @@ class GameStateManager:
         # fully playable before/without this.
         import game.net as net
         net.trigger_balance_fetch()
+        net.trigger_appearance_fetch()
 
         self.state = MenuState(screen, input_mgr, audio_mgr, has_save=self._has_progress())
         self.player = None

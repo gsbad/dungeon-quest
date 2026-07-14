@@ -13,7 +13,7 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from pydantic import BaseModel
 
-from app.models import BalanceConfig, SaveRow, User, get_session, init_db
+from app.models import AppearanceOverride, BalanceConfig, SaveRow, User, get_session, init_db
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 JWT_ALGORITHM = "HS256"
@@ -474,6 +474,51 @@ def put_balance_admin(body: BalanceUpdateBody, authorization: str | None = Heade
     return {"ok": True}
 
 
+@app.get("/appearance")
+def get_appearance():
+    """Stage K18: public, no auth - same shape/reasoning as GET /balance
+    (game/net.py's trigger_appearance_fetch() fetches this at boot). Only
+    ever returns overrides that exist; an absent key means the caller's
+    own procedural painter stands."""
+    with get_session() as session:
+        rows = session.query(AppearanceOverride).all()
+        return {row.key: row.data_url for row in rows}
+
+
+class AppearanceUpdateBody(BaseModel):
+    data_url: str
+
+
+@app.put("/admin/appearance/{key}")
+def put_appearance_admin(key: str, body: AppearanceUpdateBody, authorization: str | None = Header(default=None)):
+    _require_admin(authorization)
+    now = time.time()
+    with get_session() as session:
+        row = session.query(AppearanceOverride).filter_by(key=key).one_or_none()
+        if row is None:
+            row = AppearanceOverride(key=key, data_url=body.data_url, updated_at=now)
+            session.add(row)
+        else:
+            row.data_url = body.data_url
+            row.updated_at = now
+        session.commit()
+    return {"ok": True}
+
+
+@app.delete("/admin/appearance/{key}")
+def delete_appearance_admin(key: str, authorization: str | None = Header(default=None)):
+    """Reverts one entity back to its procedural default - deletes the row
+    rather than storing some "no override" sentinel value, same "absent
+    key = default stands" contract every other override table here uses."""
+    _require_admin(authorization)
+    with get_session() as session:
+        row = session.query(AppearanceOverride).filter_by(key=key).one_or_none()
+        if row is not None:
+            session.delete(row)
+            session.commit()
+    return {"ok": True}
+
+
 _ADMIN_PAGE = """<!doctype html>
 <html lang="pt-br"><head><meta charset="utf-8">
 <title>Dungeon Quest - Balanceamento</title>
@@ -513,6 +558,25 @@ details table { margin: 0; }
   <br><button onclick="doSave()">Salvar Tudo</button>
   <span id="save-status"></span>
 </div>
+
+<!-- Stage K18: pixel editor overlay - a 16x16 grid (game/appearance_
+     overrides.py's native size), click/drag to paint with the color
+     picker, Shift+click to erase to transparent. -->
+<div id="pe-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); align-items:center; justify-content:center; z-index:10;">
+  <div style="background:#1a1a24; border:1px solid #444; padding:20px;">
+    <h3 id="pe-title" style="color:#e0b84c; margin-top:0;"></h3>
+    <canvas id="pe-canvas" style="image-rendering:pixelated; border:1px solid #555; cursor:crosshair;"></canvas>
+    <div style="margin-top:10px;">
+      <input type="color" id="pe-color" value="#c83232">
+      <button onclick="savePixelEditor()">Salvar</button>
+      <button onclick="revertPixelEditor()">Reverter para padrao</button>
+      <button onclick="closePixelEditor()">Fechar</button>
+      <span id="pe-status"></span>
+    </div>
+    <p style="color:#888; max-width:340px;">Clique/arraste para pintar. Shift+clique apaga (transparente).</p>
+  </div>
+</div>
+
 <script>
 const API = location.origin;
 function token() { return sessionStorage.getItem("dq_admin_token"); }
@@ -574,6 +638,20 @@ function switchTab(tabId) {
   document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.dataset.tab === tabId));
 }
 
+// Stage K18: fetched once alongside the balance table (same GET /appearance
+// the game itself calls, no auth needed for reading) so openPixelEditor()
+// can pre-populate its grid with whatever's already there.
+let appearanceCache = {};
+
+async function loadAppearance() {
+  try {
+    const res = await fetch(API + "/appearance");
+    appearanceCache = await res.json();
+  } catch (e) {
+    appearanceCache = {};
+  }
+}
+
 async function loadBalance() {
   const res = await fetch(API + "/admin/balance", {headers: {"Authorization": "Bearer " + token()}});
   if (!res.ok) {
@@ -581,6 +659,7 @@ async function loadBalance() {
     document.getElementById("status").textContent = "Sessao expirada, logue de novo.";
     return;
   }
+  await loadAppearance();
   const data = await res.json();
   const byCategory = {};
   for (const tab of TABS) byCategory[tab.id] = [];
@@ -609,6 +688,19 @@ async function loadBalance() {
       const details = document.createElement("details");
       const summary = document.createElement("summary");
       summary.textContent = entity === "_" ? tab.label : entity;
+      // Stage K18: pixel editor only wired up for monster/item sprites so
+      // far (game/assets.py's create_enemy_sprite()/create_potion_icon()) -
+      // other categories get the button once their sprite function is
+      // hooked up too, same 3-line pattern each time.
+      if (entity !== "_" && (tab.id === "monstros" || tab.id === "itens")) {
+        const appearanceKey = tab.id === "monstros" ? `monster.${entity}` : `item.${entity}`;
+        const editBtn = document.createElement("button");
+        editBtn.textContent = "Editar aparencia";
+        editBtn.style.marginLeft = "12px";
+        editBtn.style.padding = "2px 10px";
+        editBtn.onclick = (ev) => { ev.preventDefault(); openPixelEditor(appearanceKey); };
+        summary.appendChild(editBtn);
+      }
       details.appendChild(summary);
       const table = document.createElement("table");
       table.innerHTML = "<thead><tr><th>Campo</th><th>Default</th><th>Valor atual</th></tr></thead>";
@@ -644,6 +736,100 @@ async function doSave() {
     body: JSON.stringify({values}),
   });
   document.getElementById("save-status").textContent = res.ok ? "Salvo!" : "Erro ao salvar.";
+}
+
+// ─── Stage K18: pixel editor ────────────────────────────────────────────
+// Two canvases: `dataCanvas` (16x16, the real pixel truth - what actually
+// gets PNG-encoded and saved) and the visible `pe-canvas` (scaled up +
+// grid-lines overlaid for editing). Painting writes to dataCanvas only,
+// then redrawView() re-composites the visible canvas from it - keeps the
+// grid-line overlay from ever being baked into the saved image.
+const PIXEL_GRID = 16, PIXEL_SCALE = 20;
+let editorKey = null;
+let dataCanvas, dataCtx, viewCanvas, viewCtx, painting = false;
+
+function initPixelEditor() {
+  dataCanvas = document.createElement("canvas");
+  dataCanvas.width = PIXEL_GRID; dataCanvas.height = PIXEL_GRID;
+  dataCtx = dataCanvas.getContext("2d");
+  viewCanvas = document.getElementById("pe-canvas");
+  viewCanvas.width = PIXEL_GRID * PIXEL_SCALE;
+  viewCanvas.height = PIXEL_GRID * PIXEL_SCALE;
+  viewCtx = viewCanvas.getContext("2d");
+  viewCtx.imageSmoothingEnabled = false;
+  viewCanvas.addEventListener("mousedown", (e) => { painting = true; pixelPaint(e); });
+  viewCanvas.addEventListener("mousemove", (e) => { if (painting) pixelPaint(e); });
+  window.addEventListener("mouseup", () => { painting = false; });
+}
+
+function redrawView() {
+  viewCtx.clearRect(0, 0, viewCanvas.width, viewCanvas.height);
+  viewCtx.drawImage(dataCanvas, 0, 0, viewCanvas.width, viewCanvas.height);
+  viewCtx.strokeStyle = "rgba(255,255,255,0.15)";
+  for (let i = 0; i <= PIXEL_GRID; i++) {
+    viewCtx.beginPath(); viewCtx.moveTo(i * PIXEL_SCALE, 0); viewCtx.lineTo(i * PIXEL_SCALE, viewCanvas.height); viewCtx.stroke();
+    viewCtx.beginPath(); viewCtx.moveTo(0, i * PIXEL_SCALE); viewCtx.lineTo(viewCanvas.width, i * PIXEL_SCALE); viewCtx.stroke();
+  }
+}
+
+function openPixelEditor(key) {
+  if (!dataCanvas) initPixelEditor();
+  editorKey = key;
+  document.getElementById("pe-title").textContent = "Editando: " + key;
+  document.getElementById("pe-status").textContent = "";
+  dataCtx.clearRect(0, 0, PIXEL_GRID, PIXEL_GRID);
+  const existing = appearanceCache[key];
+  if (existing) {
+    const img = new Image();
+    img.onload = () => { dataCtx.drawImage(img, 0, 0, PIXEL_GRID, PIXEL_GRID); redrawView(); };
+    img.src = existing;
+  } else {
+    redrawView();
+  }
+  document.getElementById("pe-overlay").style.display = "flex";
+}
+
+function pixelPaint(e) {
+  const rect = viewCanvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX - rect.left) / (rect.width / PIXEL_GRID));
+  const y = Math.floor((e.clientY - rect.top) / (rect.height / PIXEL_GRID));
+  if (x < 0 || y < 0 || x >= PIXEL_GRID || y >= PIXEL_GRID) return;
+  if (e.shiftKey) {
+    dataCtx.clearRect(x, y, 1, 1);
+  } else {
+    dataCtx.fillStyle = document.getElementById("pe-color").value;
+    dataCtx.fillRect(x, y, 1, 1);
+  }
+  redrawView();
+}
+
+function closePixelEditor() {
+  document.getElementById("pe-overlay").style.display = "none";
+  editorKey = null;
+}
+
+async function savePixelEditor() {
+  const dataUrl = dataCanvas.toDataURL("image/png");
+  const res = await fetch(API + `/admin/appearance/${encodeURIComponent(editorKey)}`, {
+    method: "PUT",
+    headers: {"Content-Type": "application/json", "Authorization": "Bearer " + token()},
+    body: JSON.stringify({data_url: dataUrl}),
+  });
+  document.getElementById("pe-status").textContent = res.ok ? "Salvo!" : "Erro ao salvar.";
+  if (res.ok) appearanceCache[editorKey] = dataUrl;
+}
+
+async function revertPixelEditor() {
+  const res = await fetch(API + `/admin/appearance/${encodeURIComponent(editorKey)}`, {
+    method: "DELETE",
+    headers: {"Authorization": "Bearer " + token()},
+  });
+  if (res.ok) {
+    delete appearanceCache[editorKey];
+    dataCtx.clearRect(0, 0, PIXEL_GRID, PIXEL_GRID);
+    redrawView();
+    document.getElementById("pe-status").textContent = "Revertido para padrao.";
+  }
 }
 
 if (token()) { loadBalance(); }

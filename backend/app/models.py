@@ -54,6 +54,21 @@ class BalanceConfig(Base):
     updated_at = Column(Float, nullable=False)
 
 
+class AppearanceOverride(Base):
+    """Stage K18: pixel-art overrides from the admin panel's canvas editor -
+    one row per entity key ("monster.goblin", "item.potion_orange", ...),
+    data_url holding a full "data:image/png;base64,..." string straight
+    from the browser canvas's toDataURL(). Same "absent key = code default
+    (the procedural painter) stands" shape as BalanceConfig above - this
+    table never mirrors every sprite, only the ones an admin actually
+    repainted."""
+    __tablename__ = "appearance_overrides"
+
+    key = Column(String, primary_key=True)
+    data_url = Column(Text, nullable=False)
+    updated_at = Column(Float, nullable=False)
+
+
 def init_db():
     Base.metadata.create_all(engine)
 

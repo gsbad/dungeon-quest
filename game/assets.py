@@ -906,6 +906,12 @@ _RIG_PAINTERS = {
 
 def create_enemy_sprite(etype="skeleton"):
     SC = 3
+    # Stage K18: admin pixel-editor override, drawn at the editor's native
+    # 16x16 grid - scaled up to match this function's normal 48x48 output.
+    from game.appearance_overrides import get_override
+    override = get_override(f"monster.{etype}")
+    if override is not None:
+        return pygame.transform.scale(override, (16 * SC, 16 * SC))
     s = pygame.Surface((16*SC, 16*SC), pygame.SRCALPHA)
     defn = ENEMY_SPRITES[etype]
     body = defn["body"]
@@ -1612,6 +1618,14 @@ _POTION_COLORS = {
 
 
 def create_potion_icon(item_id):
+    # Stage K18: checked before the cache on purpose - a fresh override
+    # landing mid-session (game/net.py's trigger_appearance_fetch()) takes
+    # effect on the very next call this way, no separate invalidation step
+    # needed for this cache.
+    from game.appearance_overrides import get_override
+    override = get_override(f"item.{item_id}")
+    if override is not None:
+        return override
     if item_id in _POTION_ICON_CACHE:
         return _POTION_ICON_CACHE[item_id]
     s = pygame.Surface((16, 16), pygame.SRCALPHA)
