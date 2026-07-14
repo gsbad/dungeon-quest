@@ -7,7 +7,10 @@ from game.enemy import Particle
 from game.theme import font, TITLE_PAUSE
 from game.ui import ProgressBar
 from game.stats import StatBlock, mitigate
-from game.combat_fx import FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR
+from game.combat_fx import (
+    FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR,
+    knockback_vector, KNOCKBACK_DURATION,
+)
 
 def _draw_boss_hud_box(surface, screen_w, label_text, label_color, hud_bar, hp, max_hp, bar_color):
     """Stage G3: black 80%-opacity box wrapping the boss name + HP bar,
@@ -139,6 +142,7 @@ class Boss:
         self.projectiles = []
         self.particles = []
         self.floating_numbers = []
+        self.knockback_vx, self.knockback_vy, self.knockback_timer = 0.0, 0.0, 0.0  # Stage K9
 
         # Charge attack state (orc_warlord's "charge" pattern, Stage D6) -
         # None outside a charge; windup->dashing while it plays out, taking
@@ -190,7 +194,7 @@ class Boss:
     def rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
-    def take_damage(self, amount, dtype="physical", crit=False):
+    def take_damage(self, amount, dtype="physical", crit=False, knockback_from=None):
         if self.hit_flash > 0.05:
             return
         defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
@@ -200,6 +204,14 @@ class Boss:
         # Stage K6: floating damage number.
         number_color = PHYSICAL_COLOR if dtype == "physical" else MAGIC_COLOR
         self.floating_numbers.append(FloatingNumber(self.x + 48, self.y, mitigated, number_color))
+        # Stage K9: knockback - a boss is heavier than a regular enemy in
+        # feel, but uses the exact same shove (no separate "boss strength"
+        # tuning knob - see combat_fx.KNOCKBACK_SPEED's comment).
+        if knockback_from is not None:
+            self.knockback_vx, self.knockback_vy = knockback_vector(
+                knockback_from[0], knockback_from[1], self.x + 48, self.y + 48,
+            )
+            self.knockback_timer = KNOCKBACK_DURATION
         for _ in range(10):
             color = (200,50,200) if self.phase == 1 else (255,100,0)
             self.particles.append(Particle(self.x+48, self.y+48, color))
@@ -305,7 +317,8 @@ class Boss:
             self.x = max(100, min(self.x, 700))
             self.y = max(100, min(self.y, 400))
             if not self.charge_hit and self.rect.colliderect(player.rect):
-                player.take_damage(round(self.stats.physical_damage * 2), dtype="physical")
+                player.take_damage(round(self.stats.physical_damage * 2), dtype="physical",
+                                    knockback_from=(self.x + self.width / 2, self.y + self.height / 2))
                 self.charge_hit = True
             if self.charge_timer <= 0:
                 self.charge_state = None
@@ -344,7 +357,7 @@ class Boss:
         for proj in self.projectiles:
             proj.update(dt, walls)
             if proj.rect.colliderect(player.rect):
-                player.take_damage(proj.damage, dtype=proj.dtype)
+                player.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
                 if proj.status_effect and random.random() < proj.status_chance:
                     player.status.apply(proj.status_effect)
                 proj.alive = False
@@ -364,6 +377,22 @@ class Boss:
             # until the dash finishes - it's a windup+commit, not just
             # another projectile pattern layered on top of everything else.
             self._update_charge(dt, player)
+            return
+
+        if self.knockback_timer > 0:
+            # Stage K9: test-before-commit (like CacodemonBoss's can_move
+            # below) rather than Enemy's snap-out-of-wall resolve - Boss's
+            # own normal movement only has a rough arena clamp + bounce, no
+            # real per-axis wall resolver to reuse safely here.
+            self.knockback_timer -= dt
+            new_x = self.x + self.knockback_vx * dt
+            new_y = self.y + self.knockback_vy * dt
+            test_rect = pygame.Rect(new_x, new_y, self.width, self.height)
+            if not any(test_rect.colliderect(w) for w in walls):
+                self.x, self.y = new_x, new_y
+            ease = max(0.0, self.knockback_timer / KNOCKBACK_DURATION)
+            self.knockback_vx *= ease
+            self.knockback_vy *= ease
             return
 
         # Movement - circle/chase
@@ -504,6 +533,7 @@ class CacodemonBoss:
         self.projectiles = []
         self.particles = []
         self.floating_numbers = []
+        self.knockback_vx, self.knockback_vy, self.knockback_timer = 0.0, 0.0, 0.0  # Stage K9
         # No summon pattern of its own, but GameplayState's boss branch
         # (Stage D6) checks every boss for pending_summons unconditionally.
         self.pending_summons = []
@@ -528,7 +558,7 @@ class CacodemonBoss:
     def rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
-    def take_damage(self, amount, dtype="physical", crit=False):
+    def take_damage(self, amount, dtype="physical", crit=False, knockback_from=None):
         if self.hit_flash > 0.05:
             return
         defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
@@ -538,6 +568,13 @@ class CacodemonBoss:
         # Stage K6: floating damage number.
         number_color = PHYSICAL_COLOR if dtype == "physical" else MAGIC_COLOR
         self.floating_numbers.append(FloatingNumber(self.x + self.width / 2, self.y, mitigated, number_color))
+        # Stage K9: knockback.
+        if knockback_from is not None:
+            self.knockback_vx, self.knockback_vy = knockback_vector(
+                knockback_from[0], knockback_from[1],
+                self.x + self.width / 2, self.y + self.height / 2,
+            )
+            self.knockback_timer = KNOCKBACK_DURATION
         # Create damage particles
         particle_color = (255, 215, 0) if crit else (255, 100, 0)
         for _ in range(4):
@@ -554,6 +591,20 @@ class CacodemonBoss:
         self.bob_timer += dt
         self.bob_offset = 15 * math.sin(self.bob_timer * 2)
         self.hit_flash = max(0, self.hit_flash - dt)
+
+        if self.knockback_timer > 0:
+            # Stage K9: same test-before-commit shape this class's own
+            # normal movement already uses a few lines below.
+            self.knockback_timer -= dt
+            new_x = self.x + self.knockback_vx * dt
+            new_y = self.y + self.knockback_vy * dt
+            test_rect = pygame.Rect(new_x, new_y, self.width, self.height)
+            if not any(test_rect.colliderect(w) for w in walls):
+                self.x, self.y = new_x, new_y
+            ease = max(0.0, self.knockback_timer / KNOCKBACK_DURATION)
+            self.knockback_vx *= ease
+            self.knockback_vy *= ease
+            return
 
         # Move towards player
         dx = player.x - self.x
@@ -593,7 +644,7 @@ class CacodemonBoss:
         for proj in self.projectiles:
             proj.update(dt, walls)
             if proj.rect.colliderect(player.rect):
-                player.take_damage(proj.damage, dtype=proj.dtype)
+                player.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
                 if proj.status_effect and random.random() < proj.status_chance:
                     player.status.apply(proj.status_effect)
                 proj.alive = False

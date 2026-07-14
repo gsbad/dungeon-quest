@@ -9,7 +9,10 @@ from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL, mitig
 from game.status_effects import StatusEffectCarrier
 from game.professions import determine_profession
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
-from game.combat_fx import FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR, DOT_COLOR
+from game.combat_fx import (
+    FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR, DOT_COLOR,
+    knockback_vector, KNOCKBACK_DURATION,
+)
 
 TILE = 48
 
@@ -166,6 +169,12 @@ class Player:
 
         self.floating_numbers = []  # Stage K6
 
+        # Stage K9: knockback - a short window where movement_vector-driven
+        # input is suppressed and this velocity takes over instead, same
+        # "temporary state overrides normal movement" shape as dashing
+        # above (see update() below for how the two interact).
+        self.knockback_vx, self.knockback_vy, self.knockback_timer = 0.0, 0.0, 0.0
+
         self.invincible = False
         self.invincible_timer = 0
         self.invincible_duration = 1.0
@@ -308,7 +317,7 @@ class Player:
         center_y = cy + self.aim_dy * offset
         return pygame.Rect(center_x - size / 2, center_y - size / 2, size, size)
 
-    def take_damage(self, amount, dtype="physical"):
+    def take_damage(self, amount, dtype="physical", knockback_from=None):
         if self.invincible or self.debug_invincible:
             return
         defense = self.stats.physical_defense if dtype == "physical" else self.stats.magic_defense
@@ -322,6 +331,15 @@ class Player:
         self.floating_numbers.append(
             FloatingNumber(self.x + self.width / 2, self.y, amount, number_color)
         )
+        # Stage K9: knockback - pushed away from whatever dealt the hit.
+        # knockback_from is None for DoT ticks (see game/status_effects.py
+        # callers) and anything else that shouldn't shove the player.
+        if knockback_from is not None:
+            self.knockback_vx, self.knockback_vy = knockback_vector(
+                knockback_from[0], knockback_from[1],
+                self.x + self.width / 2, self.y + self.height / 2,
+            )
+            self.knockback_timer = KNOCKBACK_DURATION
 
     def update(self, dt, walls, movement_vector):
         self.mana = min(self.max_mana, self.mana + self.stats.mana_regen * dt)
@@ -352,7 +370,21 @@ class Player:
         if self.dash_cooldown > 0:
             self.dash_cooldown -= dt
 
-        if self.dashing:
+        if self.knockback_timer > 0:
+            # Stage K9: takes priority over everything else, including a
+            # dash in progress - getting hit interrupts it (same cleanup
+            # Stage K2's normal dash-end path does, so no stale trail).
+            self.dashing = False
+            self.dash_trail = []
+            self.knockback_timer -= dt
+            self.x += self.knockback_vx * dt
+            self._resolve_collisions_x(walls)
+            self.y += self.knockback_vy * dt
+            self._resolve_collisions_y(walls)
+            ease = max(0.0, self.knockback_timer / KNOCKBACK_DURATION)
+            self.knockback_vx *= ease
+            self.knockback_vy *= ease
+        elif self.dashing:
             # Stage J14: dash overrides WASD movement entirely for its short
             # duration - same "one committed motion" feel as the attack
             # animation, not a speed boost layered on top of steering.

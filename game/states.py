@@ -871,6 +871,35 @@ class GameplayState:
             return
         self.msg_timer, self.msg_text = 1.6, text
 
+    def _separate_from_player(self, other):
+        """Stage K9: standard AABB de-penetration, split 50/50 - pushes
+        along whichever axis has the smaller overlap (the "shallow" axis),
+        same shape any 2D physics engine's simplest resolver uses. Doesn't
+        re-check walls afterward (a rare corner-case double-overlap could
+        in theory nudge something a few px into a wall) - acceptable given
+        how small these pushes are compared to a wall tile."""
+        p, o = self.player.rect, other.rect
+        if not p.colliderect(o):
+            return
+        overlap_x = min(p.right, o.right) - max(p.left, o.left)
+        overlap_y = min(p.bottom, o.bottom) - max(p.top, o.top)
+        if overlap_x < overlap_y:
+            push = overlap_x / 2 + 0.5
+            if p.centerx < o.centerx:
+                self.player.x -= push
+                other.x += push
+            else:
+                self.player.x += push
+                other.x -= push
+        else:
+            push = overlap_y / 2 + 0.5
+            if p.centery < o.centery:
+                self.player.y -= push
+                other.y += push
+            else:
+                self.player.y += push
+                other.y -= push
+
     def _cast_fireball(self, spell):
         # Stage J13: fires along the continuous aim_dx/aim_dy vector (mouse
         # angle on PC, drag-aim on mobile) instead of snapping to one of the
@@ -895,7 +924,7 @@ class GameplayState:
             tx = target.x + target.width / 2
             ty = target.y + target.height / 2
             if math.hypot(tx - px, ty - py) <= radius:
-                target.take_damage(dmg, dtype="magic")
+                target.take_damage(dmg, dtype="magic", knockback_from=(px, py))
                 if hasattr(target, "status"):
                     target.status.apply("slow")
         # Ring burst - particles placed AROUND the circumference of the real
@@ -1037,7 +1066,9 @@ class GameplayState:
                 # never actually connecting. Only call it on an actual hit.
                 if atk_rect.colliderect(self.boss.rect):
                     dmg, is_crit = self.player.stats.roll_physical()
-                    self.boss.take_damage(dmg, dtype="physical", crit=is_crit)
+                    self.boss.take_damage(dmg, dtype="physical", crit=is_crit,
+                                           knockback_from=(self.player.x + self.player.width / 2,
+                                                            self.player.y + self.player.height / 2))
                     self.camera.shake(5, 0.12)
                     self.camera.zoom_pulse(0.05, 0.15)
             self.boss.update(dt, self.player, self.level.walls)
@@ -1074,6 +1105,16 @@ class GameplayState:
         # this used to only grant xp/gold on the melee path.
         cast_targets = list(self.level.enemies) + ([self.boss] if self.boss else [])
 
+        # Stage K9: the hero and a monster/boss should never occupy the same
+        # space - skipped while dashing, since Dash's whole point is
+        # passing *through* a target to land contact damage (see the block
+        # right below); solid-body separation would fight that by shoving
+        # them apart before the overlap check below ever sees them touch.
+        if not self.player.dashing:
+            for target in cast_targets:
+                if getattr(target, "alive", True):
+                    self._separate_from_player(target)
+
         # Stage J14: Dash contact damage - checked every frame the dash is
         # moving (not just on activation) since it travels DASH_SPEED*dt per
         # frame and could overlap an enemy mid-dash rather than exactly on
@@ -1087,7 +1128,9 @@ class GameplayState:
                 if self.player.rect.colliderect(target.rect):
                     self.player._dash_hit_ids.add(id(target))
                     dmg, is_crit = self.player.stats.roll_physical()
-                    target.take_damage(dmg, dtype="physical", crit=is_crit)
+                    target.take_damage(dmg, dtype="physical", crit=is_crit,
+                                        knockback_from=(self.player.x + self.player.width / 2,
+                                                         self.player.y + self.player.height / 2))
                     if not target.alive and hasattr(target, "etype"):
                         self.level.credit_kill(self.player, target)
 
@@ -1097,7 +1140,7 @@ class GameplayState:
                 continue
             for target in cast_targets:
                 if getattr(target, "alive", True) and proj.rect.colliderect(target.rect):
-                    target.take_damage(proj.damage, dtype=proj.dtype)
+                    target.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
                     proj.alive = False
                     if not target.alive and hasattr(target, "etype"):
                         self.level.credit_kill(self.player, target)

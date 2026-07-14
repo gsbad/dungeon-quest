@@ -6,7 +6,10 @@ from game.player import TILE
 from game.stats import StatBlock, ENEMY_ARCHETYPES, BASE_XP, GOLD_DROPS, scale_archetype, mitigate
 from game.status_effects import StatusEffectCarrier
 from game.affixes import AFFIXES
-from game.combat_fx import FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR, DOT_COLOR
+from game.combat_fx import (
+    FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR, DOT_COLOR,
+    knockback_vector, KNOCKBACK_DURATION,
+)
 
 # Stage K5: display name shown above a regular enemy's head (draw() below).
 # Duplicated from game/bestiary.py's BESTIARY[etype]["name"] rather than
@@ -344,6 +347,7 @@ class Enemy:
         self.alive = True
         self.particles = []
         self.floating_numbers = []
+        self.knockback_vx, self.knockback_vy, self.knockback_timer = 0.0, 0.0, 0.0  # Stage K9
         self.projectiles = []
         self.projectile_sprite = create_projectile_sprite("fireball")
         # Puddle timer - any archetype whose flavor opts in (goblin, and
@@ -354,7 +358,7 @@ class Enemy:
     def rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
-    def take_damage(self, amount, dtype="physical", crit=False):
+    def take_damage(self, amount, dtype="physical", crit=False, knockback_from=None):
         # dtype=None (status-effect DoT ticks) bypasses defense entirely -
         # poison/burn are fixed-per-tick damage that already accounts for
         # going around armor, same as Player's DoT handling in
@@ -364,6 +368,13 @@ class Enemy:
             amount = mitigate(amount, defense)
         self.hp -= amount
         self.hit_flash = 0.15
+        # Stage K9: knockback - None for the DoT-tick call in update() below
+        # (a self-inflicted "hit" with no attacker position to push from).
+        if knockback_from is not None:
+            self.knockback_vx, self.knockback_vy = knockback_vector(
+                knockback_from[0], knockback_from[1], self.x + 16, self.y + 18,
+            )
+            self.knockback_timer = KNOCKBACK_DURATION
         # Stage K6: floating damage number - dtype=None means this call came
         # from a DoT tick (see the comment above), which gets its own dark
         # orange color distinct from a direct physical/magic hit.
@@ -411,7 +422,7 @@ class Enemy:
         for proj in self.projectiles:
             proj.update(dt, walls)
             if proj.rect.colliderect(player.rect):
-                player.take_damage(proj.damage, dtype=proj.dtype)
+                player.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
                 if proj.status_effect and random.random() < proj.status_chance:
                     player.status.apply(proj.status_effect)
                 if self.affix == "vampiric":
@@ -444,6 +455,20 @@ class Enemy:
         if self.hit_flash > 0:
             self.hit_flash -= dt
 
+        if self.knockback_timer > 0:
+            # Stage K9: overrides chase/patrol for its short duration, same
+            # "temporary state takes over movement" shape as Player's dash/
+            # knockback handling in game/player.py.
+            self.knockback_timer -= dt
+            self.x += self.knockback_vx * dt
+            self._resolve_x(walls, self.knockback_vx)
+            self.y += self.knockback_vy * dt
+            self._resolve_y(walls, self.knockback_vy)
+            ease = max(0.0, self.knockback_timer / KNOCKBACK_DURATION)
+            self.knockback_vx *= ease
+            self.knockback_vy *= ease
+            return
+
         px = player.x + player.width / 2
         py = player.y + player.height / 2
         ex = self.x + self.width / 2
@@ -468,7 +493,8 @@ class Enemy:
                 self.attack_cooldown = self.attack_cd_max
             elif self.attack_cooldown <= 0 and dist < self.attack_range:
                 dmg, is_crit = self.stats.roll_physical()
-                player.take_damage(dmg, dtype="physical")
+                player.take_damage(dmg, dtype="physical",
+                                    knockback_from=(self.x + self.width / 2, self.y + self.height / 2))
                 if self.audio:
                     self.audio.play(f"attack_{self.etype}")
                 melee_status = self.flavor.get("melee_status")

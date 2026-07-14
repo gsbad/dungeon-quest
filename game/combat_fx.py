@@ -1,7 +1,8 @@
-"""Stage K6: floating damage numbers - shared by Player, Enemy, and Boss/
-CacodemonBoss (game/player.py imports game/enemy.py's TILE constant, so
-this couldn't live in enemy.py without a circular import; a small shared
-module is simpler than restructuring that dependency)."""
+"""Stage K6/K9: floating damage numbers + knockback - shared by Player,
+Enemy, and Boss/CacodemonBoss (game/player.py imports game/enemy.py's TILE
+constant, so this couldn't live in enemy.py without a circular import; a
+small shared module is simpler than restructuring that dependency)."""
+import math
 import pygame
 from game.theme import font
 
@@ -12,6 +13,25 @@ from game.theme import font
 PHYSICAL_COLOR = (230, 60, 60)
 MAGIC_COLOR = (170, 90, 230)
 DOT_COLOR = (200, 110, 20)
+
+# Stage K9: knockback - a short, fixed-strength shove away from whatever
+# dealt the hit. Deliberately not scaled by damage/stats (that's a whole
+# extra balance axis nobody asked for) - every hit knocks back the same
+# amount, same "one committed motion, then back to normal" shape as Dash
+# (game/player.py's DASH_* constants), just much shorter/lighter.
+KNOCKBACK_SPEED = 380
+KNOCKBACK_DURATION = 0.15
+
+
+def knockback_vector(from_x, from_y, to_x, to_y):
+    """Unit vector (scaled to KNOCKBACK_SPEED) pointing from the hit's
+    source to its target - (0, 0) if the two points coincide (can't
+    derive a direction, e.g. a self-targeted debug trigger)."""
+    dx, dy = to_x - from_x, to_y - from_y
+    dist = math.hypot(dx, dy)
+    if dist < 1e-3:
+        return 0.0, 0.0
+    return dx / dist * KNOCKBACK_SPEED, dy / dist * KNOCKBACK_SPEED
 
 
 class FloatingNumber:
