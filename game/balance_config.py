@@ -21,6 +21,16 @@ from game.difficulty import DIFFICULTIES
 from game.items import ITEMS
 import game.items as items
 from game.spells import SPELLS
+from game.status_effects import STATUS_EFFECTS
+from game.stances import STANCES
+
+# Stage K16: the 7 debuffs that existed before Stage K12 - everything else
+# in STATUS_EFFECTS is one of K12's potion/elixir buffs. Both share the
+# same dict/StatusEffectDef shape; this only decides which dotted-key
+# prefix ("debuff." vs "buff.") a given effect_id answers to, mirroring
+# backend/app/main.py's BALANCE_DEFAULTS split (built for the same reason -
+# the admin panel's separate Buffs/Debuffs tabs, Stage K17).
+_ORIGINAL_DEBUFFS = frozenset({"poison", "slow", "weakness", "burn", "chill", "heat", "shock"})
 
 _STATS_KEYS = {
     "mitigation_k", "xp_curve_base", "xp_curve_exp",
@@ -61,6 +71,48 @@ def _apply_one(key, raw_value):
     if len(parts) == 2 and parts[0] == "stats" and parts[1] in _STATS_KEYS:
         attr = parts[1].upper()
         setattr(stats, attr, type(getattr(stats, attr))(raw_value))
+        return
+
+    # Stage K16: monster.<etype>.base_xp/gold_drop are flat scalar dicts
+    # (etype -> number), a different shape from monster.<etype>.<combat
+    # stat>, which indexes into ENEMY_ARCHETYPES' per-etype dict - same
+    # "field must already exist on the target" guard as item/difficulty/
+    # spell above, just checked against two different tables.
+    if len(parts) == 3 and parts[0] == "monster" and parts[1] in stats.BASE_XP and parts[2] == "base_xp":
+        stats.BASE_XP[parts[1]] = type(stats.BASE_XP[parts[1]])(raw_value)
+        return
+    if len(parts) == 3 and parts[0] == "monster" and parts[1] in stats.GOLD_DROPS and parts[2] == "gold_drop":
+        stats.GOLD_DROPS[parts[1]] = type(stats.GOLD_DROPS[parts[1]])(raw_value)
+        return
+    if (len(parts) == 3 and parts[0] == "monster" and parts[1] in stats.ENEMY_ARCHETYPES
+            and parts[2] in stats.ENEMY_ARCHETYPES[parts[1]]):
+        target = stats.ENEMY_ARCHETYPES[parts[1]]
+        target[parts[2]] = type(target[parts[2]])(raw_value)
+        return
+
+    # Stage K16: debuff.<id>.<field> and buff.<id>.<field> both resolve
+    # into the SAME STATUS_EFFECTS dict (see _ORIGINAL_DEBUFFS above) -
+    # StatusEffectDef is a namedtuple (immutable), so unlike every dict-of-
+    # dicts case above this needs a ._replace() + reassignment into the
+    # dict rather than an in-place field set.
+    if len(parts) == 3 and parts[0] in ("debuff", "buff") and parts[1] in STATUS_EFFECTS:
+        is_debuff = parts[1] in _ORIGINAL_DEBUFFS
+        if (parts[0] == "debuff") != is_debuff:
+            return  # e.g. "buff.poison.*" - wrong prefix for this id, ignore
+        defn = STATUS_EFFECTS[parts[1]]
+        if not hasattr(defn, parts[2]):
+            return
+        current = getattr(defn, parts[2])
+        STATUS_EFFECTS[parts[1]] = defn._replace(**{parts[2]: type(current)(raw_value)})
+        return
+
+    # Stage K16: stance.<profession>.<field> - game/stances.py's STANCES,
+    # same dict-of-dicts shape as item/difficulty/spell (profession names
+    # contain spaces, e.g. "Cavaleiro Arcano" - fine, "." is still the only
+    # split delimiter).
+    if len(parts) == 3 and parts[0] == "stance" and parts[1] in STANCES and parts[2] in STANCES[parts[1]]:
+        target = STANCES[parts[1]]
+        target[parts[2]] = type(target[parts[2]])(raw_value)
         return
 
     # Unknown key (stale override from a removed item/spell, typo, etc.) -
