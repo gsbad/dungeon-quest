@@ -140,18 +140,25 @@ to test the panel in isolation; point a local pygbag dev server's
 `ALLOWED_ORIGINS` entry at it (already listed in `backend/app/main.py`)
 only if you want the game to actually pick up overrides live.
 
-## Action needed: Caddy route for the new /appearance/defaults endpoint
+## Caddy route fixed: /appearance was never proxied at all (Stage K23)
 
-Stage K23 added `GET /appearance/defaults` (backend/app/main.py) so the
-admin panel's pixel editor has a real sprite to pre-load instead of a
-blank canvas. Per this doc's "Adding a new backend route?" note above,
-that means it needs its own `handle /appearance/defaults { reverse_proxy
-127.0.0.1:8090 }` block in `/etc/caddy/Caddyfile` on the VM (unless the
-existing `/appearance` block there is already a `/appearance*` prefix
-match, in which case this is a no-op) - **not yet confirmed either way**,
-since this was written from the local checkout, not the VM. Check after
-the next deploy: if "Editar aparencia" still opens blank in production
-specifically (works locally but not live), this is why.
+Checked directly on the VM (2026-07-14): `/etc/caddy/Caddyfile` had no
+`/appearance` block whatsoever, going all the way back to Stage K18 -
+every `GET /appearance` (both the game's own boot-time fetch in
+game/net.py and the admin panel's override list) silently 404'd through
+the catch-all `file_server`, not just Stage K23's new
+`/appearance/defaults`. This is very likely the actual root cause behind
+"editar aparencia abre vazio" being reported as still-broken even after
+the SPRITE_DEFAULTS fallback shipped - the override-fetch path itself was
+dead in production the whole time, defaults or not.
+
+Fixed by adding a `handle /appearance* { reverse_proxy 127.0.0.1:8090 }`
+block (covers both `/appearance` and `/appearance/defaults` with one
+entry) and `sudo systemctl reload caddy`. Verified both routes live:
+`curl https://129.80.222.127.sslip.io/appearance` -> `{}`,
+`/appearance/defaults` -> the 45-entry dict. The Caddyfile itself isn't
+tracked in git (VM-only, edited directly over SSH) - this note is the
+only record of the change outside the VM's own file.
 
 ## Login gate (Stage K23)
 
