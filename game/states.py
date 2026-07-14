@@ -480,6 +480,11 @@ class StageCompleteState:
         self.player = player
         self.continue_button = TextButton("[ ENTER ] - Continuar", SW // 2, SH - 90)
         self._xp_bar = ProgressBar(320, 14, (40, 40, 40), (140, 140, 140), border_width=2)
+        # Stage K4: create_victory_hero_sprite() was imported but never
+        # actually called anywhere - a fitting, already-built asset for
+        # exactly this "you cleared it" screen (raised sword + shield),
+        # purely decorative between the XP readout and the continue prompt.
+        self._hero_portrait = create_victory_hero_sprite(scale=6)
 
     def handle_event(self, event):
         if self.input.consume_action(Action.CONFIRM):
@@ -508,6 +513,9 @@ class StageCompleteState:
         f3 = font(15)
         lvl_label = "Nivel maximo!" if self.player.level >= MAX_LEVEL else f"Nivel {self.player.level}"
         draw_text(self.screen, lvl_label, f3, SUBTEXT, SW // 2, 302)
+
+        portrait_x = SW // 2 - self._hero_portrait.get_width() // 2
+        self.screen.blit(self._hero_portrait, (portrait_x, 330))
 
         f4 = font(18, bold=True)
         self.continue_button.draw(self.screen, f4, (220, 220, 235))
