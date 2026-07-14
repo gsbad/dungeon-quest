@@ -1,0 +1,58 @@
+name: Deploy to Oracle Cloud VM
+
+# Stage J15: runs on a self-hosted runner installed directly on the
+# production VM (see docs/deploy.md) - no SSH key or server address is
+# ever stored in GitHub, since the runner already IS the server. Push to
+# main (i.e. a merged PR) builds the pygbag web bundle and the backend,
+# then deploys both in place, exactly matching the manual steps this
+# replaces (see docs/deploy.md's "Redeploy manual" section for the
+# commands this workflow mirrors).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, dungeonquest-vm]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No actions/setup-python - the VM's own python3 (already used to run
+      # the backend service) is what pygbag/uvicorn run under in production,
+      # so building with anything else risks a version mismatch nobody
+      # would see locally.
+      - name: Install pygbag
+        run: python3 -m pip install --user --upgrade pygbag
+
+      - name: Build web bundle
+        run: |
+          rm -rf build/web build/web-cache
+          mkdir -p build/web build/web-cache
+          python3 -m pygbag --build --width 800 --height 600 \
+            --template pygbag_template.tmpl main.py
+
+      - name: Deploy web bundle
+        run: |
+          sudo cp -r build/web/. /srv/dungeonquest-web/
+          sudo chown -R root:root /srv/dungeonquest-web
+          sudo chmod -R a+rX /srv/dungeonquest-web
+
+      - name: Deploy backend
+        run: |
+          cp backend/app/main.py backend/app/models.py ~/backend/app/
+          rm -rf ~/backend/app/__pycache__
+          sudo systemctl restart dungeonquest-backend
+
+      - name: Reload Caddy (picks up any Caddyfile change made manually)
+        run: sudo systemctl reload caddy
+
+      - name: Health check
+        run: |
+          sleep 2
+          curl -fsS https://129.80.222.127.sslip.io/health
