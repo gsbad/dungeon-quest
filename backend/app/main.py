@@ -488,6 +488,17 @@ input.changed { border-color: #e0b84c; }
 button { background: #e0b84c; color: #14141c; border: none; padding: 8px 18px; font-weight: bold; cursor: pointer; }
 #login input { width: 220px; }
 #status { margin-left: 12px; }
+/* Stage K17: tab bar + collapsible per-entity sections - the flat table
+   above stopped scaling once BALANCE_DEFAULTS grew past ~300 keys
+   (Stage K16's monster/buff/debuff/stance categories). */
+#tabs { display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
+.tab-btn { background: #232330; color: #aaa; border: 1px solid #444; padding: 6px 14px; cursor: pointer; font-family: monospace; }
+.tab-btn.active { background: #e0b84c; color: #14141c; font-weight: bold; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+details { max-width: 900px; margin-bottom: 6px; border: 1px solid #333; background: #1a1a24; }
+summary { cursor: pointer; padding: 8px 10px; background: #232330; font-weight: bold; color: #e0b84c; }
+details table { margin: 0; }
 </style></head>
 <body>
 <h1>Dungeon Quest - Painel de Balanceamento</h1>
@@ -497,7 +508,8 @@ button { background: #e0b84c; color: #14141c; border: none; padding: 8px 18px; f
   <span id="status"></span>
 </div>
 <div id="panel" style="display:none">
-  <table id="tbl"><thead><tr><th>Chave</th><th>Default</th><th>Valor atual</th></tr></thead><tbody></tbody></table>
+  <div id="tabs"></div>
+  <div id="tab-contents"></div>
   <br><button onclick="doSave()">Salvar Tudo</button>
   <span id="save-status"></span>
 </div>
@@ -520,6 +532,48 @@ async function doLogin() {
   await loadBalance();
 }
 
+// Stage K17: tabs, in a fixed display order - "geral" bundles the two
+// smallest/system-wide categories (stats.* + item.max_stock) rather than
+// giving each its own single-row tab.
+const TABS = [
+  {id: "geral", label: "Geral"},
+  {id: "dificuldade", label: "Dificuldade"},
+  {id: "monstros", label: "Monstros"},
+  {id: "magias", label: "Magias"},
+  {id: "itens", label: "Itens"},
+  {id: "buffs", label: "Buffs"},
+  {id: "debuffs", label: "Debuffs"},
+  {id: "posturas", label: "Posturas"},
+];
+
+function categoryOf(key) {
+  const seg = key.split(".")[0];
+  const map = {stats: "geral", difficulty: "dificuldade", item: "itens", spell: "magias",
+               monster: "monstros", buff: "buffs", debuff: "debuffs", stance: "posturas"};
+  return map[seg] || "geral";
+}
+
+// Groups a category's keys by their 2nd dotted segment (the "entity" -
+// a monster id, a spell id, a profession name...) so each renders as its
+// own collapsible <details> block instead of one giant flat list. Stage
+// K18's "Editar aparencia" button will hang off these same per-entity
+// blocks once it exists.
+function groupEntities(keys) {
+  const groups = {};
+  for (const key of keys) {
+    const parts = key.split(".");
+    const entity = parts.length >= 3 ? parts[1] : "_";
+    const field = parts.length >= 3 ? parts.slice(2).join(".") : parts.slice(1).join(".");
+    (groups[entity] = groups[entity] || []).push({key, field});
+  }
+  return groups;
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tabId));
+  document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.dataset.tab === tabId));
+}
+
 async function loadBalance() {
   const res = await fetch(API + "/admin/balance", {headers: {"Authorization": "Bearer " + token()}});
   if (!res.ok) {
@@ -528,22 +582,60 @@ async function loadBalance() {
     return;
   }
   const data = await res.json();
-  const tbody = document.querySelector("#tbl tbody");
-  tbody.innerHTML = "";
-  const keys = Object.keys(data.defaults).sort();
-  for (const key of keys) {
-    const def = data.defaults[key];
-    const cur = data.overrides.hasOwnProperty(key) ? data.overrides[key] : String(def);
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${key}</td><td>${def}</td><td><input data-key="${key}" value="${cur}"></td>`;
-    tbody.appendChild(tr);
+  const byCategory = {};
+  for (const tab of TABS) byCategory[tab.id] = [];
+  for (const key of Object.keys(data.defaults).sort()) byCategory[categoryOf(key)].push(key);
+
+  const tabsEl = document.getElementById("tabs");
+  const contentsEl = document.getElementById("tab-contents");
+  tabsEl.innerHTML = "";
+  contentsEl.innerHTML = "";
+
+  for (const tab of TABS) {
+    const keys = byCategory[tab.id];
+    const btn = document.createElement("button");
+    btn.className = "tab-btn";
+    btn.dataset.tab = tab.id;
+    btn.textContent = `${tab.label} (${keys.length})`;
+    btn.onclick = () => switchTab(tab.id);
+    tabsEl.appendChild(btn);
+
+    const content = document.createElement("div");
+    content.className = "tab-content";
+    content.dataset.tab = tab.id;
+    const groups = groupEntities(keys);
+    for (const entity of Object.keys(groups).sort()) {
+      const rows = groups[entity];
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = entity === "_" ? tab.label : entity;
+      details.appendChild(summary);
+      const table = document.createElement("table");
+      table.innerHTML = "<thead><tr><th>Campo</th><th>Default</th><th>Valor atual</th></tr></thead>";
+      const tbody = document.createElement("tbody");
+      for (const {key, field} of rows) {
+        const def = data.defaults[key];
+        const cur = data.overrides.hasOwnProperty(key) ? data.overrides[key] : String(def);
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${field}</td><td>${def}</td><td><input data-key="${key}" value="${cur}"></td>`;
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      details.appendChild(table);
+      content.appendChild(details);
+    }
+    contentsEl.appendChild(content);
   }
+  switchTab(TABS[0].id);
+
   document.getElementById("login").style.display = "none";
   document.getElementById("panel").style.display = "block";
 }
 
 async function doSave() {
-  const inputs = document.querySelectorAll("#tbl input");
+  // Every tab's inputs stay in the DOM (hidden via CSS, not destroyed) -
+  // this still captures edits made before switching tabs away.
+  const inputs = document.querySelectorAll("#tab-contents input");
   const values = {};
   inputs.forEach(inp => { values[inp.dataset.key] = inp.value; });
   const res = await fetch(API + "/admin/balance", {
