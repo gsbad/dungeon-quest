@@ -524,25 +524,40 @@ _ADMIN_PAGE = """<!doctype html>
 <title>Dungeon Quest - Balanceamento</title>
 <style>
 body { font-family: monospace; background: #14141c; color: #ddd; padding: 24px; }
-h1 { color: #e0b84c; }
+h1 { color: #e0b84c; letter-spacing: 0.5px; }
 table { border-collapse: collapse; width: 100%; max-width: 900px; }
-td, th { border: 1px solid #444; padding: 6px 10px; text-align: left; }
-th { background: #232330; }
-input { width: 120px; background: #1e1e28; color: #ddd; border: 1px solid #555; padding: 4px; }
+td, th { border: 1px solid #383844; padding: 7px 10px; text-align: left; }
+th { background: #262633; color: #b8b8c8; }
+tr:hover td { background: #20202c; }
+input { width: 120px; background: #1e1e28; color: #ddd; border: 1px solid #555; padding: 5px; border-radius: 3px; }
+input:focus { outline: none; border-color: #e0b84c; }
 input.changed { border-color: #e0b84c; }
-button { background: #e0b84c; color: #14141c; border: none; padding: 8px 18px; font-weight: bold; cursor: pointer; }
-#login input { width: 220px; }
-#status { margin-left: 12px; }
+button { background: #e0b84c; color: #14141c; border: none; padding: 8px 18px; font-weight: bold; cursor: pointer; border-radius: 3px; }
+button:hover { background: #f0c95c; }
+/* Stage K19: card-style login box instead of a bare inline row - the
+   first thing anyone hitting /admin sees. */
+#login { background: #1a1a24; border: 1px solid #333; border-radius: 6px; padding: 20px; max-width: 340px; }
+#login input { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+#status { margin-left: 12px; color: #e08c8c; }
 /* Stage K17: tab bar + collapsible per-entity sections - the flat table
    above stopped scaling once BALANCE_DEFAULTS grew past ~300 keys
    (Stage K16's monster/buff/debuff/stance categories). */
 #tabs { display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
-.tab-btn { background: #232330; color: #aaa; border: 1px solid #444; padding: 6px 14px; cursor: pointer; font-family: monospace; }
+.tab-btn { background: #232330; color: #aaa; border: 1px solid #444; padding: 7px 16px; cursor: pointer; font-family: monospace; border-radius: 4px; transition: background 0.1s; }
+.tab-btn:hover { background: #2c2c3c; color: #ddd; }
 .tab-btn.active { background: #e0b84c; color: #14141c; font-weight: bold; }
+.tab-btn.active:hover { background: #e0b84c; }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
-details { max-width: 900px; margin-bottom: 6px; border: 1px solid #333; background: #1a1a24; }
-summary { cursor: pointer; padding: 8px 10px; background: #232330; font-weight: bold; color: #e0b84c; }
+/* Stage K19: entity cards - a subtle gold left-border + hover lift reads
+   as "clickable card", not just a table row that happens to collapse. */
+details { max-width: 900px; margin-bottom: 8px; border: 1px solid #333; border-left: 3px solid #55552a; background: #1a1a24; border-radius: 4px; overflow: hidden; }
+details[open] { border-left-color: #e0b84c; }
+summary { cursor: pointer; padding: 10px 12px; background: #232330; font-weight: bold; color: #e0b84c; list-style: none; }
+summary:hover { background: #282838; }
+summary::-webkit-details-marker { display: none; }
+summary::before { content: "\\25B8"; display: inline-block; margin-right: 8px; transition: transform 0.1s; }
+details[open] summary::before { transform: rotate(90deg); }
 details table { margin: 0; }
 </style></head>
 <body>

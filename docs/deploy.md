@@ -119,6 +119,27 @@ runs as the `caddy` user, which can't traverse `/home/ubuntu` (mode `750`).
 only forwards paths it's explicitly told to - a route that only exists in
 FastAPI 404s through Caddy's static-file fallback otherwise.
 
+## Admin balance panel on localhost (Stage K19 confirmed)
+
+No VM needed to test `/admin` - it's a plain FastAPI route, identical in
+local dev and production:
+
+```bash
+cd backend
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt  # first time only
+ADMIN_PASSWORD=whatever .venv/bin/uvicorn app.main:app --port 8090
+```
+
+Open `http://127.0.0.1:8090/admin`, log in with whatever password you set
+`ADMIN_PASSWORD` to. `JWT_SECRET` doesn't need to be set - if absent, the
+backend generates one and persists it to `backend/.jwt_secret_dev`
+(gitignored) so it survives a restart. `GOOGLE_CLIENT_ID` isn't needed
+either unless you're also testing Google login - the balance/appearance
+panel doesn't touch it. The game itself doesn't need to be running at all
+to test the panel in isolation; point a local pygbag dev server's
+`ALLOWED_ORIGINS` entry at it (already listed in `backend/app/main.py`)
+only if you want the game to actually pick up overrides live.
+
 ## VM access
 
 - SSH: `ssh -i ~/.ssh/dungeonquest_vm ubuntu@129.80.222.127`
