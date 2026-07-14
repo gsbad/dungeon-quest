@@ -643,11 +643,24 @@ class InputManager:
         self._capture_callback = callback
 
     def feed(self, event):
-        if event.type == pygame.KEYDOWN and self._capture_callback is not None:
-            cb = self._capture_callback
-            self._capture_callback = None
-            cb(event.key)
-            return
+        # Stage K22: capture used to only ever intercept KEYDOWN, so
+        # rebinding an action to a mouse click in Settings silently did
+        # nothing - the click fell through to the normal MOUSEBUTTONDOWN
+        # handling below instead of reaching the capture callback. Any
+        # mouse button now completes a capture too, encoded the same way
+        # BINDINGS stores it (game.keybinds.key_name/MOUSE_LABELS): the
+        # string "MOUSE1"/"MOUSE2"/"MOUSE3" rather than a pygame keycode.
+        if self._capture_callback is not None:
+            if event.type == pygame.KEYDOWN:
+                cb = self._capture_callback
+                self._capture_callback = None
+                cb(event.key)
+                return
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                cb = self._capture_callback
+                self._capture_callback = None
+                cb(f"MOUSE{event.button}")
+                return
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_w, pygame.K_UP):
                 self._press_action(Action.MENU_UP)
@@ -720,17 +733,32 @@ class InputManager:
             if event.key == pygame.K_F12:
                 self._press_action(Action.MUTE)
 
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            # Deliberately doesn't set touch_active - a PC mouse click still
-            # needs to register taps (menu buttons, paperdoll +/-), but it
-            # shouldn't make the mobile-only joystick/attack/pause/paperdoll
-            # overlay pop up on desktop. Real touchscreens send FINGERDOWN
-            # separately (see below), so this doesn't affect mobile.
-            pos = _corrected_mouse_pos(event.pos)
-            self._mouse_screen_pos = pos
-            self._crosshair_pos = pos
-            self._crosshair_timer = self._CROSSHAIR_DURATION
-            self._pointer_down("mouse", *pos)
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            # Stage K22: any remappable action (Dash by default - see
+            # game/keybinds.py's DEFAULT_BINDINGS) can now be bound to a
+            # mouse button, checked the same way the KEYDOWN branch above
+            # checks BINDINGS - "MOUSE{button}" against the live binding
+            # string. Runs for every button (not just 1) so right/middle
+            # click work as bindings too, independent of the button==1-only
+            # UI-tap/crosshair logic below.
+            from game.keybinds import BINDINGS
+            mouse_code = f"MOUSE{event.button}"
+            for action_name, bound in BINDINGS.items():
+                if bound == mouse_code:
+                    self._press_action(Action[action_name])
+
+            if event.button == 1:
+                # Deliberately doesn't set touch_active - a PC mouse click
+                # still needs to register taps (menu buttons, paperdoll
+                # +/-), but it shouldn't make the mobile-only joystick/
+                # attack/pause/paperdoll overlay pop up on desktop. Real
+                # touchscreens send FINGERDOWN separately (see below), so
+                # this doesn't affect mobile.
+                pos = _corrected_mouse_pos(event.pos)
+                self._mouse_screen_pos = pos
+                self._crosshair_pos = pos
+                self._crosshair_timer = self._CROSSHAIR_DURATION
+                self._pointer_down("mouse", *pos)
         elif event.type == pygame.MOUSEMOTION:
             pos = _corrected_mouse_pos(event.pos)
             self._mouse_screen_pos = pos

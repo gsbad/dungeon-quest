@@ -28,7 +28,7 @@ DEFAULT_BINDINGS = {
     "CAST_1": pygame.K_f,
     "CAST_2": pygame.K_q,
     "CAST_3": pygame.K_r,
-    "DASH": pygame.K_x,
+    "DASH": "MOUSE1",
     "PICKAXE": pygame.K_e,
     "PAPERDOLL": pygame.K_c,
     "ITEMS": pygame.K_i,
@@ -56,7 +56,24 @@ ACTION_LABELS = {
 }
 
 
+# Stage K22: a binding can now also be a mouse button, represented as this
+# plain string ("MOUSE1"/"MOUSE2"/"MOUSE3") instead of a pygame keycode int -
+# feed()'s MOUSEBUTTONDOWN handling builds/matches this same string, and
+# nothing here needs to know pygame.key.name() doesn't understand it. Kept
+# as short as a 2-3 letter key name (e.g. "SPACE") since every caller of
+# display_key() - the Settings row badge, the hotbar's auto-sized badge,
+# the Help tab - was already sized around keyboard-length labels, not a
+# full "CLIQUE ESQUERDO".
+MOUSE_LABELS = {
+    "MOUSE1": "M.ESQ",
+    "MOUSE2": "M.DIR",
+    "MOUSE3": "M.MEIO",
+}
+
+
 def key_name(key_code):
+    if isinstance(key_code, str):
+        return MOUSE_LABELS.get(key_code, key_code)
     return pygame.key.name(key_code).upper()
 
 

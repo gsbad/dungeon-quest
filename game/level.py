@@ -748,9 +748,11 @@ class Level:
         directly in front of the player (GameplayState computes col/row
         from player.aim_dx/aim_dy, mirroring get_attack_rect()'s split -
         Player only owns the cooldown/state, Level owns what's in the
-        world). Returns True if the swing landed on anything at all (wall
-        or the secret key tile), so the caller knows whether to play a
-        sound - a whiff into open floor/a border wall is silent."""
+        world). Returns True if the swing landed on anything at all - a
+        wall, the secret key tile, or (Stage K22) ordinary floor, which
+        gets a small dirt-puff/sound of its own now so digging never goes
+        completely silent. Only a swing aimed out of bounds or at an
+        indestructible border wall (see _is_border) whiffs entirely."""
         if self.data["type"] != "combat":
             return False
         if not (0 <= col < self.cols and 0 <= row < self.rows):
@@ -776,6 +778,21 @@ class Level:
                 self.dig_particles.append(Particle(col * TILE + TILE / 2, row * TILE + TILE / 2, ACCENT_GOLD))
             if audio_mgr:
                 audio_mgr.play("pickup")
+            return True
+        elif ch == '.':
+            # Stage K22: an ordinary floor tile used to be a total no-op -
+            # no particle, no sound, indistinguishable from a whiff into
+            # open air out of pickaxe range. That silence read as "the
+            # pickaxe doesn't do anything" during normal play, since almost
+            # every tile a player digs while hunting for the secret key
+            # isn't the one exact key tile. A small dirt puff + the same
+            # swing sound as a wall hit confirms every swing landed on
+            # *something*, without granting a drop or revealing anything -
+            # the key tile above stays the only tile that matters.
+            for _ in range(3):
+                self.dig_particles.append(Particle(col * TILE + TILE / 2, row * TILE + TILE / 2, (110, 90, 70)))
+            if audio_mgr:
+                audio_mgr.play("attack")
             return True
         return False
 

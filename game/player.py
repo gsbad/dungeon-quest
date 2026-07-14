@@ -4,6 +4,7 @@ from game.assets import (
     create_player_sprite, create_projectile_sprite,
     create_spell_icon, create_potion_icon, create_debuff_icon,
     create_sword_icon, create_dash_icon, create_stance_icon,
+    create_pickaxe_icon,
 )
 from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL, mitigate
 from game.status_effects import StatusEffectCarrier
@@ -62,8 +63,8 @@ _HOTBAR_BOX_COLOR = (15, 15, 18)
 def hotbar_slots(player):
     """[(kind, id, rect), ...] for all hotbar slots - a fixed layout derived
     from SPELL_ORDER/player.hotbar_items and screen width. Groups (attack,
-    spells, items, dash) separated by _HOTBAR_GROUP_GAP (Stage G2), left to
-    right.
+    spells, items, dash, pickaxe) separated by _HOTBAR_GROUP_GAP (Stage G2),
+    left to right.
 
     Stage J14: "attack" (melee, key F) and "dash" (key SPACE) are new
     single-slot groups bookending the original spell/item groups - neither
@@ -73,7 +74,12 @@ def hotbar_slots(player):
     Stage K12: ITEMS grew from 3 to ~25 entries (new potions/elixirs), so
     this can no longer iterate ITEMS wholesale - the item group now shows
     only `player.hotbar_items` (max 3, picked in the Items overlay), same
-    shape as before for anyone who hasn't touched the new selection UI."""
+    shape as before for anyone who hasn't touched the new selection UI.
+
+    Stage K22: "pickaxe" is a new trailing bookend after dash - it existed
+    as a keybind (game/keybinds.py's PICKAXE) since Stage K14 but was never
+    actually visible anywhere in the hotbar, same None-key/kind-branch shape
+    as attack/dash above."""
     from game.theme import SW
     spell_ids = [("spell", s) for s in SPELL_ORDER]
     item_ids = [("item", i) for i in player.hotbar_items]
@@ -81,7 +87,9 @@ def hotbar_slots(player):
     spell_w = len(spell_ids) * _HOTBAR_SLOT + (len(spell_ids) - 1) * _HOTBAR_GAP
     item_w = len(item_ids) * _HOTBAR_SLOT + (len(item_ids) - 1) * _HOTBAR_GAP
     dash_w = _HOTBAR_SLOT
-    total_w = attack_w + _HOTBAR_GROUP_GAP + spell_w + _HOTBAR_GROUP_GAP + item_w + _HOTBAR_GROUP_GAP + dash_w
+    pickaxe_w = _HOTBAR_SLOT
+    total_w = (attack_w + _HOTBAR_GROUP_GAP + spell_w + _HOTBAR_GROUP_GAP + item_w
+               + _HOTBAR_GROUP_GAP + dash_w + _HOTBAR_GROUP_GAP + pickaxe_w)
     x0 = SW // 2 - total_w // 2
     slots = [("attack", None, pygame.Rect(x0, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT))]
     spell_x0 = x0 + attack_w + _HOTBAR_GROUP_GAP
@@ -94,6 +102,8 @@ def hotbar_slots(player):
         slots.append((kind, key, pygame.Rect(x, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT)))
     dash_x0 = item_x0 + item_w + _HOTBAR_GROUP_GAP
     slots.append(("dash", None, pygame.Rect(dash_x0, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT)))
+    pickaxe_x0 = dash_x0 + dash_w + _HOTBAR_GROUP_GAP
+    slots.append(("pickaxe", None, pygame.Rect(pickaxe_x0, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT)))
     return slots
 
 
@@ -832,10 +842,15 @@ class Player:
                 usable = self.attack_cooldown <= 0
                 icon = create_sword_icon()
                 selected = False
-            else:  # kind == "dash"
+            elif kind == "dash":
                 on_cooldown = self.dash_cooldown > 0
                 usable = self.stats.dexterity >= DASH_DEX_REQ and not on_cooldown
                 icon = create_dash_icon()
+                selected = False
+            else:  # kind == "pickaxe"
+                on_cooldown = self.pickaxe_cooldown > 0
+                usable = not on_cooldown
+                icon = create_pickaxe_icon()
                 selected = False
 
             pygame.draw.rect(surface, _HOTBAR_BOX_COLOR, rect, border_radius=6)
@@ -858,8 +873,10 @@ class Player:
             elif kind == "item":
                 item_i += 1
                 key_label = str(item_i)
-            else:  # dash
+            elif kind == "dash":
                 key_label = _key_label("DASH")
+            else:  # pickaxe
+                key_label = _key_label("PICKAXE")
             key_surf = f_key.render(key_label, True, (255, 255, 255))
             key_bg = pygame.Rect(rect.x - 2, rect.y - 2, key_surf.get_width() + 4, key_surf.get_height() + 2)
             pygame.draw.rect(surface, (20, 20, 30), key_bg, border_radius=3)
@@ -873,6 +890,12 @@ class Player:
                 surface.blit(wipe, (rect.x, rect.bottom - wipe_h))
             elif kind == "dash" and on_cooldown:
                 cd_frac = min(1.0, self.dash_cooldown / DASH_COOLDOWN)
+                wipe_h = int(rect.height * cd_frac)
+                wipe = pygame.Surface((rect.width, wipe_h), pygame.SRCALPHA)
+                wipe.fill((0, 0, 0, 160))
+                surface.blit(wipe, (rect.x, rect.bottom - wipe_h))
+            elif kind == "pickaxe" and on_cooldown:
+                cd_frac = min(1.0, self.pickaxe_cooldown / PICKAXE_COOLDOWN)
                 wipe_h = int(rect.height * cd_frac)
                 wipe = pygame.Surface((rect.width, wipe_h), pygame.SRCALPHA)
                 wipe.fill((0, 0, 0, 160))
@@ -897,8 +920,10 @@ class Player:
                 tip = [ITEMS[key]["name"], _item_tooltip_line(key)]
             elif kind == "attack":
                 tip = ["Ataque", f"Corpo a corpo | Recarga: {self.stats.attack_cooldown:.2f}s"]
-            else:  # dash
+            elif kind == "dash":
                 tip = ["Investida (Dash)", f"Requer DES {DASH_DEX_REQ} | Recarga: {DASH_COOLDOWN:.1f}s"]
+            else:  # pickaxe
+                tip = ["Picareta", f"Quebra blocos e cava em busca da chave | Recarga: {PICKAXE_COOLDOWN:.1f}s"]
             draw_tooltip(surface, mouse_pos, rect, tip, SW, SH)
 
     def _draw_status_chips(self, surface, dock_y, mouse_pos=None):

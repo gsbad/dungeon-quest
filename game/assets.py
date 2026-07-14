@@ -1542,6 +1542,31 @@ def create_dash_icon():
     return s
 
 
+_PICKAXE_ICON_CACHE = None
+
+
+def create_pickaxe_icon():
+    """Diagonal wooden handle + angled steel head, same 16x16 SRCALPHA/
+    manual-rect style as create_sword_icon/create_dash_icon - used by the
+    hotbar's Pickaxe slot (Stage K22, it never had one before)."""
+    global _PICKAXE_ICON_CACHE
+    if _PICKAXE_ICON_CACHE is not None:
+        return _PICKAXE_ICON_CACHE
+    s = pygame.Surface((16, 16), pygame.SRCALPHA)
+    handle = (140, 95, 50)
+    head = (190, 195, 205)
+    head_edge = (110, 112, 120)
+    for i in range(9):
+        x, y = 3 + i, 12 - i
+        pygame.draw.rect(s, handle, (x, y, 2, 2))
+    pygame.draw.line(s, head, (9, 1), (14, 4), 3)
+    pygame.draw.line(s, head, (2, 4), (7, 1), 3)
+    pygame.draw.line(s, head_edge, (9, 1), (14, 4), 1)
+    pygame.draw.line(s, head_edge, (2, 4), (7, 1), 1)
+    _PICKAXE_ICON_CACHE = s
+    return s
+
+
 _TROPHY_ICON_CACHE = {}
 _TROPHY_TIER_COLORS = {
     "bronze": (180, 110, 60),

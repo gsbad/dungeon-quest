@@ -129,5 +129,5 @@ class SettingsOverlay:
                        cx, reset_y + 26, shadow=False)
 
         f_hint = font(13)
-        hint = "W/S seleciona | ESPACO captura nova tecla | ESC - Fechar"
+        hint = "W/S seleciona | ESPACO/clique captura nova tecla | ESC - Fechar"
         draw_text(surface, hint, f_hint, SUBTEXT, cx, self.py + _PANEL_H - 20)
