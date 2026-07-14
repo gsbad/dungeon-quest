@@ -140,6 +140,32 @@ to test the panel in isolation; point a local pygbag dev server's
 `ALLOWED_ORIGINS` entry at it (already listed in `backend/app/main.py`)
 only if you want the game to actually pick up overrides live.
 
+## Action needed: Caddy route for the new /appearance/defaults endpoint
+
+Stage K23 added `GET /appearance/defaults` (backend/app/main.py) so the
+admin panel's pixel editor has a real sprite to pre-load instead of a
+blank canvas. Per this doc's "Adding a new backend route?" note above,
+that means it needs its own `handle /appearance/defaults { reverse_proxy
+127.0.0.1:8090 }` block in `/etc/caddy/Caddyfile` on the VM (unless the
+existing `/appearance` block there is already a `/appearance*` prefix
+match, in which case this is a no-op) - **not yet confirmed either way**,
+since this was written from the local checkout, not the VM. Check after
+the next deploy: if "Editar aparencia" still opens blank in production
+specifically (works locally but not live), this is why.
+
+## Login gate (Stage K23)
+
+`pygbag_template.tmpl` now blocks the game behind a forced Google login
+on first visit - `dq-login-gate`, a fullscreen overlay covering the whole
+page until a JWT exists in `localStorage`. Bypassed entirely (never even
+flashes) for local/LAN hosts - `dqIsLocalOrLan()` matches `localhost`,
+`127.0.0.1`, and the `192.168.*`/`10.*`/`172.16-31.*` ranges the PC+mobile
+same-LAN dev setup already uses - so neither of the two local dev flows
+above (this admin panel, or the game itself via a local pygbag server)
+ever need to log in to test. `/admin` is untouched - it keeps its own
+separate password-based admin login, the gate has no opinion on it either
+way since it only guards the game's own landing page.
+
 ## VM access
 
 - SSH: `ssh -i ~/.ssh/dungeonquest_vm ubuntu@129.80.222.127`
