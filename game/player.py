@@ -85,6 +85,24 @@ def hotbar_slots():
     slots.append(("dash", None, pygame.Rect(dash_x0, _HOTBAR_Y, _HOTBAR_SLOT, _HOTBAR_SLOT)))
     return slots
 
+
+def _item_tooltip_line(item_id):
+    """Stage K8: ITEMS (game/items.py) has no stored description field -
+    this reads the same effect keys use_item() branches on and turns them
+    into one objective-numbers sentence, so a new potion just works here
+    without also needing hand-written tooltip text kept in sync."""
+    from game.items import ITEMS
+    item = ITEMS[item_id]
+    parts = []
+    if "heal_hp_frac" in item:
+        parts.append(f"Cura {round(item['heal_hp_frac'] * 100)}% da vida")
+    if "heal_mana_frac" in item:
+        parts.append(f"Restaura {round(item['heal_mana_frac'] * 100)}% da mana")
+    if "cures" in item:
+        parts.append("Cura: " + ", ".join(sorted(item["cures"])))
+    return " | ".join(parts) if parts else ""
+
+
 class Player:
     def __init__(self, x, y, audio_mgr):
         self.x = float(x)
@@ -506,12 +524,13 @@ class Player:
             gy = int(ty - cam_y)
             surface.blit(ghost, (gx - 8, gy - 12))
 
-    def draw_hud(self, surface, save_state=None, touch_active=False):
+    def draw_hud(self, surface, save_state=None, touch_active=False, mouse_pos=None):
         # HP/mana/XP bars - stats.py's bigger hp range (see Stage A3) no
         # longer maps cleanly onto discrete heart icons, so it's bars like
         # bosses already use.
-        from game.ui import ProgressBar
-        from game.theme import font, ACCENT_GOLD
+        from game.ui import ProgressBar, draw_tooltip
+        from game.theme import font, ACCENT_GOLD, SW, SH
+        from game.stats import xp_to_next
         if not hasattr(self, "_hp_bar"):
             self._hp_bar = ProgressBar(160, 16, (60, 0, 0), (220, 220, 220), border_width=2)
             self._mana_bar = ProgressBar(160, 10, (0, 0, 50), (180, 180, 220), border_width=2)
@@ -531,6 +550,18 @@ class Player:
 
         self._xp_bar.draw(surface, 12, dock_y + 34, self.xp_frac, ACCENT_GOLD)
 
+        # Stage K8: hover tooltips with the exact numbers behind each bar -
+        # the bars themselves only ever show a fraction/color, never digits.
+        hp_rect = pygame.Rect(12, dock_y, self._hp_bar.w, self._hp_bar.h)
+        draw_tooltip(surface, mouse_pos, hp_rect,
+                     f"Vida: {round(self.hp)}/{round(self.max_hp)}", SW, SH)
+        mana_rect = pygame.Rect(12, dock_y + 20, self._mana_bar.w, self._mana_bar.h)
+        draw_tooltip(surface, mouse_pos, mana_rect,
+                     f"Mana: {round(self.mana)}/{round(self.max_mana)}", SW, SH)
+        xp_rect = pygame.Rect(12, dock_y + 34, self._xp_bar.w, self._xp_bar.h)
+        draw_tooltip(surface, mouse_pos, xp_rect,
+                     f"XP: {round(self.xp)}/{round(xp_to_next(self.level))}", SW, SH)
+
         f = font(16, bold=True)
         lvl_txt = f.render(f"Lv {self.level}", True, ACCENT_GOLD)
         surface.blit(lvl_txt, (178, dock_y))
@@ -538,8 +569,8 @@ class Player:
         gold_txt = f.render(f"{self.gold}g", True, (230, 200, 80))
         surface.blit(gold_txt, (178, dock_y + 20))
 
-        self._draw_status_chips(surface, dock_y + 46)
-        self._draw_hotbar(surface, touch_active)
+        self._draw_status_chips(surface, dock_y + 46, mouse_pos)
+        self._draw_hotbar(surface, touch_active, mouse_pos)
 
     def _draw_title_line(self, surface, save_state):
         # Stage G7: "Reputacao Profissao Nome", same style as the hero name
@@ -556,9 +587,10 @@ class Player:
         surface.blit(shadow, (13, 7))
         surface.blit(txt_surf, (12, 6))
 
-    def _draw_hotbar(self, surface, touch_active=False):
-        from game.theme import font, ACCENT_GOLD
+    def _draw_hotbar(self, surface, touch_active=False, mouse_pos=None):
+        from game.theme import font, ACCENT_GOLD, SW, SH
         from game.items import ITEMS
+        from game.ui import draw_tooltip
         f_key = font(11, bold=True)
         f_count = font(11, bold=True)
         for i, (kind, key, rect) in enumerate(hotbar_slots()):
@@ -633,21 +665,50 @@ class Player:
                 pygame.draw.rect(surface, (245, 245, 248), cbg, border_radius=3)
                 surface.blit(count_surf, (cbg.x + 2, cbg.y + 1))
 
-    def _draw_status_chips(self, surface, y=58):
-        # Debuff indicator row, below the HP/mana/XP dock - not optional
-        # polish: Poison/Slow/Weakness last ~12s each and have no other
-        # on-screen cue, so without this the player has no way to tell
-        # why they're sluggish or bleeding hp.
-        from game.status_effects import STATUS_DISPLAY
+            # Stage K8: hover tooltip, objective numbers only.
+            if kind == "spell":
+                spell = SPELLS[key]
+                tip = [spell["name"], spell["description"],
+                       f"Custo: {spell['mana_cost']} mana | Recarga: {spell['cooldown']:.1f}s"]
+            elif kind == "item":
+                tip = [ITEMS[key]["name"], _item_tooltip_line(key)]
+            elif kind == "attack":
+                tip = ["Ataque", f"Corpo a corpo | Recarga: {self.stats.attack_cooldown:.2f}s"]
+            else:  # dash
+                tip = ["Investida (Dash)", f"Requer DES {DASH_DEX_REQ} | Recarga: {DASH_COOLDOWN:.1f}s"]
+            draw_tooltip(surface, mouse_pos, rect, tip, SW, SH)
+
+    def _draw_status_chips(self, surface, dock_y, mouse_pos=None):
+        # Stage K8: moved from a left-aligned row under the HP/mana/XP dock
+        # to a horizontal row centered under the hotbar (now up at the top
+        # edge, Stage K7) - same spot future timed buffs (Stage K12) will
+        # share, since they'll live in this same self.status.active dict
+        # once Stage K10 extends StatusEffectCarrier for percentage buffs,
+        # not a separate list. Each chip now also shows a countdown and
+        # responds to hover with a tooltip (name + exact numbers).
+        from game.status_effects import STATUS_DISPLAY, STATUS_HELP
+        from game.theme import font, SW, SH
+        from game.ui import draw_tooltip
         if not self.status.active:
             return
-        x = 12
-        for effect_id in self.status.active:
+        chip_w, chip_h, gap = 40, 34, 4
+        n = len(self.status.active)
+        total_w = n * chip_w + (n - 1) * gap
+        x = SW // 2 - total_w // 2
+        y = _HOTBAR_Y + _HOTBAR_SLOT + 6
+        f_timer = font(10, bold=True)
+        for effect_id, active in self.status.active.items():
             _, color = STATUS_DISPLAY.get(effect_id, (effect_id[:3].upper(), (200, 200, 200)))
-            chip = pygame.Surface((36, 18), pygame.SRCALPHA)
+            chip = pygame.Surface((chip_w, chip_h), pygame.SRCALPHA)
             chip.fill((*color, 70))
-            pygame.draw.rect(chip, color, (0, 0, 36, 18), 1)
+            pygame.draw.rect(chip, color, (0, 0, chip_w, chip_h), 1)
             surface.blit(chip, (x, y))
             icon = create_debuff_icon(effect_id)
-            surface.blit(icon, (x + 18 - icon.get_width() // 2, y + 9 - icon.get_height() // 2))
-            x += 40
+            surface.blit(icon, (x + chip_w // 2 - icon.get_width() // 2, y + 4))
+            timer_txt = f_timer.render(f"{max(0, active.remaining):.0f}s", True, (235, 235, 245))
+            surface.blit(timer_txt, (x + chip_w // 2 - timer_txt.get_width() // 2, y + chip_h - 12))
+
+            name, desc = STATUS_HELP.get(effect_id, (effect_id, ""))
+            chip_rect = pygame.Rect(x, y, chip_w, chip_h)
+            draw_tooltip(surface, mouse_pos, chip_rect, [name, desc], SW, SH)
+            x += chip_w + gap

@@ -1218,7 +1218,11 @@ class GameplayState:
         self.weather.draw(self.screen)
 
         # HUD
-        self.player.draw_hud(self.screen, self.save_state, touch_active=self.input.touch_active)
+        # Stage K8: mouse_pos powers hover tooltips - meaningless on touch
+        # (no persistent hover there), but harmless to pass either way since
+        # draw_tooltip() only ever draws when a rect actually contains it.
+        self.player.draw_hud(self.screen, self.save_state, touch_active=self.input.touch_active,
+                              mouse_pos=self.input.mouse_pos())
         self.level.draw_hud_info(self.screen)
 
         # Difficulty tag + active level affixes (Stage B5) - just above the

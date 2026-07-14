@@ -1,6 +1,40 @@
 import pygame
 
 
+def draw_tooltip(surface, mouse_pos, rect, text, screen_w=None, screen_h=None):
+    """Stage K8: shared hover-tooltip - checks rect.collidepoint(mouse_pos)
+    and, if it hits, draws a small dark box with `text` near the cursor.
+    Used for buffs/debuffs/items/spells and the HP/mana/XP bars alike, so
+    every hoverable HUD element gets the same look for free. Returns True
+    if drawn (callers don't currently need this, but it's a natural signal
+    for "only show one tooltip at a time" if that's ever needed).
+
+    `text` may be a single string or a list of strings (one per line)."""
+    if mouse_pos is None or not rect.collidepoint(mouse_pos):
+        return False
+    from game.theme import font
+    lines = text if isinstance(text, (list, tuple)) else [text]
+    f = font(13)
+    surfs = [f.render(line, True, (235, 235, 245)) for line in lines]
+    w = max(s.get_width() for s in surfs) + 12
+    h = sum(s.get_height() for s in surfs) + 10
+    mx, my = mouse_pos
+    x, y = mx + 14, my + 14
+    if screen_w:
+        x = min(x, screen_w - w - 4)
+    if screen_h:
+        y = min(y, screen_h - h - 4)
+    box = pygame.Surface((w, h), pygame.SRCALPHA)
+    box.fill((15, 15, 22, 235))
+    pygame.draw.rect(box, (120, 120, 150, 255), (0, 0, w, h), 1)
+    surface.blit(box, (x, y))
+    ty = y + 5
+    for s in surfs:
+        surface.blit(s, (x + 6, ty))
+        ty += s.get_height()
+    return True
+
+
 def draw_text(surface, text, f, color, cx, y, shadow=True, align="center"):
     """cx is a center x by default; align="left" treats it as a left edge
     instead (e.g. paperdoll.py's two-column stat grid, where centering each
