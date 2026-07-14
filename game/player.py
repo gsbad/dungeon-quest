@@ -27,6 +27,11 @@ DASH_SPEED = 780
 DASH_COOLDOWN = 3.5
 DASH_TRAIL_LEN = 7
 
+# Stage K14: Picareta - no attribute gate (unlike Dash's DEX_REQ), any
+# profession can dig; the cooldown is the only pacing knob per the user's
+# spec ("cooldown de 1s").
+PICKAXE_COOLDOWN = 1.0
+
 # Stage E2/E3 hotbar - 3 spell slots (keys F/Q/R, already cast this way)
 # plus 3 item slots (keys 4/5/6, new). Slot background tint + a real pixel
 # icon (Stage F1, game/assets.py's create_spell_icon/create_potion_icon) -
@@ -187,6 +192,12 @@ class Player:
         self.dash_dx, self.dash_dy = 0.0, 1.0
         self.dash_trail = []
         self._dash_hit_ids = set()
+
+        # Stage K14: Picareta - see PICKAXE_COOLDOWN below. Purely a cooldown
+        # gate; the actual "what's in front of the player" tile logic lives
+        # in Level (GameplayState._attempt_pickaxe() bridges the two), same
+        # split try_attack()/get_attack_rect() already established.
+        self.pickaxe_cooldown = 0.0
 
         self.floating_numbers = []  # Stage K6
 
@@ -575,6 +586,8 @@ class Player:
                 self.attacking = False
         if self.attack_cooldown > 0:
             self.attack_cooldown -= dt
+        if self.pickaxe_cooldown > 0:
+            self.pickaxe_cooldown -= dt
 
         # Invincibility
         if self.invincible:
@@ -592,6 +605,12 @@ class Player:
             self.audio.play("attack")
             return True
         return False
+
+    def try_pickaxe(self):
+        if self.pickaxe_cooldown > 0:
+            return False
+        self.pickaxe_cooldown = PICKAXE_COOLDOWN
+        return True
 
     def can_dash(self):
         return (self.stats.dexterity >= DASH_DEX_REQ

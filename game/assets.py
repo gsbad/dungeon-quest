@@ -1276,6 +1276,77 @@ def create_tile(tile_type):
     return s
 
 
+_CHEST_SPRITE_CACHE = {}
+
+
+def create_chest_sprite(open=False):
+    """Stage K14: the level exit, replacing the old oval portal - drawn
+    always (closed/locked), swaps to the open variant once the hidden key
+    is found (game/level.py's draw())."""
+    if open in _CHEST_SPRITE_CACHE:
+        return _CHEST_SPRITE_CACHE[open]
+    s = pygame.Surface((48, 48), pygame.SRCALPHA)
+    wood = (120, 80, 40)
+    wood_dark = (90, 55, 25)
+    metal = (200, 175, 90) if open else (150, 150, 160)
+    if not open:
+        pygame.draw.rect(s, wood, (6, 20, 36, 22), border_radius=3)
+        pygame.draw.rect(s, wood_dark, (6, 20, 36, 22), 2, border_radius=3)
+        pygame.draw.rect(s, wood_dark, (6, 30, 36, 3))
+        pygame.draw.rect(s, metal, (21, 24, 6, 14))
+        pygame.draw.circle(s, metal, (24, 30), 3)
+    else:
+        pygame.draw.rect(s, wood, (6, 24, 36, 18), border_radius=3)
+        pygame.draw.rect(s, wood_dark, (6, 24, 36, 18), 2, border_radius=3)
+        # Open lid, tilted back - a simple rotated-looking trapezoid instead
+        # of a full rotation transform for a 2-frame sprite.
+        pygame.draw.polygon(s, wood, [(6, 24), (42, 24), (38, 8), (10, 8)])
+        pygame.draw.polygon(s, wood_dark, [(6, 24), (42, 24), (38, 8), (10, 8)], 2)
+        pygame.draw.circle(s, (255, 230, 120), (24, 30), 4)
+        for dx, dy in [(-8, -2), (8, -2), (0, -8)]:
+            pygame.draw.line(s, (255, 230, 150, 180), (24, 30), (24 + dx, 30 + dy), 1)
+    _CHEST_SPRITE_CACHE[open] = s
+    return s
+
+
+_CRACKED_WALL_OVERLAY_CACHE = None
+
+
+def create_cracked_wall_overlay():
+    """Stage K14: blitted OVER the normal wall tile when a destructible
+    interior block has taken 1 picareta hit (game/level.py's draw()) - a
+    transparent overlay rather than a whole second wall tile so it works
+    over any of the game's per-biome wall art without duplicating it."""
+    global _CRACKED_WALL_OVERLAY_CACHE
+    if _CRACKED_WALL_OVERLAY_CACHE is not None:
+        return _CRACKED_WALL_OVERLAY_CACHE
+    s = pygame.Surface((48, 48), pygame.SRCALPHA)
+    c = (20, 20, 20, 200)
+    pygame.draw.line(s, c, (10, 4), (22, 20), 2)
+    pygame.draw.line(s, c, (22, 20), (16, 34), 2)
+    pygame.draw.line(s, c, (22, 20), (34, 30), 2)
+    pygame.draw.line(s, c, (34, 12), (30, 26), 2)
+    _CRACKED_WALL_OVERLAY_CACHE = s
+    return s
+
+
+_DIG_MARKER_CACHE = None
+
+
+def create_dig_marker():
+    """Stage K14: a subtle patch on the hidden key's own floor tile -
+    noticeable up close, not a glowing beacon visible across the room, so
+    finding it still feels like searching rather than following a marker."""
+    global _DIG_MARKER_CACHE
+    if _DIG_MARKER_CACHE is not None:
+        return _DIG_MARKER_CACHE
+    s = pygame.Surface((48, 48), pygame.SRCALPHA)
+    for dx, dy, r in [(-8, 4, 5), (6, -6, 6), (2, 8, 4), (-4, -8, 4)]:
+        pygame.draw.circle(s, (0, 0, 0, 35), (24 + dx, 24 + dy), r)
+    _DIG_MARKER_CACHE = s
+    return s
+
+
 def create_heart_sprite(full=True):
     s = pygame.Surface((24, 24), pygame.SRCALPHA)
     color = (220, 40, 40) if full else (80, 80, 80)

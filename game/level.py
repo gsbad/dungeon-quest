@@ -1,8 +1,8 @@
 import pygame
 import random
 import math
-from game.assets import create_tile
-from game.enemy import Enemy, BASE_XP, GOLD_DROPS, GoldDrop
+from game.assets import create_tile, create_chest_sprite, create_cracked_wall_overlay, create_dig_marker
+from game.enemy import Enemy, BASE_XP, GOLD_DROPS, GoldDrop, Particle
 from game.stats import xp_for_kill, gold_for_kill
 from game.affixes import PARAGON_REWARD_MULT, CHAMPION_REWARD_MULT
 from game.theme import font, ACCENT_GOLD
@@ -469,7 +469,12 @@ class Level:
         # their own sound (see game/audio.py's attack_{etype} sounds).
         self.audio = audio_mgr
         self.data = LEVEL_MAPS[level_num]
-        self.layout = self.data["layout"]
+        # Stage K14: a per-instance mutable copy - LEVEL_MAPS' "layout" list
+        # is a module-level constant shared by every Level built for this
+        # level_num (every difficulty tier, every replay), so breaking a
+        # block or revealing the key tile in place on the original list
+        # would corrupt it for every future playthrough in this process.
+        self.layout = [list(row) for row in self.data["layout"]]
         self.rows = len(self.layout)
         self.cols = len(self.layout[0])
         self.width = self.cols * TILE
@@ -485,6 +490,29 @@ class Level:
         self._enemy_spawn_min_dist = 3
         self.puddles = []
         self.gold_drops = []
+        # Stage K14: pending_drops entries are (kind, x, y) for "heart"/
+        # "mana"/"potion" - GameplayState (which already owns the Pickup
+        # class and inventory) drains this each frame and turns each one
+        # into the real thing; gold stays self-contained here since
+        # GoldDrop doesn't need anything states.py owns.
+        self.pending_drops = []
+        # Destructible interior walls (K14): {(col,row): hits}, 2 hits to
+        # break; border walls (the level's outer rectangle) are never in
+        # here - see _is_border(). Presence in this dict alone means
+        # "cracked" (1 hit) since a 2nd hit removes the entry immediately.
+        self._block_hits = {}
+        self._key_tile = None
+        self._key_found = False
+        self.dig_particles = []
+        # Gradual post-clear respawn (K14) - captured once in _build() from
+        # the original 'E' spawns, so a respawned mob matches this level's
+        # own roster/difficulty instead of a hardcoded fallback.
+        self._original_enemy_specs = []
+        self._respawns_remaining = 0
+        self._respawn_timer = 0.0
+        self._respawn_interval = 6.0
+        self._speed_mul = 1.0
+        self._monster_level = 1
 
         # Difficulty-tier hooks (Stage B5) - Level itself stays unaware
         # difficulty exists, same separation already used for Paragon/
@@ -536,6 +564,8 @@ class Level:
 
         speed_mul = self.data.get("speed_multiplier", 1.0) * self.extra_speed_mult
         monster_level = self.data.get("monster_level", 1) + self.ml_bonus
+        self._speed_mul = speed_mul
+        self._monster_level = monster_level
 
         for row_i, row in enumerate(self.layout):
             for col_i, ch in enumerate(row):
@@ -552,10 +582,55 @@ class Level:
                     self.enemies.append(Enemy(spawn_x + 8, spawn_y + 8, etype, speed_multiplier=speed_mul,
                                                ml=monster_level, level_num=self.level_num, audio_mgr=self.audio))
                     self._used_enemy_tiles.add((spawn_col, spawn_row))
+                    # Stage K14: remembered so the post-clear respawn trickle
+                    # can bring back the same etype roster at the same spots,
+                    # not an arbitrary fallback mob.
+                    self._original_enemy_specs.append((etype, spawn_x + 8, spawn_y + 8))
+
+        # Stage K14: one extra full wave, trickled in slowly - see update()'s
+        # respawn block. Capped (not infinite) so a player still hunting for
+        # the key doesn't face an ever-growing mob count.
+        self._respawns_remaining = len(self._original_enemy_specs)
+        self._respawn_timer = self._respawn_interval
 
         if self.data["exit"]:
             ex_col, ex_row = self.data["exit"]
             self.exit_rect = pygame.Rect(ex_col * TILE, ex_row * TILE, TILE, TILE)
+
+        self._pick_key_tile()
+
+    def _is_border(self, col, row):
+        """Every LEVEL_MAPS layout's outer rectangle (row/col 0 and the
+        last row/col) is a solid '#' wall by convention (confirmed across
+        all 13 layouts) - border walls stay indestructible, only interior
+        '#' tiles can be cracked/broken by the picareta."""
+        return row == 0 or row == self.rows - 1 or col == 0 or col == self.cols - 1
+
+    def _pick_key_tile(self):
+        """Stage K14: the hidden key is buried under a floor tile (never
+        under a '#' block, per the user's spec), picked far enough from the
+        player's own start tile that it can't be dug up trivially on
+        arrival. Boss levels (data["type"] != "combat") never get a key -
+        they already transition on boss death, no exit_rect/chest at all."""
+        if self.data["type"] != "combat":
+            return
+        start_col, start_row = self.player_start_tile
+        exit_tile = self.data["exit"]
+        candidates = []
+        for row in range(1, self.rows - 1):
+            for col in range(1, self.cols - 1):
+                if self.layout[row][col] != '.':
+                    continue
+                if (col, row) in self._used_enemy_tiles:
+                    continue
+                if exit_tile and (col, row) == tuple(exit_tile):
+                    continue
+                dx, dy = col - start_col, row - start_row
+                if dx * dx + dy * dy < 25:
+                    continue
+                candidates.append((col, row))
+        if candidates:
+            self._key_tile = random.choice(candidates)
 
     def get_player_start(self):
         col, row = self.data["player_start"]
@@ -590,10 +665,24 @@ class Level:
                     audio_mgr.play("pickup")
         self.gold_drops = [g for g in self.gold_drops if g.alive]
 
-        # Open exit when all enemies are dead
+        # Stage K14: the exit no longer opens on a kill-count - it opens
+        # only when the hidden key is dug up (try_break_tile below sets
+        # exit_open directly). Once every original enemy is dead, trickle
+        # a capped extra wave back in instead (gives the player something
+        # to fight while still searching), one every _respawn_interval.
         living = [e for e in self.enemies if e.alive]
-        if not living and self.exit_rect and self.data["type"] == "combat":
-            self.exit_open = True
+        if not living and self.data["type"] == "combat" and self._respawns_remaining > 0:
+            self._respawn_timer -= dt
+            if self._respawn_timer <= 0:
+                self._respawn_timer = self._respawn_interval
+                self._respawns_remaining -= 1
+                etype, sx, sy = random.choice(self._original_enemy_specs)
+                self.enemies.append(Enemy(sx, sy, etype, speed_multiplier=self._speed_mul,
+                                           ml=self._monster_level, level_num=self.level_num, audio_mgr=self.audio))
+
+        for particle in self.dig_particles:
+            particle.update(dt)
+        self.dig_particles = [p for p in self.dig_particles if p.life > 0]
 
         # Check player attack vs enemies
         if player.attacking:
@@ -620,16 +709,84 @@ class Level:
         else:
             reward_mult = 1
         player.gain_xp(xp_for_kill(BASE_XP[enemy.etype], enemy.ml, player.level) * reward_mult)
-        self.gold_drops.append(GoldDrop(
-            enemy.x + enemy.width / 2, enemy.y + enemy.height / 2,
-            gold_for_kill(GOLD_DROPS[enemy.etype], enemy.ml) * reward_mult
-        ))
+        # Stage K14: independent rolls instead of unconditional gold - the
+        # user's explicit complaint was "hoje e 100% ouro"; gold stays the
+        # common case (medio/alto chance) while heart/mana/potion are rarer
+        # bonus rolls, all independent so more than one can land on the
+        # same kill.
+        cx, cy = enemy.x + enemy.width / 2, enemy.y + enemy.height / 2
+        if random.random() < 0.75:
+            self.gold_drops.append(GoldDrop(
+                cx, cy, gold_for_kill(GOLD_DROPS[enemy.etype], enemy.ml) * reward_mult
+            ))
+        drop_roll = random.random()
+        if drop_roll < 0.10:
+            self.pending_drops.append(("heart", cx, cy))
+        elif drop_roll < 0.16:
+            self.pending_drops.append(("mana", cx, cy))
+        if random.random() < 0.06:
+            self.pending_drops.append(("potion", cx, cy))
         player.kills[enemy.etype] = player.kills.get(enemy.etype, 0) + 1
         if enemy.affix == "volatile":
             ex, ey = enemy.x + enemy.width / 2, enemy.y + enemy.height / 2
             px, py = player.x + player.width / 2, player.y + player.height / 2
             if math.hypot(px - ex, py - ey) <= 70:
                 player.take_damage(15, dtype="magic", knockback_from=(ex, ey))
+
+    def try_break_tile(self, col, row, player, audio_mgr=None):
+        """Stage K14: the picareta's actual effect on whatever tile is
+        directly in front of the player (GameplayState computes col/row
+        from player.aim_dx/aim_dy, mirroring get_attack_rect()'s split -
+        Player only owns the cooldown/state, Level owns what's in the
+        world). Returns True if the swing landed on anything at all (wall
+        or the secret key tile), so the caller knows whether to play a
+        sound - a whiff into open floor/a border wall is silent."""
+        if self.data["type"] != "combat":
+            return False
+        if not (0 <= col < self.cols and 0 <= row < self.rows):
+            return False
+        ch = self.layout[row][col]
+        if ch == '#':
+            if self._is_border(col, row):
+                return False
+            hits = self._block_hits.get((col, row), 0) + 1
+            if hits >= 2:
+                self._break_block(col, row)
+            else:
+                self._block_hits[(col, row)] = hits
+            for _ in range(6):
+                self.dig_particles.append(Particle(col * TILE + TILE / 2, row * TILE + TILE / 2, (150, 130, 110)))
+            if audio_mgr:
+                audio_mgr.play("attack")
+            return True
+        elif ch == '.' and not self._key_found and (col, row) == self._key_tile:
+            self._key_found = True
+            self.exit_open = True
+            for _ in range(10):
+                self.dig_particles.append(Particle(col * TILE + TILE / 2, row * TILE + TILE / 2, ACCENT_GOLD))
+            if audio_mgr:
+                audio_mgr.play("pickup")
+            return True
+        return False
+
+    def _break_block(self, col, row):
+        self.layout[row][col] = '.'
+        rect = pygame.Rect(col * TILE, row * TILE, TILE, TILE)
+        self.walls = [w for w in self.walls if w.topleft != rect.topleft]
+        del self._block_hits[(col, row)]
+        self._roll_block_drop(col, row)
+
+    def _roll_block_drop(self, col, row):
+        # Stage K14: "pot/coracao/mana, chance baixa/media" per the user's
+        # spec - most broken blocks are just rubble, no drop at all.
+        x, y = col * TILE + TILE / 2, row * TILE + TILE / 2
+        roll = random.random()
+        if roll < 0.12:
+            self.pending_drops.append(("heart", x, y))
+        elif roll < 0.20:
+            self.pending_drops.append(("mana", x, y))
+        elif roll < 0.24:
+            self.pending_drops.append(("potion", x, y))
 
     def check_exit(self, player):
         if self.exit_open and self.exit_rect:
@@ -656,8 +813,17 @@ class Level:
                 ch = self.layout[row_i][col_i]
                 if ch == '#':
                     surface.blit(wall_tile, (x, y))
+                    # Stage K14: presence in _block_hits means "cracked"
+                    # (1 hit landed, not yet broken) - see try_break_tile().
+                    if (col_i, row_i) in self._block_hits:
+                        surface.blit(create_cracked_wall_overlay(), (x, y))
                 else:
                     surface.blit(floor_tile, (x, y))
+                    # A subtle marker on the key's own tile - not glowing/
+                    # obvious from across the room, but a player who digs
+                    # near it should notice something's off underfoot.
+                    if not self._key_found and (col_i, row_i) == self._key_tile:
+                        surface.blit(create_dig_marker(), (x, y))
 
         if self.data["floor"] == "lava":
             import math, time
@@ -667,20 +833,27 @@ class Level:
                 color = (150, 60, 20) if wave_id % 4 == 0 else (190, 90, 35)
                 pygame.draw.line(surface, color, (0, wy), (screen_w, wy), 2)
 
-        # Draw exit portal
-        if self.exit_rect and self.exit_open:
-            import math, time
+        # Stage K14: "saida vira bau" - always visible (closed, locked)
+        # once the level exists, not summoned from nothing the moment it
+        # opens like the old kill-triggered portal was. Opens (sprite swap
+        # + a glow) once the hidden key is found.
+        if self.exit_rect:
             ex = self.exit_rect.x - cam_x
             ey = self.exit_rect.y - cam_y
-            t = time.time()
-            pulse = int(30 + 20 * math.sin(t * 4))
-            portal_surf = pygame.Surface((TILE + 20, TILE + 20), pygame.SRCALPHA)
-            pygame.draw.ellipse(portal_surf, (0, 100, 255, 150), (2, 2, TILE + 16, TILE + 16))
-            pygame.draw.ellipse(portal_surf, (100, 180, 255, 200), (6, 6, TILE + 8, TILE + 8), 4)
-            surface.blit(portal_surf, (ex - 10, ey - 10))
-            f = font(14, bold=True)
-            txt = f.render("SAIDA", True, (100, 180, 255))
-            surface.blit(txt, (ex + 6, ey + 10))
+            if self.exit_open:
+                import math, time
+                pulse = int(60 + 40 * math.sin(time.time() * 4))
+                glow = pygame.Surface((TILE + 20, TILE + 20), pygame.SRCALPHA)
+                pygame.draw.ellipse(glow, (255, 215, 80, pulse), (0, 0, TILE + 20, TILE + 20))
+                surface.blit(glow, (ex - 10, ey - 10))
+            surface.blit(create_chest_sprite(open=self.exit_open), (ex, ey))
+            if not self.exit_open:
+                f = font(12, bold=True)
+                txt = f.render("TRANCADO", True, (200, 180, 140))
+                surface.blit(txt, (ex + TILE // 2 - txt.get_width() // 2, ey + TILE + 2))
+
+        for particle in self.dig_particles:
+            particle.draw(surface, cam_x, cam_y)
 
         # Draw puddles/gold first (so enemies/players appear above)
         if hasattr(self, 'puddles'):
@@ -703,11 +876,14 @@ class Level:
         # sound/fullscreen/pause buttons (top-right).
         # Stage K7: the "Inimigos: N" kill counter is gone - that top-center
         # spot is now the hotbar's (moved up from _HOTBAR_Y=34 to make room
-        # for it here originally; now freed up again). Stage K14's dig-for-
-        # a-key exit will make "kill count" not even the win condition
-        # anymore, so this wasn't just cosmetic to drop.
+        # for it here originally; now freed up again).
+        # Stage K14: kill count stopped being the win condition entirely -
+        # the exit (now a chest) opens only once the hidden key is dug up.
         if self.exit_open:
             # Stage H4: same tofu-box glyph bug as boss.py's ENRAIVECIDO -
             # pygame's default font has no U+2B06 glyph.
-            txt = f.render("Encontre a Saida!", True, (100, 255, 180))
+            txt = f.render("Chave encontrada! Va ate o bau!", True, (100, 255, 180))
+            surface.blit(txt, (surface.get_width()//2 - txt.get_width()//2, 12))
+        elif self.data["type"] == "combat" and self._key_tile is not None:
+            txt = f.render("Cave com a picareta (E) em busca da chave", True, (200, 180, 140))
             surface.blit(txt, (surface.get_width()//2 - txt.get_width()//2, 12))

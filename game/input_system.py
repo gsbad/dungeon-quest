@@ -66,6 +66,7 @@ class Action(Enum):
     USE_2 = auto()
     USE_3 = auto()
     TOGGLE_HOTBAR = auto()
+    PICKAXE = auto()
     DEV_NEXT_LEVEL = auto()
     DEV_PREV_LEVEL = auto()
     DEBUG_PANEL = auto()
@@ -89,6 +90,7 @@ HELP_ENTRIES = [
     ("Q", "Conjurar Nova de Gelo"),
     ("R", "Conjurar Luz Curativa / Reiniciar (na tela de pausa ou de morte)"),
     ("X", "Investida (Dash)"),
+    ("E", "Picareta - quebra blocos e cava em busca da chave escondida"),
     ("1 / 2 / 3", "Usar item (slots do hotbar)"),
     ("C", "Abrir/fechar o menu Personagem"),
     ("I", "Abrir/fechar o menu Itens"),
@@ -628,6 +630,11 @@ class InputManager:
                 # itens" row -> toggle hotbar selection), consumed nowhere
                 # else - safe to bind globally like every other menu action.
                 self._press_action(Action.TOGGLE_HOTBAR)
+            if event.key == pygame.K_e:
+                # Stage K14: picareta - PC-only for now, same precedent
+                # Stage J14's Dash already set (no touch button either,
+                # keyboard/mouse-aim only on mobile until a future pass).
+                self._press_action(Action.PICKAXE)
             if event.key == pygame.K_f:
                 # Stage K1: reverted back to Bola de Fogo (Stage J14 had
                 # moved this to melee attack - Space owns that again now).

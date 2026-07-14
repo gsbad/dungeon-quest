@@ -5,7 +5,7 @@ import time
 import random
 from game.player import Player, hotbar_slots, DASH_DEX_REQ
 from game.items import use_item
-from game.level import Level, LEVEL_MAPS
+from game.level import Level, LEVEL_MAPS, TILE
 from game.boss import Boss, CacodemonBoss, Projectile
 from game.enemy import Particle, Enemy
 from game.camera import Camera
@@ -757,6 +757,8 @@ class GameplayState:
             self.player.try_attack()
         elif self.input.consume_action(Action.DASH):
             self._attempt_dash()
+        elif self.input.consume_action(Action.PICKAXE):
+            self._attempt_pickaxe()
         elif self.input.consume_action(Action.CAST_1):
             self._attempt_cast(SPELL_ORDER[0])
         elif self.input.consume_action(Action.CAST_2):
@@ -883,6 +885,18 @@ class GameplayState:
         else:
             return
         self.msg_timer, self.msg_text = 1.6, text
+
+    def _attempt_pickaxe(self):
+        # Stage K14: Player only owns the cooldown gate (try_pickaxe);
+        # the target tile is computed here (same aim_dx/aim_dy vector
+        # get_attack_rect() already uses) and resolved by Level, which
+        # owns the world (blocks/key/exit) - same split as melee attack.
+        if not self.player.try_pickaxe():
+            return
+        cx = self.player.x + self.player.width / 2 + self.player.aim_dx * TILE
+        cy = self.player.y + self.player.height / 2 + self.player.aim_dy * TILE
+        col, row = int(cx // TILE), int(cy // TILE)
+        self.level.try_break_tile(col, row, self.player, self.audio)
 
     def _separate_from_player(self, other):
         """Stage K9: standard AABB de-penetration, split 50/50 - pushes
@@ -1111,6 +1125,8 @@ class GameplayState:
             if self.level.check_exit(self.player):
                 self.next_state = f"next:{self.level.data['next']}"
 
+        self._drain_level_drops()
+
         # Fireball projectiles - checked against whichever targets this
         # level actually has (regular enemies, a boss, or none). Handled
         # after the melee/boss branch above so a boss (or enemy) killed by
@@ -1338,8 +1354,16 @@ class GameplayState:
         # change anything about when THOSE show up.
         self.input.draw(self.screen)
 
-    def _spawn_pickup(self, kind):
+    def _spawn_pickup(self, kind, at=None):
         sprite = self._pickup_sprites[kind]
+        if at is not None:
+            # Stage K14: monster/block drops want an exact position (where
+            # the kill/break happened), unlike the timer-driven random
+            # placement below - skip the collision-avoidance search since
+            # the position is already valid ground the kill/dig happened on.
+            x, y = at[0] - sprite.get_width() / 2, at[1] - sprite.get_height() / 2
+            self.pickups.append(Pickup(x, y, sprite, kind))
+            return
         attempts = 0
         while attempts < 50:
             attempts += 1
@@ -1355,6 +1379,21 @@ class GameplayState:
                 continue
             self.pickups.append(Pickup(x, y, sprite, kind))
             return
+
+    def _drain_level_drops(self):
+        """Stage K14: game/level.py reports "something dropped here" as a
+        plain (kind, x, y) descriptor (pending_drops) rather than
+        instantiating Pickup itself - Pickup/inventory/toast all belong to
+        this class already (the timer-driven heart/mana spawn above), and
+        importing them into level.py would reach back into states.py
+        (which already imports FROM level.py), a circular import."""
+        for kind, x, y in self.level.pending_drops:
+            if kind == "potion":
+                self.player.inventory["health_potion"] = self.player.inventory.get("health_potion", 0) + 1
+                self.msg_timer, self.msg_text = 1.6, "Pocao de Vida encontrada!"
+            else:
+                self._spawn_pickup(kind, at=(x, y))
+        self.level.pending_drops = []
 
     def _update_pickup_spawns(self, dt):
         if self.boss and not self.boss.alive:
