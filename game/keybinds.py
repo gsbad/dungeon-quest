@@ -94,6 +94,29 @@ def set_binding(name, key_code):
     BINDINGS[name] = key_code
 
 
+# Stage K22: DASH's default moved from K_x to MOUSE1, but every save made
+# before that change already has "DASH": <K_x's int> persisted in
+# settings.keybinds - a plain BINDINGS.update() would keep restoring that
+# stale value forever, since it's indistinguishable from a deliberate
+# rebind. One-time migration: a saved binding that still matches the OLD
+# default for its action is treated as "never touched", so the new default
+# takes over instead. A player who explicitly rebinds after this (to X or
+# anything else) is unaffected - set_binding()/the Settings overlay write
+# straight to BINDINGS, bypassing this entirely.
+_LEGACY_DEFAULTS = {"DASH": pygame.K_x}
+
+
+def apply_saved_bindings(saved):
+    """GameStateManager.__init__ calls this instead of BINDINGS.update()
+    directly, right after load - see game/states.py."""
+    for name, code in saved.items():
+        if name not in BINDINGS:
+            continue
+        if _LEGACY_DEFAULTS.get(name) == code:
+            continue
+        BINDINGS[name] = code
+
+
 def reset_defaults():
     BINDINGS.clear()
     BINDINGS.update(DEFAULT_BINDINGS)

@@ -1698,7 +1698,7 @@ class GameStateManager:
         # reads game.keybinds.BINDINGS - an empty dict here is a no-op
         # (BINDINGS already starts as a copy of DEFAULT_BINDINGS).
         import game.keybinds as keybinds
-        keybinds.BINDINGS.update(self.save_state["settings"]["keybinds"])
+        keybinds.apply_saved_bindings(self.save_state["settings"]["keybinds"])
 
         # Stage I4: fire-and-forget, no JWT needed (/balance is public) -
         # patches ITEMS/DIFFICULTIES/SPELLS/game.stats in place whenever it

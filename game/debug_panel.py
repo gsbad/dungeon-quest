@@ -155,6 +155,7 @@ class DebugPanel:
         rows.append(self._force_row("Forcar Paragon", make_paragon))
         rows.append(self._force_row("Forcar Campeao", make_champion))
         rows.append(self._kill_all_row())
+        rows.append(self._reveal_key_row())
         rows.append(self._god_mode_row())
         rows.append(self._one_hit_boss_row())
         rows.append(self._all_debuffs_row())
@@ -351,6 +352,33 @@ class DebugPanel:
                 gs.msg_timer, gs.msg_text = 2.0, "Chefe atual nao suporta one-hit (Cacodemon)"
 
         return {"label": "One-hit no chefe atual", "kind": "trigger", "fire": fire}
+
+    def _reveal_key_row(self):
+        """Stage K22: teleports the player next to the level's hidden key
+        tile, aimed straight at it - lets the pickaxe/key/chest chain
+        (Level.try_break_tile's key branch -> exit_open -> the exit's chest
+        sprite flips open, game/level.py:876) be tested with one E press
+        instead of digging through ~300 floor tiles blind. Doesn't set
+        _key_found itself - the point is to exercise the real dig, not
+        skip it."""
+        def fire(gs):
+            level = gs.level
+            if level.data["type"] != "combat" or level._key_tile is None:
+                gs.msg_timer, gs.msg_text = 2.0, "Esta fase nao tem chave escondida"
+                return
+            from game.level import TILE
+            kc, kr = level._key_tile
+            for dc, dr in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                nc, nr = kc + dc, kr + dr
+                if 0 <= nc < level.cols and 0 <= nr < level.rows and level.layout[nr][nc] != '#':
+                    gs.player.x = nc * TILE
+                    gs.player.y = nr * TILE
+                    gs.player.set_aim(-dc, -dr)
+                    gs.msg_timer, gs.msg_text = 2.5, f"Chave em ({kc},{kr}) - use a Picareta (debug)"
+                    return
+            gs.msg_timer, gs.msg_text = 2.0, "Chave sem tile vizinho livre (debug)"
+
+        return {"label": "Revelar chave (teleporta ate ela)", "kind": "trigger", "fire": fire}
 
     def _all_debuffs_row(self):
         # Stage J6: instantly afflicted with every status effect at once -
