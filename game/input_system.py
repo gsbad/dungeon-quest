@@ -23,6 +23,7 @@ class Action(Enum):
     SECRET = auto()
     PAPERDOLL = auto()
     ITEMS = auto()
+    LEADERBOARD = auto()
     CAST_1 = auto()
     CAST_2 = auto()
     CAST_3 = auto()
@@ -54,6 +55,7 @@ HELP_ENTRIES = [
     ("4 / 5 / 6", "Usar item (slots do hotbar)"),
     ("C", "Abrir/fechar o menu Personagem"),
     ("I", "Abrir/fechar o menu Itens"),
+    ("L", "Abrir/fechar o Ranking (requer login Google)"),
     ("TAB", "Trocar de aba dentro de um menu"),
     ("ESC", "Pausar o jogo / fechar o menu aberto"),
     ("F11 / icone (tela)", "Tela cheia - tecla ou toque"),
@@ -293,6 +295,40 @@ class ItemsButton:
         _draw_shortcut_badge(surface, self.rect, "I")
 
 
+class LeaderboardButton:
+    """Stage J8 - quick-access to the Leaderboard ("l") screen, same
+    translucent-circle pattern as PaperdollButton/ItemsButton above (a
+    trophy, RPG shorthand for "rankings"), plus an "L" key badge."""
+
+    def __init__(self, cx, cy, radius=22):
+        self.cx = cx
+        self.cy = cy
+        self.radius = radius
+
+    @property
+    def rect(self):
+        d = self.radius * 2
+        return pygame.Rect(self.cx - self.radius, self.cy - self.radius, d, d)
+
+    def draw(self, surface):
+        d = self.radius * 2
+        buf = pygame.Surface((d, d), pygame.SRCALPHA)
+        pygame.draw.circle(buf, (25, 25, 35, 140), (self.radius, self.radius), self.radius)
+        pygame.draw.circle(buf, (230, 230, 245, 190), (self.radius, self.radius), self.radius, 2)
+
+        color = (235, 200, 90, 230)
+        r = self.radius
+        # Trophy: cup body, two side handles, stem, base.
+        pygame.draw.rect(buf, color, (r - 6, r - 9, 12, 9), 2, border_radius=2)
+        pygame.draw.arc(buf, color, (r - 11, r - 9, 8, 8), -1.6, 1.6, 2)
+        pygame.draw.arc(buf, color, (r + 3, r - 9, 8, 8), 1.6, 4.7, 2)
+        pygame.draw.line(buf, color, (r, r), (r, r + 5), 2)
+        pygame.draw.line(buf, color, (r - 5, r + 7), (r + 5, r + 7), 2)
+
+        surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
+        _draw_shortcut_badge(surface, self.rect, "L")
+
+
 class InputManager:
     """
     Single translation layer between raw pygame input (keyboard, mouse,
@@ -437,6 +473,8 @@ class InputManager:
                 self._press_action(Action.PAPERDOLL)
             if event.key == pygame.K_i:
                 self._press_action(Action.ITEMS)
+            if event.key == pygame.K_l:
+                self._press_action(Action.LEADERBOARD)
             if event.key == pygame.K_f:
                 self._press_action(Action.CAST_1)
             if event.key == pygame.K_q:

@@ -228,6 +228,89 @@ def put_save(body: SaveBody, authorization: str | None = Header(default=None), t
     return {"updated_at": now}
 
 
+# Stage J8: same duplication reasoning as BALANCE_DEFAULTS above (this
+# backend never gets game/ copied to it, even on the deployed VM - see
+# project_oracle_cloud_deploy memory) - a minimal, read-only reimplementation
+# of game/achievements.py's ACHIEVEMENTS/check_unlocks() just to COUNT how
+# many are unlocked for the leaderboard. Values must mirror the real
+# definitions (5 difficulty tiers + these 9) or the count will drift.
+_LEADERBOARD_DIFFICULTY_ORDER = ["normal", "hard", "very_hard", "nightmare", "inferno"]
+_LEADERBOARD_STORY_BOSSES = ("orc_warlord", "necromancer", "shadow_king")
+_LEADERBOARD_SECRET_BOSS = "cacodemon"
+_LEADERBOARD_MAX_LEVEL = 30
+
+
+def _count_achievements(state: dict) -> int:
+    try:
+        prog = state.get("progression", {})
+        counters = state.get("counters", {})
+        cleared = set(prog.get("cleared_difficulties", []))
+        boss_kills = counters.get("boss_kills", {})
+        total_kills = sum(counters.get("kills", {}).values())
+        count = sum(1 for d in _LEADERBOARD_DIFFICULTY_ORDER if d in cleared)
+        if counters.get("deaths", 0) > 0:
+            count += 1
+        if total_kills >= 100:
+            count += 1
+        if total_kills >= 500:
+            count += 1
+        if state.get("gold", 0) >= 1000:
+            count += 1
+        if any(c >= 50 for c in state.get("inventory", {}).values()):
+            count += 1
+        if counters.get("playtime_s", 0) >= 3600:
+            count += 1
+        if state.get("character", {}).get("level", 1) >= _LEADERBOARD_MAX_LEVEL:
+            count += 1
+        if all(boss_kills.get(b, 0) > 0 for b in _LEADERBOARD_STORY_BOSSES):
+            count += 1
+        if boss_kills.get(_LEADERBOARD_SECRET_BOSS, 0) > 0:
+            count += 1
+        return count
+    except (TypeError, AttributeError):
+        # A malformed/partial blob must never break the whole leaderboard -
+        # this row just sorts as 0 for the achievements column.
+        return 0
+
+
+_LEADERBOARD_SORT_KEYS = {
+    "level": lambda state: state.get("character", {}).get("level", 1),
+    "playtime": lambda state: state.get("counters", {}).get("playtime_s", 0.0),
+    "achievements": _count_achievements,
+    "gold": lambda state: state.get("gold", 0),
+}
+
+
+@app.get("/leaderboard")
+def get_leaderboard(sort: str = "level"):
+    """Public, no auth - read-only ranking, same reasoning as /balance. Only
+    users with a SaveRow (synced to the cloud at least once) ever appear -
+    a fully offline/never-logged-in save has no row in this table at all,
+    so "offline play doesn't update the rank" falls out for free instead
+    of needing an explicit check."""
+    if sort not in _LEADERBOARD_SORT_KEYS:
+        raise HTTPException(status_code=400, detail=f"unknown sort '{sort}', use one of {list(_LEADERBOARD_SORT_KEYS)}")
+    key_fn = _LEADERBOARD_SORT_KEYS[sort]
+    with get_session() as session:
+        rows = (
+            session.query(User, SaveRow)
+            .join(SaveRow, SaveRow.user_id == User.id)
+            .all()
+        )
+    entries = []
+    for user, save_row in rows:
+        try:
+            state = json.loads(save_row.blob)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        entries.append({
+            "name": state.get("character", {}).get("name") or user.name or user.email,
+            "value": key_fn(state),
+        })
+    entries.sort(key=lambda e: e["value"], reverse=True)
+    return {"sort": sort, "entries": entries[:50]}
+
+
 @app.get("/balance")
 def get_balance():
     """Public, no auth - the game (game/net.py's trigger_balance_fetch())

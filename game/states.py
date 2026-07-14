@@ -12,12 +12,13 @@ from game.camera import Camera
 from game.paperdoll import Paperdoll
 from game.merchant import ItemsOverlay
 from game.debug_panel import DebugPanel
+from game.leaderboard import LeaderboardOverlay
 from game.weather import WeatherSystem
 from game.assets import (
     create_heart_sprite, create_mana_orb_sprite, create_logo_sprite,
     create_victory_hero_sprite, create_player_sprite,
 )
-from game.input_system import Action, FullscreenButton, PaperdollButton, ItemsButton
+from game.input_system import Action, FullscreenButton, PaperdollButton, ItemsButton, LeaderboardButton
 from game.audio import SoundButton
 from game.stats import POINTS_PER_LEVEL, MAX_LEVEL
 from game.spells import SPELLS, ORDER as SPELL_ORDER, missing_requirements, requirement_text
@@ -639,6 +640,8 @@ class GameplayState:
         self.items_open = False
         self.debug_panel = DebugPanel()
         self.debug_panel_open = False
+        self.leaderboard = LeaderboardOverlay()
+        self.leaderboard_open = False
 
         # "Penumbra" level affix (Stage B5) forces a darker fog than the
         # level's own weather flavor, combat levels only - boss arenas are
@@ -706,19 +709,30 @@ class GameplayState:
             self.toggle_paperdoll()
         if self.input.consume_action(Action.ITEMS):
             self.toggle_items()
+        if self.input.consume_action(Action.LEADERBOARD):
+            self.toggle_leaderboard()
         if self.input.consume_action(Action.DEBUG_PANEL):
-            if not self.paused and not self.paperdoll_open and not self.items_open:
+            if not self.paused and not self.paperdoll_open and not self.items_open and not self.leaderboard_open:
                 self.debug_panel_open = not self.debug_panel_open
                 if not self.debug_panel_open and self.debug_panel.consume_difficulty_dirty():
                     self._dev_jump(0)
-        if self.paperdoll_open or self.items_open or self.debug_panel_open:
+        if self.paperdoll_open or self.items_open or self.debug_panel_open or self.leaderboard_open:
             # Stage F2: ESC also closes whichever menu is open, same as
             # pressing the key that opened it, instead of only pausing.
+            # Stage J12 fixed a longstanding gap here: debug_panel_open had
+            # no ESC branch at all (only F1 closed it) - it does now, same
+            # as every other overlay.
             if self.input.consume_action(Action.PAUSE):
                 if self.paperdoll_open:
                     self.toggle_paperdoll()
                 elif self.items_open:
                     self.toggle_items()
+                elif self.leaderboard_open:
+                    self.toggle_leaderboard()
+                elif self.debug_panel_open:
+                    self.debug_panel_open = False
+                    if self.debug_panel.consume_difficulty_dirty():
+                        self._dev_jump(0)
             return
         if self.input.consume_action(Action.PAUSE):
             self.paused = not self.paused
@@ -776,15 +790,25 @@ class GameplayState:
         if self.paperdoll_open:
             self.paperdoll_open = False
             self.level_up_forced = False
-        elif not self.paused and not self.items_open and not self.debug_panel_open:
+        elif not self.paused and not self.items_open and not self.debug_panel_open and not self.leaderboard_open:
             self.paperdoll_open = True
 
     def toggle_items(self):
         """Shared by the I keypress and Stage G5's ItemsButton tap."""
         if self.items_open:
             self.items_open = False
-        elif not self.paused and not self.paperdoll_open and not self.debug_panel_open:
+        elif not self.paused and not self.paperdoll_open and not self.debug_panel_open and not self.leaderboard_open:
             self.items_open = True
+
+    def toggle_leaderboard(self):
+        """Shared by the L keypress and Stage J8's LeaderboardButton tap -
+        same "only one overlay at a time" guard as toggle_paperdoll/
+        toggle_items."""
+        if self.leaderboard_open:
+            self.leaderboard_open = False
+        elif not self.paused and not self.paperdoll_open and not self.items_open and not self.debug_panel_open:
+            self.leaderboard_open = True
+            self.leaderboard.open()
 
     def _attempt_cast(self, spell_id):
         self.player.selected_spell = spell_id
@@ -883,6 +907,11 @@ class GameplayState:
         if self.debug_panel_open:
             self.debug_panel.handle_tap(self.input)
             self.debug_panel.handle_keys(self.input, self)
+            return
+        if self.leaderboard_open:
+            self.leaderboard.update()
+            self.leaderboard.handle_tap(self.input)
+            self.leaderboard.handle_keys(self.input)
             return
         if self.paused:
             return
@@ -1037,6 +1066,7 @@ class GameplayState:
             self.level_up_forced = True
             self.items_open = False
             self.debug_panel_open = False
+            self.leaderboard_open = False
         while self.player.pending_level_up > 0:
             self.player.pending_level_up -= 1
             self.msg_timer = 2.5
@@ -1139,6 +1169,10 @@ class GameplayState:
         # Debug panel overlay (Stage B5 follow-up - F1, PC only)
         if self.debug_panel_open:
             self.debug_panel.draw(self.screen, self)
+
+        # Leaderboard overlay (Stage J8-J10)
+        if self.leaderboard_open:
+            self.leaderboard.draw(self.screen)
 
         if self.input.touch_active:
             self.input.draw(self.screen)
@@ -1422,6 +1456,7 @@ class GameStateManager:
         # GameplayState, since paperdoll_open/items_open live there.
         self.paperdoll_button = PaperdollButton(SW - 40, 100)
         self.items_button = ItemsButton(SW - 40, 154)
+        self.leaderboard_button = LeaderboardButton(SW - 40, 208)
 
         import game.save as save
         self.save_state = save.load() or save.new_game_state()
@@ -1552,6 +1587,9 @@ class GameStateManager:
             if self.input.tapped_rect(self.items_button.rect):
                 self.state.toggle_items()
                 self.audio.play("menu_select")
+            if self.input.tapped_rect(self.leaderboard_button.rect):
+                self.state.toggle_leaderboard()
+                self.audio.play("menu_select")
 
         self.state.update(dt)
 
@@ -1606,6 +1644,7 @@ class GameStateManager:
         if isinstance(self.state, GameplayState):
             self.paperdoll_button.draw(self.screen)
             self.items_button.draw(self.screen)
+            self.leaderboard_button.draw(self.screen)
 
     def _has_progress(self):
         # A death now zeroes the active tier's highest_level_cleared (see
