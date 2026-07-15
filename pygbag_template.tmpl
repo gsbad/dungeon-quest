@@ -185,6 +185,23 @@ function show_infobox() {
     <title>Dungeon Quest</title>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <!-- CUSTOM: Open Graph / Twitter Card tags so links to the site render
+         as a rich preview (image + description) in WhatsApp, Discord,
+         Slack, etc. og-preview.png is a static file at the site root, not
+         part of the pygbag bundle - see docs/assets/gameplay.gif for the
+         source frame it was built from. -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://129.80.222.127.sslip.io/">
+    <meta property="og:title" content="Dungeon Quest">
+    <meta property="og:description" content="Action-RPG 2D estilo Zelda direto no navegador: masmorras, chefes, magias, profissoes e cooperativo online. Jogue de PC ou celular, sem instalar nada.">
+    <meta property="og:image" content="https://129.80.222.127.sslip.io/og-preview.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Dungeon Quest">
+    <meta name="twitter:description" content="Action-RPG 2D estilo Zelda direto no navegador: masmorras, chefes, magias, profissoes e cooperativo online. Jogue de PC ou celular, sem instalar nada.">
+    <meta name="twitter:image" content="https://129.80.222.127.sslip.io/og-preview.png">
     <!-- CUSTOM: the dev server sends no Cache-Control header, so a plain
          refresh can silently serve a stale cached copy of this page while
          iterating on the canvas-sizing fix. -->
@@ -525,7 +542,10 @@ function show_infobox() {
          a returning visitor who already has a JWT in localStorage. -->
     <div id="dq-login-gate">
         <div class="dq-gate-box">
-            <h1>{{cookiecutter.title}}</h1>
+            <!-- CUSTOM: hardcoded like the <title> tag above - the cookiecutter
+                 title variable resolves to the project folder name, not the
+                 game's actual name. -->
+            <h1>Dungeon Quest</h1>
             <p>Faca login com sua conta Google para continuar.</p>
             <div class="g_id_signin" data-type="standard" data-size="large" data-shape="pill"></div>
             <div id="dq-gate-error"></div>
