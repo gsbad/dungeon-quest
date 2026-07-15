@@ -53,12 +53,6 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
-          # TEMP DEBUG: first real run (issue #1) died in 222ms at $0 cost -
-          # the signature of an auth/credit failure on the very first API
-          # call, but the action hides the actual error text by default.
-          # Remove this line once a run succeeds once.
-          show_full_output: true
-
           # Point Claude at this repo's own conventions instead of
           # guessing - CONTRIBUTING.md already documents code style,
           # testing expectations (Playwright, no pytest suite), and the
