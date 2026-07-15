@@ -61,6 +61,13 @@ class RemotePlayer:
         # contínuo de "pos" - ver GameplayState's poll_messages()).
         self.chat_text = ""
         self.chat_timer = 0.0
+        # Extended-session freeze fix - same story as Player's own cache
+        # (game/player.py), the bigger half of it in practice: a coop soak
+        # test with players actually chatting showed steady ~140 KB/s
+        # combined memory growth with this uncached, gone once both sides
+        # of the bubble render cached by text.
+        self._chat_bubble_cache_text = None
+        self._chat_bubble_cache_surf = None
 
         self._sprite_cache = {}
 
@@ -165,20 +172,25 @@ class RemotePlayer:
     def _draw_chat_bubble(self, surface, sx, sy):
         """Stage L14: mesmo desenho de Player._draw_chat_bubble() (balão +
         rabicho), só que acima do nameplate/barra de HP que só RemotePlayer
-        tem (Player não desenha nameplate acima de si mesmo)."""
-        f = font(13, bold=True)
-        txt = f.render(self.chat_text, True, (20, 20, 24))
-        pad_x, pad_y = 8, 5
-        bw, bh = txt.get_width() + pad_x * 2, txt.get_height() + pad_y * 2
-        bx = sx + self.width // 2 - bw // 2
+        tem (Player não desenha nameplate acima de si mesmo). Cacheado por
+        texto - ver o comentário em self._chat_bubble_cache_text."""
+        if self.chat_text != self._chat_bubble_cache_text:
+            f = font(13, bold=True)
+            txt = f.render(self.chat_text, True, (20, 20, 24))
+            pad_x, pad_y = 8, 5
+            bw, bh = txt.get_width() + pad_x * 2, txt.get_height() + pad_y * 2
+            bubble = pygame.Surface((bw, bh + 6), pygame.SRCALPHA)
+            pygame.draw.rect(bubble, (240, 240, 235), (0, 0, bw, bh), border_radius=6)
+            pygame.draw.polygon(bubble, (240, 240, 235),
+                                 [(bw // 2 - 5, bh), (bw // 2 + 5, bh), (bw // 2, bh + 6)])
+            bubble.blit(txt, (pad_x, pad_y))
+            self._chat_bubble_cache_text = self.chat_text
+            self._chat_bubble_cache_surf = bubble
+        bubble = self._chat_bubble_cache_surf
+        bx = sx + self.width // 2 - bubble.get_width() // 2
         # Stage L14: mesmo clamp de Player._draw_chat_bubble() - um
         # RemotePlayer perto do topo da TELA (não do mapa dele, da câmera
         # de QUEM está olhando) teria o balão desenhado por baixo do
         # hotbar/chips de status do jogador local, que desenham por cima.
-        by = max(sy - 40 - bh, _HUD_CLEAR_Y)
-        bubble = pygame.Surface((bw, bh + 6), pygame.SRCALPHA)
-        pygame.draw.rect(bubble, (240, 240, 235), (0, 0, bw, bh), border_radius=6)
-        pygame.draw.polygon(bubble, (240, 240, 235),
-                             [(bw // 2 - 5, bh), (bw // 2 + 5, bh), (bw // 2, bh + 6)])
+        by = max(sy - 40 - bubble.get_height(), _HUD_CLEAR_Y)
         surface.blit(bubble, (bx, by))
-        surface.blit(txt, (bx + pad_x, by + pad_y))

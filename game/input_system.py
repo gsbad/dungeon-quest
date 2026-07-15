@@ -126,6 +126,18 @@ class VirtualJoystick:
         self.pointer_id = None
         self.knob_x = cx
         self.knob_y = cy
+        # Extended-session freeze fix (same class of bug as font()'s cache
+        # in game/theme.py, and audio.SoundButton/input_system.
+        # FullscreenButton right above): once touch_active goes True it
+        # NEVER resets for the rest of the session (see the flag's own
+        # comment further down), so this draw() runs every single frame
+        # from the first touch onward - two brand new Surfaces a frame,
+        # forever, on top of every other on-screen control doing the same.
+        # Base never changes at all (fixed colors/radius); the knob only
+        # has 2 looks (active/idle) - only its POSITION moves, and
+        # `surface.blit()` at a new (x, y) is cheap, no allocation needed.
+        self._base_cache = None
+        self._knob_cache = {}
 
     def contains(self, x, y):
         return (x - self.cx) ** 2 + (y - self.cy) ** 2 <= (self.radius * 1.4) ** 2
@@ -167,16 +179,21 @@ class VirtualJoystick:
         return dx, dy
 
     def draw(self, surface):
-        d = self.radius * 2
-        base = pygame.Surface((d, d), pygame.SRCALPHA)
-        pygame.draw.circle(base, (210, 210, 230, 60), (self.radius, self.radius), self.radius)
-        pygame.draw.circle(base, (230, 230, 250, 130), (self.radius, self.radius), self.radius, 3)
-        surface.blit(base, (self.cx - self.radius, self.cy - self.radius))
+        if self._base_cache is None:
+            d = self.radius * 2
+            base = pygame.Surface((d, d), pygame.SRCALPHA)
+            pygame.draw.circle(base, (210, 210, 230, 60), (self.radius, self.radius), self.radius)
+            pygame.draw.circle(base, (230, 230, 250, 130), (self.radius, self.radius), self.radius, 3)
+            self._base_cache = base
+        surface.blit(self._base_cache, (self.cx - self.radius, self.cy - self.radius))
 
-        kd = self.knob_radius * 2
-        knob_color = (255, 220, 100, 210) if self.active else (230, 230, 245, 150)
-        knob = pygame.Surface((kd, kd), pygame.SRCALPHA)
-        pygame.draw.circle(knob, knob_color, (self.knob_radius, self.knob_radius), self.knob_radius)
+        knob = self._knob_cache.get(self.active)
+        if knob is None:
+            kd = self.knob_radius * 2
+            knob_color = (255, 220, 100, 210) if self.active else (230, 230, 245, 150)
+            knob = pygame.Surface((kd, kd), pygame.SRCALPHA)
+            pygame.draw.circle(knob, knob_color, (self.knob_radius, self.knob_radius), self.knob_radius)
+            self._knob_cache[self.active] = knob
         surface.blit(knob, (self.knob_x - self.knob_radius, self.knob_y - self.knob_radius))
 
 
@@ -202,6 +219,18 @@ class VirtualButton:
         self.pointer_id = None
         self.press_flash = 0.0
         self._font = None
+        # Extended-session freeze fix - same story as VirtualJoystick right
+        # above: mobile has up to ~9 of these on screen (attack, 3 spells,
+        # dash, pickaxe, 3 item slots) all redrawing every single frame
+        # forever once touch_active flips True. The icon/label never
+        # change for a given button instance, so scale/render them once
+        # instead of every frame; the circle only really has 2 looks in
+        # practice (idle is always the same flat color - alpha only
+        # matters in the brief post-press flash window, bounded to ~100
+        # distinct int values), so cache those too.
+        self._circle_cache = {}
+        self._scaled_icon = None
+        self._label_surf = None
 
     def contains(self, x, y):
         return (x - self.cx) ** 2 + (y - self.cy) ** 2 <= self.radius ** 2
@@ -243,27 +272,38 @@ class VirtualButton:
             self.press_flash = max(0.0, self.press_flash - dt * 3)
 
     def draw(self, surface):
-        d = self.radius * 2
-        alpha = 90 + int(100 * self.press_flash)
-        color = (255, 220, 100, alpha) if self.active else (230, 230, 245, 90)
-        buf = pygame.Surface((d, d), pygame.SRCALPHA)
-        pygame.draw.circle(buf, color, (self.radius, self.radius), self.radius)
-        pygame.draw.circle(buf, (255, 255, 255, 170), (self.radius, self.radius), self.radius, 3)
+        # Cache key: idle is always identical (see the `else` branch
+        # below, alpha is unused there), so collapse every idle frame onto
+        # one key instead of int(alpha) still varying from a flash that
+        # hasn't finished decaying the very frame `active` flips back off.
+        key = (90 + int(100 * self.press_flash)) if self.active else "idle"
+        buf = self._circle_cache.get(key)
+        if buf is None:
+            d = self.radius * 2
+            color = (255, 220, 100, key) if self.active else (230, 230, 245, 90)
+            buf = pygame.Surface((d, d), pygame.SRCALPHA)
+            pygame.draw.circle(buf, color, (self.radius, self.radius), self.radius)
+            pygame.draw.circle(buf, (255, 255, 255, 170), (self.radius, self.radius), self.radius, 3)
+            self._circle_cache[key] = buf
         surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
 
         if self.has_aim:
             self._draw_aim_arrow(surface)
 
         if self.icon is not None:
-            size = int(self.radius * 1.4)
-            scaled = pygame.transform.scale(self.icon, (size, size))
-            surface.blit(scaled, (self.cx - size // 2, self.cy - size // 2))
+            if self._scaled_icon is None:
+                size = int(self.radius * 1.4)
+                self._scaled_icon = pygame.transform.scale(self.icon, (size, size))
+            surface.blit(self._scaled_icon, (self.cx - self._scaled_icon.get_width() // 2,
+                                              self.cy - self._scaled_icon.get_height() // 2))
             return
 
         if self._font is None:
             self._font = font(20)
-        txt = self._font.render(self.label, True, (35, 25, 10))
-        surface.blit(txt, (self.cx - txt.get_width() // 2, self.cy - txt.get_height() // 2))
+        if self._label_surf is None:
+            self._label_surf = self._font.render(self.label, True, (35, 25, 10))
+        surface.blit(self._label_surf, (self.cx - self._label_surf.get_width() // 2,
+                                         self.cy - self._label_surf.get_height() // 2))
 
     def _draw_aim_arrow(self, surface):
         """Translucent arrow pointing from the button towards the drag
@@ -296,6 +336,12 @@ class FullscreenButton:
         self.cx = cx
         self.cy = cy
         self.radius = radius
+        # Extended-session freeze fix - same story as audio.SoundButton
+        # right next to this one in GameStateManager.draw(): drawn
+        # unconditionally every frame on every screen, only `is_fullscreen`
+        # (2 states) ever changes the result, so cache instead of
+        # rebuilding a Surface from scratch 60 times a second forever.
+        self._cache = {}
 
     @property
     def rect(self):
@@ -303,6 +349,13 @@ class FullscreenButton:
         return pygame.Rect(self.cx - self.radius, self.cy - self.radius, d, d)
 
     def draw(self, surface, is_fullscreen):
+        cached = self._cache.get(is_fullscreen)
+        if cached is None:
+            cached = self._render(is_fullscreen)
+            self._cache[is_fullscreen] = cached
+        surface.blit(cached, (self.cx - self.radius, self.cy - self.radius))
+
+    def _render(self, is_fullscreen):
         d = self.radius * 2
         buf = pygame.Surface((d, d), pygame.SRCALPHA)
         pygame.draw.circle(buf, (25, 25, 35, 140), (self.radius, self.radius), self.radius)
@@ -321,8 +374,7 @@ class FullscreenButton:
         for x, y, dx, dy in corners:
             pygame.draw.line(buf, color, (x, y), (x + dx * arm, y), thick)
             pygame.draw.line(buf, color, (x, y), (x, y + dy * arm), thick)
-
-        surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
+        return buf
 
 
 def _draw_shortcut_badge(surface, rect, key_label):

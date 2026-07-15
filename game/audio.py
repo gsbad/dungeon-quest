@@ -217,6 +217,15 @@ class SoundButton:
         self.cx = cx
         self.cy = cy
         self.radius = radius
+        # Extended-session freeze fix (see game/theme.py's font() cache for
+        # the original diagnosis of this exact class of bug): this button
+        # is drawn EVERY frame, on EVERY screen, for the entire session
+        # (GameStateManager.draw() calls it unconditionally, not gated by
+        # GameplayState like paperdoll/items/etc.) - a brand new Surface
+        # per frame here is worse than font()'s per-call-site churn ever
+        # was, since it's truly universal. Only `muted` (2 states) ever
+        # changes what gets drawn, so cache by that instead of rebuilding.
+        self._cache = {}
 
     @property
     def rect(self):
@@ -224,6 +233,13 @@ class SoundButton:
         return pygame.Rect(self.cx - self.radius, self.cy - self.radius, d, d)
 
     def draw(self, surface, muted):
+        cached = self._cache.get(muted)
+        if cached is None:
+            cached = self._render(muted)
+            self._cache[muted] = cached
+        surface.blit(cached, (self.cx - self.radius, self.cy - self.radius))
+
+    def _render(self, muted):
         d = self.radius * 2
         buf = pygame.Surface((d, d), pygame.SRCALPHA)
         pygame.draw.circle(buf, (25, 25, 35, 140), (self.radius, self.radius), self.radius)
@@ -250,5 +266,4 @@ class SoundButton:
                 buf, body_color,
                 (self.radius + 5, self.radius - 6, 9, 12), -0.8, 0.8, 2
             )
-
-        surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
+        return buf

@@ -69,6 +69,14 @@ class Star:
         self.speed = random.uniform(20, 80)
         self.size  = random.randint(1, 3)
         self.alpha = random.randint(80, 255)
+        # Extended-session freeze fix (same class of bug as font()'s cache
+        # in this file's imports, audio.SoundButton, etc.) - size/alpha
+        # are fixed until the next reset(), so render the dot once here
+        # instead of allocating a new Surface every single draw() call for
+        # as long as the menu (with ~60 of these) stays open.
+        s = pygame.Surface((self.size * 2, self.size * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 255, 255, self.alpha), (self.size, self.size), self.size)
+        self._surf = s
 
     def update(self, dt):
         self.y += self.speed * dt
@@ -77,9 +85,7 @@ class Star:
             self.y = 0
 
     def draw(self, surface):
-        s = pygame.Surface((self.size*2, self.size*2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (255,255,255,self.alpha), (self.size,self.size), self.size)
-        surface.blit(s, (int(self.x), int(self.y)))
+        surface.blit(self._surf, (int(self.x), int(self.y)))
 
 
 class Pickup:
@@ -113,6 +119,7 @@ class MenuState:
         self.input = input_mgr
         self.audio = audio_mgr
         self.stars = [Star() for _ in range(80)]
+        self._title_glow = None  # extended-session freeze fix, see draw()
         self.t = 0
         self.selected = 0
         self.options = (["CONTINUAR", "DIFICULDADE", "RESETAR CHAR"] if has_save else ["NOVO JOGO"]) + ["SAIR"]
@@ -166,11 +173,16 @@ class MenuState:
         for star in self.stars:
             star.draw(self.screen)
 
-        # Title glow
-        glow_r = int(200 + 30 * math.sin(self.t * 2))
-        glow_surf = pygame.Surface((500, 120), pygame.SRCALPHA)
-        pygame.draw.ellipse(glow_surf, (80, 0, 120, 60), (0, 0, 500, 120))
-        self.screen.blit(glow_surf, (150, 80))
+        # Title glow - extended-session freeze fix (same class of bug as
+        # font()'s own cache): this surface's content never actually
+        # varies frame to frame (the ellipse rect below is fixed, doesn't
+        # read self.t), so a fresh Surface here every frame the menu sits
+        # open was pure waste. Built once, lazily, reused forever.
+        if self._title_glow is None:
+            glow_surf = pygame.Surface((500, 120), pygame.SRCALPHA)
+            pygame.draw.ellipse(glow_surf, (80, 0, 120, 60), (0, 0, 500, 120))
+            self._title_glow = glow_surf
+        self.screen.blit(self._title_glow, (150, 80))
 
         f_title = font(64, bold=True)
         draw_text(self.screen, "DUNGEON QUEST", f_title, TITLE_MENU, SW//2, 90)

@@ -164,6 +164,14 @@ class Player:
         # stance_multiplier()) self.profession. Moved up from their old
         # spots further down (order never mattered before this).
         self.status = StatusEffectCarrier()
+        # Extended-session freeze fix - see _draw_status_chips()'s own
+        # comment for why these are cached instead of rebuilt every frame.
+        # Both are naturally bounded: _chip_bg_cache by the small fixed
+        # set of effect ids, _chip_timer_cache by (effect_id, whole
+        # seconds remaining) which can never exceed that effect's own
+        # duration in distinct entries.
+        self._chip_bg_cache = {}
+        self._chip_timer_cache = {}
         # Stage L11 (docs/coop-implementation-plan.md): separado de
         # self.status de propósito - bonus dirigido (jogador->jogador,
         # L12's Reacao Justa/Acerto de Contas) não é "meu stat X esta Y%
@@ -267,6 +275,17 @@ class Player:
         # sozinho.
         self.chat_text = ""
         self.chat_timer = 0.0
+        # Extended-session freeze fix (same class of bug as font()'s cache,
+        # audio.SoundButton, input_system's touch controls): a chat bubble
+        # stays up for 3.5s, and _draw_chat_bubble() below used to build a
+        # fresh Surface every single frame for that whole window - in an
+        # active coop session with players actually talking, a soak test
+        # showed this alone producing steady, close-to-linear memory
+        # growth (~140 KB/s) that a chat-free single-player soak run never
+        # exercised. The bubble's rendered content only ever depends on
+        # the text itself, so cache by that instead of the frame count.
+        self._chat_bubble_cache_text = None
+        self._chat_bubble_cache_surf = None
 
         self.floating_numbers = []  # Stage K6
 
@@ -884,13 +903,25 @@ class Player:
     def _draw_chat_bubble(self, surface, sx, sy):
         """Stage L14: balão simples (retângulo arredondado + rabicho) acima
         da cabeça, mesmo texto pros dois lados da rede (RemotePlayer tem
-        um método irmão deste)."""
-        from game.theme import font
-        f = font(13, bold=True)
-        txt = f.render(self.chat_text, True, (20, 20, 24))
-        pad_x, pad_y = 8, 5
-        bw, bh = txt.get_width() + pad_x * 2, txt.get_height() + pad_y * 2
-        bx = sx + self.width // 2 - bw // 2
+        um método irmão deste). O conteúdo renderizado só muda quando o
+        TEXTO muda (say() nunca é chamado mais de uma vez por mensagem),
+        não a cada frame - cacheado por texto em vez de reconstruído toda
+        vez (ver o comentário em self._chat_bubble_cache_text no __init__)."""
+        if self.chat_text != self._chat_bubble_cache_text:
+            from game.theme import font
+            f = font(13, bold=True)
+            txt = f.render(self.chat_text, True, (20, 20, 24))
+            pad_x, pad_y = 8, 5
+            bw, bh = txt.get_width() + pad_x * 2, txt.get_height() + pad_y * 2
+            bubble = pygame.Surface((bw, bh + 6), pygame.SRCALPHA)
+            pygame.draw.rect(bubble, (240, 240, 235), (0, 0, bw, bh), border_radius=6)
+            pygame.draw.polygon(bubble, (240, 240, 235),
+                                 [(bw // 2 - 5, bh), (bw // 2 + 5, bh), (bw // 2, bh + 6)])
+            bubble.blit(txt, (pad_x, pad_y))
+            self._chat_bubble_cache_text = self.chat_text
+            self._chat_bubble_cache_surf = bubble
+        bubble = self._chat_bubble_cache_surf
+        bx = sx + self.width // 2 - bubble.get_width() // 2
         # Stage L14: sem isso, um jogador perto do topo do mapa (spawn é
         # perto de um canto em várias fases, câmera clampada em y=0 - ver
         # game/camera.py) teria o balão desenhado POR BAIXO do hotbar/
@@ -899,13 +930,8 @@ class Player:
         # tools/coop_harness.py contra o esperado, o balão simplesmente
         # não aparecia. _HOTBAR_Y+_HOTBAR_SLOT+6 é onde os chips de status
         # começam (~48px); soma a altura deles (34px) + folga.
-        by = max(sy - 20 - bh, _HOTBAR_Y + _HOTBAR_SLOT + 6 + 34 + 8)
-        bubble = pygame.Surface((bw, bh + 6), pygame.SRCALPHA)
-        pygame.draw.rect(bubble, (240, 240, 235), (0, 0, bw, bh), border_radius=6)
-        pygame.draw.polygon(bubble, (240, 240, 235),
-                             [(bw // 2 - 5, bh), (bw // 2 + 5, bh), (bw // 2, bh + 6)])
+        by = max(sy - 20 - bubble.get_height(), _HOTBAR_Y + _HOTBAR_SLOT + 6 + 34 + 8)
         surface.blit(bubble, (bx, by))
-        surface.blit(txt, (bx + pad_x, by + pad_y))
 
     def _draw_downed(self, surface, sx, sy):
         """Stage L9: gira o sprite parado 90° (deitado no chão) em vez de
@@ -1191,14 +1217,30 @@ class Player:
         y = _HOTBAR_Y + _HOTBAR_SLOT + 6
         f_timer = font(10, bold=True)
         for effect_id, active in self.status.active.items():
-            _, color = STATUS_DISPLAY.get(effect_id, (effect_id[:3].upper(), (200, 200, 200)))
-            chip = pygame.Surface((chip_w, chip_h), pygame.SRCALPHA)
-            chip.fill((*color, 70))
-            pygame.draw.rect(chip, color, (0, 0, chip_w, chip_h), 1)
+            # Extended-session freeze fix: the chip background only really
+            # depends on effect_id (fixed color per id), and the icon is
+            # already cached via create_debuff_icon()'s own module-level
+            # cache - only the countdown text below genuinely changes
+            # every frame, and even that only needs to look different once
+            # a second. A prolonged debuff (Homicida's 2min, easy to hit
+            # repeatedly in an active PvP session) used to rebuild this
+            # every single frame for its whole duration otherwise.
+            chip = self._chip_bg_cache.get(effect_id)
+            if chip is None:
+                _, color = STATUS_DISPLAY.get(effect_id, (effect_id[:3].upper(), (200, 200, 200)))
+                chip = pygame.Surface((chip_w, chip_h), pygame.SRCALPHA)
+                chip.fill((*color, 70))
+                pygame.draw.rect(chip, color, (0, 0, chip_w, chip_h), 1)
+                self._chip_bg_cache[effect_id] = chip
             surface.blit(chip, (x, y))
             icon = create_debuff_icon(effect_id)
             surface.blit(icon, (x + chip_w // 2 - icon.get_width() // 2, y + 4))
-            timer_txt = f_timer.render(f"{max(0, active.remaining):.0f}s", True, (235, 235, 245))
+            secs = max(0, round(active.remaining))  # round(), not int(): matches the old ":.0f" display exactly
+            timer_key = (effect_id, secs)
+            timer_txt = self._chip_timer_cache.get(timer_key)
+            if timer_txt is None:
+                timer_txt = f_timer.render(f"{secs}s", True, (235, 235, 245))
+                self._chip_timer_cache[timer_key] = timer_txt
             surface.blit(timer_txt, (x + chip_w // 2 - timer_txt.get_width() // 2, y + chip_h - 12))
 
             name, desc = STATUS_HELP.get(effect_id, (effect_id, ""))
