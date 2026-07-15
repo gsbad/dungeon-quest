@@ -180,6 +180,40 @@ adding the FastAPI route. Both this and /appearance sat broken in
 production for a while specifically because local testing (`docs/deploy.md`'s own "Admin balance panel on localhost" section) never
 touches Caddy at all, so it never would have caught either.
 
+## Caddy route fixed: /coop, a third time (Stage L1-L14 deploy)
+
+Same bug, third occurrence: the whole cooperative feature (`POST
+/coop/room`, `WS /coop/ws/{room_id}`) deployed cleanly via CI/CD - both
+the pygbag web bundle *and* the backend service - but `/coop/room` still
+404'd in production (`server: Caddy`, no `via` header - Caddy's own
+static-file 404, backend never touched), same signature as /appearance
+and /leaderboard above. The lesson written after the second occurrence
+("verify it through the actual public domain too") wasn't followed this
+time either, since the workflow's own health check only hits `/health`
+(already proxied), not any of the *new* routes it just deployed - a
+green CI run says nothing about a route it never tried.
+
+Fixed the same way: added a `handle /coop* { reverse_proxy
+127.0.0.1:8090 }` block (covers both `/coop/room` and `/coop/ws/*` with
+one entry, same as `/appearance*`/`/admin*` above - Caddy's
+`reverse_proxy` forwards the WebSocket upgrade transparently, no special
+config needed for that part). Verified via headers, not just status
+code: `curl -i https://129.80.222.127.sslip.io/coop/room -X POST` needs
+`server: uvicorn` + `via: 1.1 Caddy` to prove it actually reached
+FastAPI, not just a 200 (a bare `handle` catch-all serving a same-named
+static file would also 200 without ever hitting the backend).
+
+**Actually worth doing differently next time**: since this is now the
+third route added to the Caddyfile without the Caddyfile itself ever
+being touched by CI, consider either (a) checking the Caddyfile into the
+repo and having the workflow deploy it too (same `scp`+reload shape the
+backend already uses), or (b) adding a post-deploy smoke test to
+`.github/workflows/deploy.yml` that curls every route FastAPI defines
+(not just `/health`) through the public domain and fails the job if any
+of them come back without a `via: 1.1 Caddy` header. Neither done yet -
+noted here so the next new route doesn't silently repeat this a fourth
+time.
+
 ## Login gate (Stage K23)
 
 `pygbag_template.tmpl` now blocks the game behind a forced Google login
