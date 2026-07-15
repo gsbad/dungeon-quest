@@ -40,7 +40,18 @@ StatusEffectDef = namedtuple("StatusEffectDef", [
                        # shape mana_regen_mult already had, not another flat
                        # per-second add (hp_regen_flat_pct already covers
                        # that shape, used by the Postura layer instead).
-], defaults=(1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0))
+    "dodge_chance_add",  # game/stances.py's dex-leaning posturas grant this
+                          # (Player._bonus() sums status.bonus(field) +
+                          # stance_bonus(field) for every field either layer
+                          # defines) - missing here meant ANY damage taken
+                          # while ANY status effect was active raised
+                          # AttributeError, an uncaught exception that
+                          # silently killed main.py's whole asyncio loop
+                          # (no try/except around it) - the real cause of
+                          # "game freezes forever from level 2 on, no error
+                          # visible" (print()/tracebacks don't reach the
+                          # pygbag/WASM browser console either).
+], defaults=(1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0))
 
 # Field names where multiple active effects COMBINE BY MULTIPLYING (a %
 # bonus stacks multiplicatively, matching speed_mult/damage_taken_mult
@@ -56,7 +67,7 @@ _MULTIPLICATIVE_FIELDS = frozenset({
 })
 _ADDITIVE_FIELDS = frozenset({
     "crit_chance_add", "debuff_chance_add", "debuff_resist_add",
-    "hp_regen_flat_pct", "mana_regen_flat_pct",
+    "hp_regen_flat_pct", "mana_regen_flat_pct", "dodge_chance_add",
 })
 
 STATUS_EFFECTS = {
