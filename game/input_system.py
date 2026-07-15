@@ -587,17 +587,17 @@ class InputManager:
         # _pointers (which only tracks a pointer between down and up).
         self._mouse_screen_pos = (screen_w / 2, screen_h / 2)
 
-        # Stage J11: a permanent (not debug-only) crosshair at the raw
-        # event.pos of every real mouse click - the diagnostic tool for the
-        # long-open canvas-misalignment bug (see
-        # [[project_pygbag_canvas_stretch_bug]]) and, per the user's ask,
-        # kept on afterward since upcoming mouse-aimed combat needs the
-        # same "where does the game think the pointer is" visibility.
-        # Replaces the old debug_last_raw/debug_last_scaled attributes,
-        # which were written on every click but never read/drawn anywhere.
-        self._crosshair_pos = None
-        self._crosshair_timer = 0.0
-        self._CROSSHAIR_DURATION = 0.6
+        # Stage J11: a permanent (not debug-only) crosshair at the mouse -
+        # the diagnostic tool for the long-open canvas-misalignment bug
+        # (see [[project_pygbag_canvas_stretch_bug]]) and, per the user's
+        # ask, kept on afterward since mouse-aimed combat needs the same
+        # "where does the game think the pointer is" visibility. Originally
+        # only flashed briefly on click and faded out; now always shown,
+        # following _mouse_screen_pos continuously (updated on every
+        # MOUSEMOTION regardless of a click) instead of a timed one-shot
+        # marker. Replaces the old debug_last_raw/debug_last_scaled
+        # attributes, which were written on every click but never read/
+        # drawn anywhere.
 
         self.joystick = VirtualJoystick(100, screen_h - 120, radius=70, knob_radius=32)
         # Stage J13: aimable=True - touch+drag now aims the melee swing
@@ -952,8 +952,6 @@ class InputManager:
             if event.button == 1:
                 pos = _corrected_mouse_pos(event.pos)
                 self._mouse_screen_pos = pos
-                self._crosshair_pos = pos
-                self._crosshair_timer = self._CROSSHAIR_DURATION
                 self._pointer_down("mouse", *pos)
         elif event.type == pygame.MOUSEMOTION and not self.touch_active:
             pos = _corrected_mouse_pos(event.pos)
@@ -1078,8 +1076,6 @@ class InputManager:
     # ------------------------------------------------------------- lifecycle
     def update(self, dt):
         self._time += dt
-        if self._crosshair_timer > 0:
-            self._crosshair_timer -= dt
         self.attack_button.update(dt)
         self.dash_button.update(dt)
         self.pickaxe_button.update(dt)
@@ -1125,23 +1121,19 @@ class InputManager:
             self.debug_button.draw(surface)
 
     def _draw_crosshair(self, surface):
-        """Stage J11: marks the (now _corrected_mouse_pos()-corrected)
-        position of the last real mouse click, fading out over
-        _CROSSHAIR_DURATION - drawn regardless of touch_active (mouse
-        clicks happen on desktop, where the virtual touch controls above
-        are never shown). Kept on permanently (not debug-only) per the
-        user's request - upcoming mouse-aimed combat needs the same
-        "where does the game think the pointer is" visibility, and it's
-        exactly what originally measured the correction this now applies
-        (see _corrected_mouse_pos's docstring)."""
-        if self._crosshair_timer <= 0 or self._crosshair_pos is None:
+        """Stage J11: marks the (_corrected_mouse_pos()-corrected) mouse
+        position - always shown now (used to flash briefly on click and
+        fade out), tracking _mouse_screen_pos continuously so it reads as
+        a permanent aim reticle. touch_active still hides it: a touch
+        device has no real mouse to mark, and the virtual joystick/buttons
+        drawn right after this already cover aim feedback there."""
+        if self.touch_active:
             return
-        alpha = int(255 * (self._crosshair_timer / self._CROSSHAIR_DURATION))
-        x, y = self._crosshair_pos
+        x, y = self._mouse_screen_pos
         size = 14
         layer = pygame.Surface((size * 2 + 4, size * 2 + 4), pygame.SRCALPHA)
         cx, cy = layer.get_width() // 2, layer.get_height() // 2
-        color = (255, 40, 40, alpha)
+        color = (255, 40, 40, 255)
         pygame.draw.line(layer, color, (cx - size, cy), (cx + size, cy), 3)
         pygame.draw.line(layer, color, (cx, cy - size), (cx, cy + size), 3)
         pygame.draw.circle(layer, color, (cx, cy), size, 2)
