@@ -391,6 +391,16 @@ class Enemy:
         # Stage D6's swamp_troll)
         self.puddle_timer = random.uniform(4.0, 8.0) if flavor.get("puddles") else None
 
+        # Stage L6 (docs/coop-implementation-plan.md): id estável setado
+        # por Level._tag_enemy() (None só se alguma coisa criar um Enemy
+        # sem passar por lá - não deveria acontecer, mas não é motivo pra
+        # quebrar). network_follower é a chave de tudo: só True num
+        # cliente coop que não é host, nunca em single-player nem no host.
+        self.net_id = None
+        self.network_follower = False
+        self.target_x = self.x
+        self.target_y = self.y
+
     @property
     def rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
@@ -436,7 +446,48 @@ class Enemy:
             for _ in range(16):
                 self.particles.append(Particle(self.x + 16, self.y + 18, self.color))
 
+    def apply_snapshot(self, x, y, flip, hp, max_hp, alive, is_paragon=False, is_champion=False, affix=None):
+        """Stage L6: chamado num guest quando o broadcast do host chega -
+        nunca simula, só aplica o que o host já decidiu (mesma relação
+        RemotePlayer.apply_snapshot() já tem com outros jogadores). Posição
+        vai pra target_x/y (interpolada em update() abaixo, não teleporta)
+        - o resto (hp/flip/paragon/champion/affix) é sempre exato, sem
+        suavização, porque não há "meio-termo" visual sensato pra um HP ou
+        um affix mudando."""
+        was_alive = self.alive
+        self.target_x, self.target_y = x, y
+        self.flip = flip
+        self.hp, self.max_hp = hp, max_hp
+        self.is_paragon = is_paragon
+        self.is_champion = is_champion
+        self.affix = affix
+        self.alive = alive
+        if was_alive and not alive:
+            # Acabou de morrer no host - só o efeito visual da morte; a
+            # decisão real (XP/ouro/drop) é do host e chega separada (L8).
+            for _ in range(16):
+                self.particles.append(Particle(self.x + 16, self.y + 18, self.color))
+
     def update(self, dt, player, walls, map_width=None, map_height=None, puddles=None):
+        if self.network_follower:
+            # Stage L6: IA/dano/drop completamente desligados - o estado
+            # real vem só de apply_snapshot(), chamado pelo GameplayState
+            # quando uma mensagem "enemies" do host chega. Só o que é
+            # puramente visual e decai sozinho continua rodando aqui
+            # (mesmo recorte que RemotePlayer.update() já faz).
+            speed = 10.0  # 1/s - mesma constante de RemotePlayer/Camera.follow()
+            self.x += (self.target_x - self.x) * speed * dt
+            self.y += (self.target_y - self.y) * speed * dt
+            self.particles = [p for p in self.particles if p.life > 0]
+            for p in self.particles:
+                p.update(dt)
+            self.floating_numbers = [n for n in self.floating_numbers if n.alive]
+            for n in self.floating_numbers:
+                n.update(dt)
+            if self.alive and self.hit_flash > 0:
+                self.hit_flash -= dt
+            return
+
         # Debuffs (e.g. Frost Nova's Lentidao) - unlike Player, Enemy has no
         # invincibility-frame concept, so DoT ticks can safely go through
         # take_damage() and get the normal hit-flash/particle feedback.

@@ -14,12 +14,19 @@ from game.merchant import ItemsOverlay
 from game.debug_panel import DebugPanel
 from game.leaderboard import LeaderboardOverlay
 from game.settings_overlay import SettingsOverlay
+from game.coop_overlay import CoopOverlay
+from game.remote_player import RemotePlayer
+from game.chat_widget import ChatWidget
+import game.net_coop as net_coop
 from game.weather import WeatherSystem
 from game.assets import (
     create_heart_sprite, create_mana_orb_sprite, create_logo_sprite,
     create_player_sprite,
 )
-from game.input_system import Action, FullscreenButton, PaperdollButton, ItemsButton, LeaderboardButton, SettingsButton
+from game.input_system import (
+    Action, FullscreenButton, PaperdollButton, ItemsButton, LeaderboardButton, SettingsButton,
+    CoopButton,
+)
 from game.audio import SoundButton
 from game.stats import POINTS_PER_LEVEL, MAX_LEVEL
 from game.spells import SPELLS, ORDER as SPELL_ORDER, missing_requirements, requirement_text
@@ -470,7 +477,7 @@ class StageCompleteState:
     TransitionState path did, so no other transition logic needs to change."""
 
     def __init__(self, screen, input_mgr, audio_mgr, level_num, next_level,
-                 xp_gained, gold_gained, player):
+                 xp_gained, gold_gained, player, coop=None, remote_players=None):
         self.screen = screen
         self.input = input_mgr
         self.audio = audio_mgr
@@ -479,6 +486,11 @@ class StageCompleteState:
         self.xp_gained = xp_gained
         self.gold_gained = gold_gained
         self.player = player
+        # Stage L6: só repassado adiante pro TransitionState quando "Continuar"
+        # for confirmado (ver _transition's "next:" branch) - mesma razão
+        # de TransitionState carregar isso agora, ver o comentário lá.
+        self.coop = coop
+        self.remote_players = remote_players
         self.continue_button = TextButton("[ ENTER ] - Continuar", SW // 2, SH - 90)
         self._xp_bar = ProgressBar(320, 14, (40, 40, 40), (140, 140, 140), border_width=2)
         # Stage K23: was create_victory_hero_sprite() - a generic green-
@@ -527,10 +539,21 @@ class StageCompleteState:
 
 # ─── Transition ───────────────────────────────────────────────────────────────
 class TransitionState:
-    def __init__(self, screen, next_level, player):
+    def __init__(self, screen, next_level, player, coop=None, remote_players=None):
         self.screen = screen
         self.next_level = next_level
         self.player = player
+        # Stage L6 (docs/coop-implementation-plan.md): uma sessão coop
+        # ativa precisa sobreviver a uma troca de fase - sem repassar isso,
+        # a próxima GameplayState nasceria com um CoopOverlay novo em
+        # folha (mode="menu", sem roster/host_player_id), mesmo com
+        # net_coop ainda conectado por baixo (é module-level, não morre
+        # sozinho) - o sintoma real foi "host cai não derruba mais o
+        # guest depois de QUALQUER transição de fase", achado testando
+        # coop_sync com tools/coop_harness.py. None (o padrão) mantém o
+        # comportamento de sempre pra toda transição sem coop.
+        self.coop = coop
+        self.remote_players = remote_players
         self.timer = 0
         self.duration = 1.5
         self.done = False
@@ -560,7 +583,8 @@ class TransitionState:
 
 # ─── Gameplay State ────────────────────────────────────────────────────────────
 class GameplayState:
-    def __init__(self, screen, input_mgr, audio_mgr, level_num=1, player=None, save_state=None):
+    def __init__(self, screen, input_mgr, audio_mgr, level_num=1, player=None, save_state=None,
+                 coop=None, remote_players=None):
         self.screen = screen
         self.input = input_mgr
         self.audio = audio_mgr
@@ -576,8 +600,14 @@ class GameplayState:
         self.difficulty = DIFFICULTIES[self.difficulty_id]
         hastened_mult = 1.25 if "hastened" in self.difficulty["level_affixes"] else 1.0
 
+        # Stage L6 (docs/coop-implementation-plan.md): decidido uma vez na
+        # entrada da fase, não sondado dinamicamente depois - entrar numa
+        # room coop NO MEIO de uma fase já em andamento só passa a valer
+        # na PRÓXIMA fase (ver docs/coop-implementation-plan.md's nota
+        # sobre esse limite de v1). O host nunca é follower (só guests).
+        self.net_follower = net_coop.is_connected() and not net_coop.is_host()
         self.level = Level(level_num, extra_speed_mult=hastened_mult, ml_bonus=self.difficulty["ml_bonus"],
-                           audio_mgr=audio_mgr)
+                           audio_mgr=audio_mgr, network_follower=self.net_follower)
         self.camera = Camera(SW, SH, self.level.width, self.level.height)
 
         # Stage F3 (Atlas tab): record this level as seen, permanently -
@@ -622,6 +652,7 @@ class GameplayState:
         if boss_key:
             boss_factory, spawn_dx, spawn_y = BOSS_REGISTRY[boss_key]
             self.boss = boss_factory(SW//2 - spawn_dx, spawn_y, self.difficulty["boss_enrage_frac"], audio_mgr)
+            self.boss.network_follower = self.net_follower
         # Enemies spawned by a boss's "summon" pattern (necromancer, Stage
         # D6) - tracked separately from self.level.enemies just to cap how
         # many of THIS boss's adds can be alive at once; the enemies
@@ -660,6 +691,28 @@ class GameplayState:
         self.leaderboard_open = False
         self.settings = SettingsOverlay()
         self.settings_open = False
+        # Stage L6: reusa a MESMA CoopOverlay/remote_players de uma
+        # GameplayState anterior quando fornecida (toda troca de fase, via
+        # TransitionState/StageCompleteState) - uma sessão coop ativa é
+        # module-level em net_coop, não morre numa troca de fase, então o
+        # UI/roster que a acompanha (mode, host_player_id, os avatares dos
+        # outros jogadores) também não pode. Só um single-player comum
+        # (coop=None, o padrão) nasce com um painel novo em folha.
+        self.coop = coop if coop is not None else CoopOverlay()
+        self.coop_open = False
+        # Stage L6 (docs/coop-implementation-plan.md): outros jogadores na
+        # mesma room, keyed por player_id - RemotePlayer (Stage L3) só
+        # desenha/interpola o que chega via mensagens "pos", nunca simula.
+        self.remote_players = remote_players if remote_players is not None else {}
+        self._coop_pos_send_timer = 0.0
+        self._coop_level_sync_timer = 0.0
+        # Stage L13/L14 (docs/coop-implementation-plan.md): ao contrário de
+        # coop/remote_players acima, NÃO é repassado através de transições
+        # de fase - um rascunho de mensagem não confirmado é efêmero e de
+        # baixo risco de perder (diferente da conexão coop em si), não vale
+        # a complexidade extra de enfiar isso em TransitionState/
+        # StageCompleteState também.
+        self.chat = ChatWidget()
 
         # "Penumbra" level affix (Stage B5) forces a darker fog than the
         # level's own weather flavor, combat levels only - boss arenas are
@@ -713,11 +766,46 @@ class GameplayState:
         self._gold_at_level_start = self.player.gold
 
     def handle_event(self, event):
+        if self.chat.active:
+            # Stage L13: mesma exclusividade do campo de código de room
+            # (L4) acima - digitar "M" numa mensagem de chat não pode
+            # disparar DEV_NEXT_LEVEL. handle_event() só retorna uma
+            # mensagem não-vazia ao confirmar com Enter.
+            msg = self.chat.handle_event(event)
+            if msg:
+                # Stage L14: eu mesmo não recebo minha própria mensagem de
+                # volta (o backend exclui o remetente do broadcast, ver
+                # backend/app/main.py's _coop_broadcast(..., exclude=
+                # player_id)) - preciso mostrar meu próprio balão local na
+                # hora, sem esperar a rede.
+                self.player.say(msg)
+                if net_coop.is_connected():
+                    net_coop.send({"type": "chat", "text": msg})
+            return
+        if self.coop_open and self.coop.mode == "join_code":
+            # Stage L4: a free-text field takes exclusive keyboard focus
+            # while capturing, same as any real text input - discovered
+            # live building tools/coop_harness.py (Stage L1.5): the room
+            # code alphabet includes M/N, and DEV_NEXT_LEVEL/PREV_LEVEL
+            # below are letter-bound and deliberately fire "even with an
+            # overlay open" - typing a code containing one used to jump
+            # the local player a level forward/back mid-keystroke. Return
+            # here, before any Action (dev shortcuts included) gets a
+            # chance to consume the same keydown. ESC is the one exception
+            # - still backs out to the overlay's menu mode, matching the
+            # "ESC - Voltar" hint CoopOverlay.draw() shows in this mode.
+            if self.input.consume_action(Action.PAUSE):
+                self.coop.mode = "menu"
+                return
+            self.coop.handle_event(event, self.player)
+            return
+
         # Dev/test shortcuts (Stage B4 follow-up): jump forward/back one
         # level directly, bypassing bosses/exits - lets every one of the 13
         # layouts be reached and re-checked without playing the whole
         # campaign each time. Always active, even mid-boss-fight or with an
-        # overlay open - it's a debug tool, not a gameplay control.
+        # overlay open (outside of coop's text-entry mode above) - it's a
+        # debug tool, not a gameplay control.
         if self.input.consume_action(Action.DEV_NEXT_LEVEL):
             self._dev_jump(1)
         if self.input.consume_action(Action.DEV_PREV_LEVEL):
@@ -731,12 +819,18 @@ class GameplayState:
             self.toggle_leaderboard()
         if self.input.consume_action(Action.DEBUG_PANEL):
             if (not self.paused and not self.paperdoll_open and not self.items_open
-                    and not self.leaderboard_open and not self.settings_open):
+                    and not self.leaderboard_open and not self.settings_open and not self.coop_open):
                 self.debug_panel_open = not self.debug_panel_open
                 if not self.debug_panel_open and self.debug_panel.consume_difficulty_dirty():
                     self._dev_jump(0)
+        if self.coop_open:
+            # Modos que não capturam texto (menu/busy/connected/error) -
+            # ainda passam pelo handle_event pra nada em especial hoje, mas
+            # mantém o overlay recebendo eventos crus se algum modo futuro
+            # precisar (ex: colar um código).
+            self.coop.handle_event(event, self.player)
         if (self.paperdoll_open or self.items_open or self.debug_panel_open
-                or self.leaderboard_open or self.settings_open):
+                or self.leaderboard_open or self.settings_open or self.coop_open):
             # Stage F2: ESC also closes whichever menu is open, same as
             # pressing the key that opened it, instead of only pausing.
             # Stage J12 fixed a longstanding gap here: debug_panel_open had
@@ -751,6 +845,8 @@ class GameplayState:
                     self.toggle_leaderboard()
                 elif self.settings_open:
                     self.toggle_settings()
+                elif self.coop_open:
+                    self.toggle_coop()
                 elif self.debug_panel_open:
                     self.debug_panel_open = False
                     if self.debug_panel.consume_difficulty_dirty():
@@ -763,6 +859,15 @@ class GameplayState:
                 self.next_state = "restart"
             elif self.input.tapped_rect(self._restart_button.rect):
                 self.next_state = "restart"
+        elif (event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN
+                and net_coop.is_connected()):
+            # Stage L13/L14: Enter abre o campo de chat - mesma convenção
+            # de tecla-crua-não-remapeável que Enter/Backspace/Esc já têm
+            # em todo campo de texto do jogo (NameEntryState, o código de
+            # room do CoopOverlay), não uma Action nova no keybind system.
+            # Só faz sentido com uma room coop ativa (não há pra quem
+            # mandar mensagem sozinho).
+            self.chat.open()
         elif self.input.consume_action(Action.DASH):
             self._attempt_dash()
         elif self.input.consume_action(Action.PICKAXE):
@@ -822,7 +927,7 @@ class GameplayState:
             self.paperdoll_open = False
             self.level_up_forced = False
         elif (not self.paused and not self.items_open and not self.debug_panel_open
-                and not self.leaderboard_open and not self.settings_open):
+                and not self.leaderboard_open and not self.settings_open and not self.coop_open):
             self.paperdoll_open = True
 
     def toggle_items(self):
@@ -830,7 +935,7 @@ class GameplayState:
         if self.items_open:
             self.items_open = False
         elif (not self.paused and not self.paperdoll_open and not self.debug_panel_open
-                and not self.leaderboard_open and not self.settings_open):
+                and not self.leaderboard_open and not self.settings_open and not self.coop_open):
             self.items_open = True
 
     def toggle_leaderboard(self):
@@ -840,7 +945,7 @@ class GameplayState:
         if self.leaderboard_open:
             self.leaderboard_open = False
         elif (not self.paused and not self.paperdoll_open and not self.items_open
-                and not self.debug_panel_open and not self.settings_open):
+                and not self.debug_panel_open and not self.settings_open and not self.coop_open):
             self.leaderboard_open = True
             self.leaderboard.open()
 
@@ -851,8 +956,134 @@ class GameplayState:
         if self.settings_open:
             self.settings_open = False
         elif (not self.paused and not self.paperdoll_open and not self.items_open
-                and not self.debug_panel_open and not self.leaderboard_open):
+                and not self.debug_panel_open and not self.leaderboard_open and not self.coop_open):
             self.settings_open = True
+
+    def toggle_coop(self):
+        """Stage L4 (docs/coop-implementation-plan.md) - click/tap-only,
+        same guard as toggle_settings. Unlike the others, closing this one
+        does NOT tear down an active connection - net_coop's session lives
+        at module level, independent of whether this panel is showing, the
+        same way closing Settings doesn't reset keybinds. Only the
+        overlay's own "Sair da room" button calls net_coop.disconnect()."""
+        if self.coop_open:
+            self.coop_open = False
+        elif (not self.paused and not self.paperdoll_open and not self.items_open
+                and not self.debug_panel_open and not self.leaderboard_open and not self.settings_open):
+            self.coop_open = True
+
+    def _apply_remote_pos(self, msg):
+        """Stage L6: mensagem "pos" de outro jogador na room - cria o
+        RemotePlayer na primeira vez que esse player_id aparece (o nome
+        vem do roster que o CoopOverlay já rastreia, não da própria
+        mensagem "pos" - ela só carrega o que muda todo frame)."""
+        pid = msg.get("player_id")
+        if pid is None:
+            return
+        rp = self.remote_players.get(pid)
+        if rp is None:
+            rp = RemotePlayer(pid, name=self.coop.roster.get(pid, "?"))
+            self.remote_players[pid] = rp
+        rp.apply_snapshot(
+            msg.get("x", 0), msg.get("y", 0),
+            direction=msg.get("direction", "down"),
+            attacking=msg.get("attacking", False),
+            hp=msg.get("hp"), max_hp=msg.get("max_hp"),
+            downed=msg.get("downed", False), downed_timer=msg.get("downed_timer", 0.0),
+        )
+
+    def _boss_snapshot_dict(self):
+        """Stage L6: chamado só pelo host, montando o que vai na mensagem
+        "enemies". None quando não há boss nesta fase - o guest então nem
+        toca em self.boss (que também será None lá, pela mesma
+        LEVEL_MAPS[level_num]["boss"] que o level_sync já garantiu bater
+        dos dois lados)."""
+        if self.boss is None:
+            return None
+        return {
+            "x": self.boss.x, "y": self.boss.y,
+            "hp": self.boss.hp, "max_hp": self.boss.max_hp,
+            "alive": self.boss.alive,
+            "phase": getattr(self.boss, "phase", 1),
+            "charge_state": getattr(self.boss, "charge_state", None),
+        }
+
+    def _apply_remote_enemies(self, msg):
+        """Stage L6: snapshot de inimigos/boss do host. Cria um Enemy
+        "fantoche" pra qualquer net_id novo (a onda de respawn do host,
+        por exemplo) - o roster INICIAL da fase já nasce com os mesmos ids
+        dos dois lados, já que Level._build() varre o layout na mesma
+        ordem determinística tanto no host quanto no guest (mesmo
+        level_num, mesmo layout, zero aleatoriedade na posição/etype - ver
+        docs/coop-implementation-plan.md), então normalmente isto só
+        aplica apply_snapshot() num Enemy que o próprio guest já tinha."""
+        by_id = {e.net_id: e for e in self.level.enemies}
+        for data in msg.get("enemies", []):
+            eid = data.get("id")
+            enemy = by_id.get(eid)
+            if enemy is None:
+                enemy = Enemy(data["x"], data["y"], data.get("etype", "skeleton"),
+                              level_num=self.level_num, audio_mgr=self.audio)
+                enemy.net_id = eid
+                enemy.network_follower = True
+                self.level.enemies.append(enemy)
+                by_id[eid] = enemy
+            enemy.apply_snapshot(
+                data["x"], data["y"], data.get("flip", False),
+                data["hp"], data["max_hp"], data.get("alive", True),
+                is_paragon=data.get("is_paragon", False),
+                is_champion=data.get("is_champion", False),
+                affix=data.get("affix"),
+            )
+
+        boss_data = msg.get("boss")
+        if boss_data and self.boss is not None:
+            self.boss.network_follower = True
+            if isinstance(self.boss, CacodemonBoss):
+                self.boss.apply_snapshot(boss_data["x"], boss_data["y"],
+                                          boss_data["hp"], boss_data["max_hp"], boss_data.get("alive", True))
+            else:
+                self.boss.apply_snapshot(boss_data["x"], boss_data["y"], boss_data.get("phase", 1),
+                                          boss_data["hp"], boss_data["max_hp"], boss_data.get("alive", True),
+                                          charge_state=boss_data.get("charge_state"))
+
+    def _handle_pvp_attacks(self):
+        """Stage L7 (docs/coop-implementation-plan.md): dano jogador-contra-
+        jogador do zero. Cada cliente é autoritativo só pro PRÓPRIO Player
+        (rola o próprio dano igual combate PvE de sempre, contra o
+        RemotePlayer.rect do alvo em vez de um Enemy.rect) - roda em
+        QUALQUER cliente, host ou guest, sem checar net_coop.is_host():
+        diferente do modo rede host-autoritativo de Enemy/Boss (L6), PvP é
+        simétrico - cada Player só existe de verdade no cliente de quem
+        joga com ele.
+
+        Stage L10 (docs/coop-implementation-plan.md): "Traicoeiro" pune
+        quem ACERTA um aliado - aplicado direto aqui, no momento do golpe,
+        porque quem ataca já sabe sozinho que acabou de acertar um aliado
+        (não precisa de confirmação da rede, ao contrário de "Homicida"
+        abaixo, que só o ALVO sabe se o golpe foi letal ou não)."""
+        if not net_coop.is_connected() or not self.player.attacking:
+            return
+        atk_rect = self.player.get_attack_rect()
+        for rp in self.remote_players.values():
+            if rp.x is None:
+                continue
+            if atk_rect.colliderect(rp.rect):
+                dmg, is_crit = self.player.roll_physical()
+                # Stage L11 (docs/coop-implementation-plan.md): plumbing de
+                # bônus dirigido - se este alvo especificamente me acertou/
+                # derrubou antes (Reação Justa/Acerto de Contas, L12), o
+                # dano contra ELE (só ele, não a room inteira) sai mais
+                # forte. multiplier_against() volta 1.0 (no-op) se não há
+                # bônus ativo contra rp.player_id.
+                dmg = round(dmg * self.player.vengeance.multiplier_against(rp.player_id))
+                net_coop.send({
+                    "type": "player_hit",
+                    "target_player_id": rp.player_id,
+                    "damage": dmg, "dtype": "physical", "crit": is_crit,
+                    "attacker_x": self.player.x, "attacker_y": self.player.y,
+                })
+                self.player.status.apply("traicoeiro")
 
     def _attempt_cast(self, spell_id, silent=False):
         self.player.selected_spell = spell_id
@@ -1001,6 +1232,164 @@ class GameplayState:
             )
 
     def update(self, dt):
+        # Stage L5/L6 (docs/coop-implementation-plan.md): processa
+        # mensagens de rede coop TODO frame, não só enquanto o painel está
+        # aberto - de propósito antes de qualquer early-return de overlay/
+        # pausa abaixo (detectar "o host caiu" não pode depender de o
+        # jogador estar com o painel de coop aberto no momento certo).
+        # Handle_tap continua só rodando com o painel aberto, lá embaixo.
+        self.coop.update(dt)
+        self.chat.update(dt)
+
+        if net_coop.is_connected():
+            for msg in net_coop.poll_messages():
+                t = msg.get("type")
+                if t in ("roster", "join", "leave"):
+                    # CoopOverlay é o dono do roster/quem-é-host - só ele
+                    # entende esses 3 tipos. Um "leave" também derruba o
+                    # RemotePlayer correspondente aqui, já que ele mora em
+                    # GameplayState, não no overlay.
+                    self.coop.process_message(msg)
+                    if t == "leave":
+                        self.remote_players.pop(msg.get("player_id"), None)
+                elif t == "pos":
+                    self._apply_remote_pos(msg)
+                elif t == "level_sync" and not net_coop.is_host():
+                    # Stage L6: só o host manda isso (ver o timer mais
+                    # abaixo) - um guest cuja fase/dificuldade diverge da
+                    # que o host acabou de anunciar se realinha. Também
+                    # força a re-transição quando os VALORES já batem mas
+                    # self.net_follower ainda é False - acontece sempre que
+                    # se entra numa room coop no MEIO de uma fase já
+                    # carregada (o único jeito que a UI de L4 permite):
+                    # net_follower foi calculado uma vez, na construção
+                    # desta GameplayState, antes da conexão existir, e não
+                    # se atualiza sozinho depois. Sem isso o Level desta
+                    # fase nunca liga o modo rede, mesmo já conectado.
+                    lvl, diff = msg.get("level_num"), msg.get("difficulty_id")
+                    if lvl is not None and diff is not None and ((lvl, diff) != (self.level_num, self.difficulty_id) or not self.net_follower):
+                        self.next_state = f"coop_sync:{lvl}:{diff}"
+                        return
+                elif t == "enemies" and not net_coop.is_host():
+                    self._apply_remote_enemies(msg)
+                elif t == "credit_xp" and not net_coop.is_host():
+                    # Stage L8: só o host manda isso (quem realmente
+                    # resolve a morte) - decisão #2, a fração já vem
+                    # calculada (split igual entre quem estava na room no
+                    # momento do kill), este cliente só aplica no próprio
+                    # Player.
+                    self.player.gain_xp(msg.get("amount", 0))
+                elif t == "credit_gold" and not net_coop.is_host():
+                    self.player.credit_gold(msg.get("amount", 0))
+                elif t == "player_hit" and msg.get("target_player_id") == net_coop.get_player_id():
+                    # Stage L7: quem manda essa mensagem já rolou o próprio
+                    # dano (mesma lógica de sempre, contra um RemotePlayer
+                    # em vez de um Enemy) - este cliente só aplica no seu
+                    # próprio Player, autoritativo pra si mesmo. player_id
+                    # é carimbado pelo servidor (nunca confiar num campo
+                    # que o próprio remetente pudesse forjar), então é a
+                    # fonte confiável de "quem me atingiu" pra L11/L12.
+                    hp_before_pvp = self.player.hp
+                    self.player.take_damage(
+                        msg.get("damage", 0), dtype=msg.get("dtype", "physical"),
+                        knockback_from=(msg.get("attacker_x", self.player.x), msg.get("attacker_y", self.player.y)),
+                        source="player", attacker_player_id=msg.get("player_id"),
+                    )
+                    # Stage L12 (docs/coop-implementation-plan.md): "Reação
+                    # Justa" - só concede se o golpe REALMENTE tirou HP
+                    # (hp caiu de verdade), não se take_damage() foi um
+                    # no-op (invencibilidade/dodge/já caído) - comparar
+                    # antes/depois em vez de confiar em last_attacker_*
+                    # (que só é atualizado quando o golpe passa, mas fica
+                    # com o valor do golpe anterior se este for bloqueado,
+                    # não dá pra usar como sinal de "este golpe passou").
+                    if self.player.hp < hp_before_pvp:
+                        self.player.vengeance.grant(msg.get("player_id"), 1.15, 10.0)
+                elif t == "friendly_kill" and msg.get("attacker_player_id") == net_coop.get_player_id():
+                    # Stage L10: mandado pela VÍTIMA no momento em que ela
+                    # cai (ver a checagem de morte mais abaixo) - só quem
+                    # bateu o golpe letal (identificado pelo player_id que
+                    # o SERVIDOR carimbou no "player_hit" original, não um
+                    # campo que a vítima poderia forjar) se pune sozinho.
+                    self.player.status.apply("homicida")
+                elif t == "chat":
+                    # Stage L14: quem mandou (player_id carimbado pelo
+                    # servidor) já tem um RemotePlayer aqui - a mensagem
+                    # "pos" mais recente já o criou (ver _apply_remote_pos()
+                    # acima), então não há necessidade de criar um novo só
+                    # pra isso. Uma mensagem de chat de alguém que ainda
+                    # não mandou nenhum "pos" (impossível na prática, dado
+                    # que os dois broadcasts correm juntos) simplesmente
+                    # some sem avatar pra mostrar o balão - aceitável.
+                    rp = self.remote_players.get(msg.get("player_id"))
+                    if rp is not None:
+                        rp.say(msg.get("text", ""))
+        elif self.remote_players:
+            # A sessão coop acabou (saiu, host caiu, rede oscilou) - os
+            # avatares dos outros jogadores não continuam parados no mundo.
+            self.remote_players.clear()
+
+        match_ended = self.coop.consume_match_ended()
+        if match_ended:
+            # Decisão #4 do plano: sem migração de host, quem não é host
+            # volta pro menu principal - não continua sozinho na cópia
+            # local do Level (ver GameStateManager.update()'s tratamento
+            # especial de next_state == "menu", que pula o bookkeeping de
+            # fim-de-fase normal).
+            self.next_state = "menu"
+            return
+
+        if net_coop.is_connected():
+            # ~12x/s, não todo frame (60fps) - mesma cadência (~10-15Hz)
+            # que a feasibility study já apontava pra posição/estado.
+            self._coop_pos_send_timer += dt
+            if self._coop_pos_send_timer >= 1.0 / 12:
+                self._coop_pos_send_timer = 0.0
+                net_coop.send({
+                    "type": "pos",
+                    "x": self.player.x, "y": self.player.y,
+                    "direction": self.player.direction, "attacking": self.player.attacking,
+                    "hp": self.player.hp, "max_hp": self.player.max_hp,
+                    # Stage L9 - pra "todos caídos" e o desenho do RemotePlayer
+                    # (downed_timer só pro countdown ficar exato pros outros
+                    # também, não só localmente).
+                    "downed": self.player.downed, "downed_timer": self.player.downed_timer,
+                })
+            if net_coop.is_host():
+                # Stage L6: 1x/s basta (é só 2 valores) - anuncia em que
+                # fase/dificuldade o host está, pra qualquer guest que
+                # divergir (acabou de entrar, ou entrou no meio de uma fase
+                # antiga) se realinhar via next_state = "coop_sync:...".
+                # Sem isso, os snapshots de inimigo/boss (broadcast
+                # separado, mais abaixo) cairiam no Level errado do guest.
+                self._coop_level_sync_timer += dt
+                if self._coop_level_sync_timer >= 1.0:
+                    self._coop_level_sync_timer = 0.0
+                    net_coop.send({
+                        "type": "level_sync",
+                        "level_num": self.level_num, "difficulty_id": self.difficulty_id,
+                    })
+                # Stage L6: mesmo timer/cadência do broadcast de posição -
+                # o core do modo rede. Manda a lista inteira toda vez (sem
+                # delta-compression) - simples de acertar primeiro, mesmo
+                # não sendo o mínimo de bytes possível; LAN e uma dúzia de
+                # inimigos não é onde otimizar banda importa nesta v1.
+                if self._coop_pos_send_timer == 0.0:  # acabou de mandar "pos" acima
+                    net_coop.send({
+                        "type": "enemies",
+                        "enemies": [
+                            {
+                                "id": e.net_id, "etype": e.etype, "x": e.x, "y": e.y,
+                                "flip": e.flip, "hp": e.hp, "max_hp": e.max_hp, "alive": e.alive,
+                                "is_paragon": e.is_paragon, "is_champion": e.is_champion, "affix": e.affix,
+                            }
+                            for e in self.level.enemies
+                        ],
+                        "boss": self._boss_snapshot_dict(),
+                    })
+        for rp in self.remote_players.values():
+            rp.update(dt)
+
         self.weather.update(dt)  # ambient - keeps animating through pause/overlays
 
         title_key = (self.player.name, self.player.level)
@@ -1051,6 +1440,12 @@ class GameplayState:
                 self.toggle_settings()
                 return
             self.settings.handle_keys(self.input, self.player, self.save_state)
+            return
+        if self.coop_open:
+            self.coop.handle_tap(self.input, self.player, self.save_state)
+            if self.input.any_unconsumed_tap():
+                self.toggle_coop()
+                return
             return
         if self.paused:
             return
@@ -1156,9 +1551,20 @@ class GameplayState:
         self._check_pickup_pickups()
 
         boss_was_alive = self.boss.alive if self.boss else False
+        # Stage L8: quantos jogadores estão na room agora - 1 fora de
+        # coop. self.coop.roster já exclui o próprio jogador local, então
+        # +1 é o total certo.
+        room_size = (1 + len(self.coop.roster)) if net_coop.is_connected() else 1
 
         if self.boss:
-            if self.player.attacking:
+            # Stage L6/L8: um guest nunca resolve dano contra um boss
+            # follower localmente - o HP real mora no host, aplicar aqui
+            # divergiria do próximo snapshot (mesmo motivo que já protege
+            # o melee contra Enemy dentro de Level.update()). Achado só
+            # agora, implementando L8 (split de XP/ouro não faz sentido se
+            # um guest também pudesse matar o boss por conta própria) -
+            # gap real que passou batido no L6.
+            if self.player.attacking and not self.boss.network_follower:
                 atk_rect = self.player.get_attack_rect()
                 # take_damage() used to be called unconditionally here (with
                 # dmg=0 on a miss) - Boss/CacodemonBoss.take_damage() always
@@ -1185,7 +1591,7 @@ class GameplayState:
                     summon = Enemy(sx, sy, "skeleton", ml=20 + self.difficulty["ml_bonus"],
                                     level_num=self.level_num, audio_mgr=self.audio)
                     summon.aggro_range *= self.weather.visibility_multiplier
-                    self.level.enemies.append(summon)
+                    self.level.enemies.append(self.level._tag_enemy(summon))
                     self.boss_summons.append(summon)
                 self.boss.pending_summons = []
 
@@ -1193,12 +1599,13 @@ class GameplayState:
             # as any other mob - boss fights never ran Level.update() before
             # Stage D6 (self.level.enemies was always empty on boss levels
             # until now), so this is a no-op for orc_warlord/shadow_king.
-            self.level.update(dt, self.player, self.audio)
+            self.level.update(dt, self.player, self.audio, room_size=room_size)
         else:
-            self.level.update(dt, self.player, self.audio)
+            self.level.update(dt, self.player, self.audio, room_size=room_size)
             if self.level.check_exit(self.player):
                 self.next_state = f"next:{self.level.data['next']}"
 
+        self._handle_pvp_attacks()
         self._drain_level_drops()
 
         # Fireball projectiles - checked against whichever targets this
@@ -1226,7 +1633,11 @@ class GameplayState:
         # swing not re-hitting every frame it's held "attacking".
         if self.player.dashing:
             for target in cast_targets:
-                if not getattr(target, "alive", True) or id(target) in self.player._dash_hit_ids:
+                if (not getattr(target, "alive", True) or id(target) in self.player._dash_hit_ids
+                        or getattr(target, "network_follower", False)):
+                    # Stage L6/L8: mesma proteção do bloco do boss acima -
+                    # um guest nunca resolve dano local contra um alvo
+                    # follower (Enemy OU Boss, os dois têm essa flag).
                     continue
                 if self.player.rect.colliderect(target.rect):
                     self.player._dash_hit_ids.add(id(target))
@@ -1242,6 +1653,8 @@ class GameplayState:
             if not proj.alive:
                 continue
             for target in cast_targets:
+                if getattr(target, "network_follower", False):
+                    continue  # Stage L6/L8: mesma proteção - nunca resolve dano local contra um follower
                 if getattr(target, "alive", True) and proj.rect.colliderect(target.rect):
                     target.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
                     proj.alive = False
@@ -1251,12 +1664,25 @@ class GameplayState:
         self.player_projectiles = [p for p in self.player_projectiles if p.alive]
 
         if self.boss and boss_was_alive and not self.boss.alive:
-            self.player.gain_xp(self.boss.xp_reward)
+            # Stage L8: ao contrário do ouro de inimigo comum (GoldDrop
+            # físico, não compartilhado - ver Level.credit_kill()), a
+            # recompensa do boss já é crédito instantâneo pros dois lados
+            # (xp E ouro) - dá pra compartilhar os dois igualmente, sem
+            # nenhum problema de sync de pickup físico envolvido.
+            if room_size > 1 and net_coop.is_connected():
+                xp_share = self.boss.xp_reward / room_size
+                gold_share = self.boss.gold_reward / room_size
+                self.player.gain_xp(xp_share)
+                self.player.credit_gold(gold_share)
+                net_coop.send({"type": "credit_xp", "amount": xp_share})
+                net_coop.send({"type": "credit_gold", "amount": gold_share})
+            else:
+                self.player.gain_xp(self.boss.xp_reward)
+                self.player.credit_gold(self.boss.gold_reward)
             # Instant credit, not a walk-over pickup like regular enemies -
             # the level ends immediately (victory screen), so there's no
             # gameplay window to walk over a dropped coin. Particle burst
             # instead, for the visual payoff.
-            self.player.credit_gold(self.boss.gold_reward)
             for _ in range(15):
                 self.level_up_particles.append(
                     Particle(self.boss.x + self.boss.width/2,
@@ -1334,9 +1760,50 @@ class GameplayState:
             self.audio.play("menu_select")
             self.player.pending_profession_change = None
 
-        # Check death
+        # Check death - Stage L9 (docs/coop-implementation-plan.md): em
+        # coop, hp <= 0 vira "caído" (revive automático em 5s, decisão #1),
+        # não o game_over normal de single-player, que reinicia a fase
+        # inteira. `not self.player.downed` evita rechamar trigger_downed()
+        # todo frame enquanto o hp continua <= 0 (fica assim até o timer
+        # zerar e o próprio Player se revivar).
         if self.player.hp <= 0:
-            self.next_state = "game_over"
+            if net_coop.is_connected():
+                if not self.player.downed:
+                    # Stage L10: "Homicida" pune quem DERRUBA um aliado -
+                    # só a VÍTIMA sabe se o golpe que a derrubou foi
+                    # letal (last_attacker_source/_player_id já vem do
+                    # take_damage() do "player_hit" - ver _handle_pvp_
+                    # attacks() e o poll_messages() de L7), então é ela
+                    # quem avisa o agressor pela rede pra ele se punir -
+                    # capturado ANTES de trigger_downed() por segurança,
+                    # mesmo que ele não mexa nesses campos hoje.
+                    was_player_kill = (self.player.last_attacker_source == "player"
+                                        and self.player.last_attacker_player_id is not None)
+                    attacker_id = self.player.last_attacker_player_id
+                    self.player.trigger_downed()
+                    if was_player_kill:
+                        net_coop.send({"type": "friendly_kill", "attacker_player_id": attacker_id})
+                        # Stage L12: "Acerto de Contas" - versão mais forte
+                        # (35% vs. 15%) e mais longa (2min vs. 10s) de
+                        # "Reação Justa" acima, só quando o golpe foi
+                        # letal. grant() substitui em vez de empilhar (a
+                        # mesma semântica de "refresca o clock" que
+                        # StatusEffectCarrier.apply() já usa) - não faz
+                        # sentido acumular os dois contra o mesmo alvo.
+                        self.player.vengeance.grant(attacker_id, 1.35, 120.0)
+            else:
+                self.next_state = "game_over"
+
+        # "Todos caídos ao mesmo tempo" encerra a partida (decisão #1) -
+        # só considera jogadores dos quais já se ouviu falar (rp.x is not
+        # None); uma room recém-criada sem mais ninguém confirmado ainda
+        # não deve contar como "todo mundo caiu" por causa de uma lista
+        # vazia (all([]) é True em Python - guard explícito abaixo evita
+        # essa pegadinha).
+        if net_coop.is_connected() and self.player.downed:
+            others_downed = [rp.downed for rp in self.remote_players.values() if rp.x is not None]
+            if others_downed and all(others_downed):
+                self.next_state = "menu"
 
     def draw(self):
         cx = int(self.camera.render_x)
@@ -1351,6 +1818,9 @@ class GameplayState:
             self.boss.draw(self.screen, cx, cy)
 
         self.player.draw(self.screen, cx, cy)
+
+        for rp in self.remote_players.values():
+            rp.draw(self.screen, cx, cy)
 
         for proj in self.player_projectiles:
             proj.draw(self.screen, cx, cy)
@@ -1424,6 +1894,16 @@ class GameplayState:
         # Settings overlay (Stage K15)
         if self.settings_open:
             self.settings.draw(self.screen, self.save_state)
+
+        # Coop room overlay (Stage L4)
+        if self.coop_open:
+            self.coop.draw(self.screen, self.player)
+
+        # Chat input (Stage L13) - não é "outro painel" no sentido de
+        # toggle_coop()/toggle_settings() etc. (não bloqueia o resto da
+        # tela nem pausa o jogo, só a caixa de texto no rodapé), então
+        # desenha por cima de tudo isso, sempre que ativo.
+        self.chat.draw(self.screen)
 
         # Stage J11: always called now, not just when touch_active - the
         # mouse-click crosshair (InputManager._draw_crosshair) needs to
@@ -1748,6 +2228,7 @@ class GameStateManager:
         self.items_button = ItemsButton(SW - 40, 154)
         self.leaderboard_button = LeaderboardButton(SW - 40, 208)
         self.settings_button = SettingsButton(SW - 40, 262)
+        self.coop_button = CoopButton(SW - 40, 316)
 
         import game.save as save
         self.save_state = save.load() or save.new_game_state()
@@ -1890,6 +2371,9 @@ class GameStateManager:
             if self.input.tapped_rect(self.settings_button.rect):
                 self.state.toggle_settings()
                 self.audio.play("menu_select")
+            if self.input.tapped_rect(self.coop_button.rect):
+                self.state.toggle_coop()
+                self.audio.play("menu_select")
 
         self.state.update(dt)
 
@@ -1898,7 +2382,21 @@ class GameStateManager:
             self.play_time += dt
             self.save_state["counters"]["playtime_s"] += dt
             ns = self.state.next_state
-            if ns:
+            if ns == "menu":
+                # Stage L5: o host caiu em coop (decisão #4) - não é fim de
+                # fase nenhum, então pula inteiramente o bookkeeping abaixo
+                # (deaths/highest_level_cleared/cleared_difficulties/sync) -
+                # a partida foi interrompida, não terminou. self.player
+                # continua o mesmo (não some, só a GameplayState acaba).
+                self._transition(ns)
+            elif ns and ns.startswith("coop_sync:"):
+                # Stage L6: guest entrando numa room cuja fase/dificuldade
+                # do host diverge da sua - pula o bookkeeping de fim-de-fase
+                # (não foi uma fase concluída, é reposicionamento pra bater
+                # com o host antes do modo rede de Enemy/Boss fazer
+                # sentido nenhum).
+                self._transition(ns)
+            elif ns:
                 self.player = self.state.player
                 import game.save as save
                 if ns == "game_over":
@@ -1929,10 +2427,21 @@ class GameStateManager:
                 self._transition(ns)
 
         if isinstance(self.state, TransitionState):
+            # Stage L6/L7: TransitionState.handle_event() é um no-op - uma
+            # tecla apertada durante os ~1.5s da transição nunca é
+            # consumida por ninguém e ficaria esperando a PRÓXIMA
+            # GameplayState pra ser lida, sendo mal-interpretada lá (uma
+            # troca de fase é sempre um contexto novo). Defensivo, mesmo
+            # raciocínio de _transition()'s próprio clear_actions() -
+            # limpar a cada frame que a transição existir garante que nada
+            # sobra pra vazar, não importa quando o evento chegou durante
+            # a janela.
+            self.input.clear_actions()
             if self.state.done:
                 lvl = self.state.next_level
                 self.state = GameplayState(self.screen, self.input, self.audio, lvl, self.player,
-                                            save_state=self.save_state)
+                                            save_state=self.save_state,
+                                            coop=self.state.coop, remote_players=self.state.remote_players)
 
     def draw(self):
         self.state.draw()
@@ -1943,6 +2452,7 @@ class GameStateManager:
             self.items_button.draw(self.screen)
             self.leaderboard_button.draw(self.screen)
             self.settings_button.draw(self.screen)
+            self.coop_button.draw(self.screen)
 
     def _has_progress(self):
         # A character who dies before ever clearing level 1 anywhere would
@@ -1955,6 +2465,18 @@ class GameStateManager:
                 or bool(self.save_state["character"]["name"]))
 
     def _transition(self, result):
+        # Stage L6/L7: uma Action ainda não consumida no frame em que a
+        # troca de estado acontece não devia vazar pro estado novo - um
+        # ESC pressionado bem no instante em que uma transição dispara
+        # (inclusive as automáticas de coop, como coop_sync, que agora
+        # podem acontecer sem nenhuma ação do jogador) podia sobreviver
+        # até a GameplayState seguinte e ser mal-interpretado lá (uma
+        # troca de fase é sempre um contexto novo - nenhuma Action de
+        # antes devia atravessar). Defensivo: o bug real investigado com
+        # tools/coop_harness.py acabou sendo outra coisa (o teste fechava
+        # o painel coop tarde demais, depois do coop_sync automático já
+        # ter reconstruído a GameplayState) - ver InputManager.clear_actions().
+        self.input.clear_actions()
         if result == "NOVO JOGO":
             self._ensure_fullscreen()
             self.state = NameEntryState(self.screen, self.input, self.audio)
@@ -1973,6 +2495,18 @@ class GameStateManager:
         elif result == "menu":
             self.player = None
             self.state = MenuState(self.screen, self.input, self.audio, has_save=self._has_progress())
+        elif result.startswith("coop_sync:"):
+            # Stage L6: guest recebeu a fase/dificuldade atual do host
+            # (mensagem "level_sync") e diverge da sua - vai direto pra lá
+            # via o mesmo TransitionState que "next:" usa, mas SEM passar
+            # pelo StageCompleteState/tally de xp-ganho daquele branch (não
+            # é uma fase concluída, é só se realinhar com o host antes do
+            # modo rede de Enemy/Boss fazer sentido).
+            _, level_num_s, difficulty_id = result.split(":", 2)
+            self.save_state["progression"]["current_difficulty"] = difficulty_id
+            self.state = TransitionState(self.screen, int(level_num_s), self.player,
+                                          coop=self.state.coop, remote_players=self.state.remote_players)
+            self.play_time = 0.0
         elif result == "RESETAR CHAR":
             self.state = ConfirmResetState(self.screen, self.input, self.audio)
         elif result == "reset_confirmed":
@@ -2036,8 +2570,13 @@ class GameStateManager:
             # Carries the real character over (not a fresh L1 player) -
             # otherwise leaving this level would sync a throwaway level-1
             # character back over the real save (see save_state sync in update()).
+            # Stage L6: getattr, não self.state.coop direto - ao contrário
+            # dos outros sites, não há garantia forte de que self.state
+            # ainda é a GameplayState aqui (caminho raro/pouco testado).
+            coop = getattr(self.state, "coop", None)
+            remote_players = getattr(self.state, "remote_players", None)
             self.player = self._player_from_save()
-            self.state = TransitionState(self.screen, 13, self.player)
+            self.state = TransitionState(self.screen, 13, self.player, coop=coop, remote_players=remote_players)
             self.play_time = 0.0
         elif result == "secret_victory":
             self.audio.play("victory")
@@ -2056,6 +2595,12 @@ class GameStateManager:
                 gold_gained = self.player.gold - finished._gold_at_level_start
                 self.state = StageCompleteState(self.screen, self.input, self.audio,
                                                  finished.level_num, next_lvl,
-                                                 xp_gained, gold_gained, self.player)
+                                                 xp_gained, gold_gained, self.player,
+                                                 coop=finished.coop, remote_players=finished.remote_players)
             else:
-                self.state = TransitionState(self.screen, next_lvl, self.player)
+                # self.state aqui é a StageCompleteState que acabou de
+                # confirmar "Continuar" (ver docstring da classe) - Stage
+                # L6 repassa coop/remote_players dela pro TransitionState
+                # final, completando a corrente iniciada acima.
+                self.state = TransitionState(self.screen, next_lvl, self.player,
+                                              coop=self.state.coop, remote_players=self.state.remote_players)

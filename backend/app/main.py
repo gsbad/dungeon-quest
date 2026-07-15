@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import jwt
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from google.auth.transport import requests as google_requests
@@ -239,6 +239,16 @@ init_db()
 # anyway for robustness/testing from other origins.
 ALLOWED_ORIGINS = [
     "http://localhost:8000",
+    # Stage L1.5 (tools/coop_harness.py): pygbag's own boot bundle resolver
+    # has a bug tied to the literal hostname "localhost" specifically -
+    # confirmed live, reproduces every time - it resolves the pygame_ce
+    # wheel's CDN path relative to whatever origin served index.html
+    # instead of the real pygame-web.github.io CDN, a 404 that stops boot
+    # dead before Python ever runs. Never reproduces on 127.0.0.1, so the
+    # multi-BrowserContext coop harness serves from there instead - needs
+    # its own CORS entry since it's a distinct origin from localhost:8000
+    # even though both mean "this machine".
+    "http://127.0.0.1:8000",
     "http://192.168.100.19:8001",
     "https://129.80.222.127.sslip.io",
 ]
@@ -600,6 +610,95 @@ def delete_appearance_admin(key: str, authorization: str | None = Header(default
             session.delete(row)
             session.commit()
     return {"ok": True}
+
+
+# Stage L1 (docs/coop-implementation-plan.md): coop room relay. Process-local,
+# in-memory, never touches SQLite - a room is efficient garbage the moment
+# its last player leaves (see feasibility study's "never persisted, it's
+# ephemeral" call). The server is a dumb relay: it stamps the sender's
+# player_id onto every message and rebroadcasts to the rest of the room
+# verbatim, never inspecting game content - no game rules live here, same
+# "backend never imports game/" boundary BALANCE_DEFAULTS documents above.
+# Host-authoritative simulation (who actually runs monster AI/damage) is a
+# Fase 2 (L5+) client-side concern, not this endpoint's.
+_ROOM_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"  # no 0/O/1/I/L - short enough for a mobile virtual keyboard (game/input_system.py already handles those well)
+_ROOM_CODE_LEN = 4
+_coop_rooms: dict[str, dict[str, dict[str, Any]]] = {}  # room_id -> {player_id: {"ws": WebSocket, "name": str}}
+
+
+def _new_room_code() -> str:
+    while True:
+        code = "".join(secrets.choice(_ROOM_CODE_ALPHABET) for _ in range(_ROOM_CODE_LEN))
+        if code not in _coop_rooms:
+            return code
+
+
+@app.post("/coop/room")
+def create_coop_room():
+    """No auth - "login never required to play" (docs/architecture.md)
+    extends to coop: a room code is not an account. Reserves the code with
+    an empty player dict immediately, so two concurrent creates can never
+    land on the same code; a room nobody ever joins is cleaned up the same
+    lazy way an emptied one is (see coop_ws's finally block)."""
+    code = _new_room_code()
+    _coop_rooms[code] = {}
+    return {"room_id": code}
+
+
+async def _coop_broadcast(room: dict[str, dict[str, Any]], payload: dict, exclude: str | None = None) -> None:
+    dead = []
+    for pid, entry in room.items():
+        if pid == exclude:
+            continue
+        try:
+            await entry["ws"].send_json(payload)
+        except Exception:
+            dead.append(pid)
+    for pid in dead:
+        room.pop(pid, None)
+
+
+@app.websocket("/coop/ws/{room_id}")
+async def coop_ws(websocket: WebSocket, room_id: str, player_id: str, name: str = "?"):
+    room = _coop_rooms.get(room_id)
+    if room is None:
+        await websocket.close(code=4404)  # custom app-level code (RFC 6455 reserves 4000-4999) - "no such room"
+        return
+    await websocket.accept()
+    # Stage L5 (docs/coop-implementation-plan.md): "quem cria a room é o
+    # host" cai direto de "primeira conexão numa room vazia" - a room só
+    # existe porque POST /coop/room acabou de reservá-la (ver
+    # create_coop_room acima), então o primeiro WS a chegar é sempre quem
+    # criou. Isso NÃO é o servidor entendendo regra de jogo (continua um
+    # relay burro) - só um rótulo de qual conexão chegou primeiro, do
+    # mesmo jeito que já rotula quem é quem via player_id.
+    is_host = len(room) == 0
+    room[player_id] = {"ws": websocket, "name": name, "is_host": is_host}
+
+    await _coop_broadcast(room, {"type": "join", "player_id": player_id, "name": name, "is_host": is_host}, exclude=player_id)
+    # The broadcast above only reaches players who were already connected -
+    # the newcomer needs its own snapshot of who's already in the room.
+    await websocket.send_json({
+        "type": "roster",
+        "players": [
+            {"player_id": pid, "name": entry["name"], "is_host": entry["is_host"]}
+            for pid, entry in room.items() if pid != player_id
+        ],
+    })
+
+    try:
+        while True:
+            msg = await websocket.receive_json()
+            msg["player_id"] = player_id  # server-stamped - never trust a client's own claim of who it is
+            await _coop_broadcast(room, msg, exclude=player_id)
+    except WebSocketDisconnect:
+        pass  # the expected case - any other error propagates (visible in server logs) but still hits `finally` below
+    finally:
+        room.pop(player_id, None)
+        if room:
+            await _coop_broadcast(room, {"type": "leave", "player_id": player_id})
+        else:
+            _coop_rooms.pop(room_id, None)
 
 
 _ADMIN_PAGE = """<!doctype html>

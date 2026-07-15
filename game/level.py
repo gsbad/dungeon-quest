@@ -6,6 +6,7 @@ from game.enemy import Enemy, BASE_XP, GOLD_DROPS, GoldDrop, Particle
 from game.stats import xp_for_kill, gold_for_kill
 from game.affixes import PARAGON_REWARD_MULT, CHAMPION_REWARD_MULT
 from game.theme import font, ACCENT_GOLD
+import game.net_coop as net_coop
 
 TILE = 48
 
@@ -463,7 +464,7 @@ LEVEL_MAPS = {
 
 
 class Level:
-    def __init__(self, level_num, extra_speed_mult=1.0, ml_bonus=0, audio_mgr=None):
+    def __init__(self, level_num, extra_speed_mult=1.0, ml_bonus=0, audio_mgr=None, network_follower=False):
         self.level_num = level_num
         # Stage H7: forwarded to every spawned Enemy so mob attacks can play
         # their own sound (see game/audio.py's attack_{etype} sounds).
@@ -484,6 +485,24 @@ class Level:
         self.enemies = []
         self.exit_rect = None
         self.exit_open = False
+
+        # Stage L6 (docs/coop-implementation-plan.md): id estável por
+        # inimigo, sobrevive a self.enemies encolher/reordenar quando um
+        # morre (índice na lista não é estável o bastante pra um broadcast
+        # de rede identificar "qual inimigo é esse"). network_follower vira
+        # True só num guest conectado (nunca no host nem em single-player) -
+        # precisa vir por parâmetro do construtor, não setado depois: _build()
+        # (mais abaixo, ainda dentro deste __init__) já cria os primeiros
+        # Enemy da fase, então setar isso só depois de Level(...) retornar
+        # deixaria esses primeiros com o valor errado.
+        self._next_net_id = 0
+        self.network_follower = network_follower
+        # Stage L8 (docs/coop-implementation-plan.md): quantos jogadores
+        # estão na room agora - setado por GameplayState.update() a cada
+        # frame (ver a chamada de self.level.update(...) abaixo), 1 fora
+        # de coop. credit_kill() usa isso pra dividir XP igualmente
+        # (decisão #2: split igual, não proporcional a dano causado).
+        self._room_size = 1
 
         self.player_start_tile = self.data["player_start"]
         self._used_enemy_tiles = set()
@@ -565,6 +584,16 @@ class Level:
                     best_score = score
         return best if best is not None else (orig_col, orig_row)
 
+    def _tag_enemy(self, enemy):
+        """Stage L6: chamado em todo Enemy(...) recém-criado desta fase,
+        nos 3 lugares que constroem um (_build() logo abaixo, o trickle de
+        respawn no update(), e a invocação do necromante em
+        GameplayState.update())."""
+        enemy.net_id = self._next_net_id
+        self._next_net_id += 1
+        enemy.network_follower = self.network_follower
+        return enemy
+
     def _build(self):
         floor_type = self.data["floor"]
         wall_type  = "wall"
@@ -588,8 +617,8 @@ class Level:
                     spawn_col, spawn_row = self._find_enemy_spawn(col_i, row_i)
                     spawn_x = spawn_col * TILE
                     spawn_y = spawn_row * TILE
-                    self.enemies.append(Enemy(spawn_x + 8, spawn_y + 8, etype, speed_multiplier=speed_mul,
-                                               ml=monster_level, level_num=self.level_num, audio_mgr=self.audio))
+                    self.enemies.append(self._tag_enemy(Enemy(spawn_x + 8, spawn_y + 8, etype, speed_multiplier=speed_mul,
+                                               ml=monster_level, level_num=self.level_num, audio_mgr=self.audio)))
                     self._used_enemy_tiles.add((spawn_col, spawn_row))
                     # Stage K14: remembered so the post-clear respawn trickle
                     # can bring back the same etype roster at the same spots,
@@ -645,7 +674,8 @@ class Level:
         col, row = self.data["player_start"]
         return (col * TILE + 8, row * TILE + 8)
 
-    def update(self, dt, player, audio_mgr=None):
+    def update(self, dt, player, audio_mgr=None, room_size=1):
+        self._room_size = room_size
         # Only enable puddles behavior on levels that declare the hazard
         puddles_arg = self.puddles if self.data.get("hazards", {}).get("puddles") else None
         for enemy in self.enemies:
@@ -692,22 +722,30 @@ class Level:
         # exit_open directly). Once every original enemy is dead, trickle
         # a capped extra wave back in instead (gives the player something
         # to fight while still searching), one every _respawn_interval.
+        # Stage L6: gerar uma nova onda é uma decisão de simulação (rolagem
+        # aleatória de etype) - só o host faz isso. Um guest só vê a onda
+        # aparecer quando o próprio broadcast do host incluir os novos ids.
         living = [e for e in self.enemies if e.alive]
-        if not living and self.data["type"] == "combat" and self._respawns_remaining > 0:
+        if not self.network_follower and not living and self.data["type"] == "combat" and self._respawns_remaining > 0:
             self._respawn_timer -= dt
             if self._respawn_timer <= 0:
                 self._respawn_timer = self._respawn_interval
                 self._respawns_remaining -= 1
                 etype, sx, sy = random.choice(self._original_enemy_specs)
-                self.enemies.append(Enemy(sx, sy, etype, speed_multiplier=self._speed_mul,
-                                           ml=self._monster_level, level_num=self.level_num, audio_mgr=self.audio))
+                self.enemies.append(self._tag_enemy(Enemy(sx, sy, etype, speed_multiplier=self._speed_mul,
+                                           ml=self._monster_level, level_num=self.level_num, audio_mgr=self.audio)))
 
         for particle in self.dig_particles:
             particle.update(dt)
         self.dig_particles = [p for p in self.dig_particles if p.life > 0]
 
-        # Check player attack vs enemies
-        if player.attacking:
+        # Check player attack vs enemies - Stage L6: só o host resolve isso.
+        # Um guest atacando um Enemy follower não pode chamar take_damage()
+        # local (o HP real mora no host; aplicar dano aqui divergiria do
+        # próximo snapshot e "voltaria" visualmente). Dano de guest contra
+        # inimigo do host fica pra um incremento futuro (repassar o golpe
+        # pro host resolver) - não coberto por este L6.
+        if not self.network_follower and player.attacking:
             atk_rect = player.get_attack_rect()
             for enemy in self.enemies:
                 if not (enemy.alive and atk_rect.colliderect(enemy.rect)):
@@ -723,14 +761,24 @@ class Level:
     def credit_kill(self, player, enemy):
         """XP/gold/kill-tracking for a just-died regular enemy - shared by
         the melee path above and game/states.py's Fireball collision, so a
-        kill is rewarded identically no matter which weapon landed it."""
+        kill is rewarded identically no matter which weapon landed it.
+
+        Stage L8 (docs/coop-implementation-plan.md): só XP é compartilhado
+        em coop, não o ouro - o ouro de inimigo comum já é um GoldDrop
+        físico (pickup andando por cima), o mesmo "quem chega primeiro
+        pega" que já vale em single-player; duplicar/sincronizar esse
+        pickup pra cada cliente é um problema de sync bem maior, fora do
+        escopo desta fase. XP não tem esse problema (crédito instantâneo
+        já hoje), então é o que a decisão #2 (split igual, não
+        proporcional a dano) realmente cobre aqui - quem matou E o resto
+        da room recebem 1/N do XP cada, não o total cada um."""
         if enemy.is_paragon:
             reward_mult = PARAGON_REWARD_MULT
         elif enemy.is_champion:
             reward_mult = CHAMPION_REWARD_MULT
         else:
             reward_mult = 1
-        player.gain_xp(xp_for_kill(BASE_XP[enemy.etype], enemy.ml, player.level) * reward_mult)
+        self._credit_xp_shared(player, xp_for_kill(BASE_XP[enemy.etype], enemy.ml, player.level) * reward_mult)
         # Stage K14: independent rolls instead of unconditional gold - the
         # user's explicit complaint was "hoje e 100% ouro"; gold stays the
         # common case (medio/alto chance) while heart/mana/potion are rarer
@@ -754,6 +802,21 @@ class Level:
             px, py = player.x + player.width / 2, player.y + player.height / 2
             if math.hypot(px - ex, py - ey) <= 70:
                 player.take_damage(15, dtype="magic", knockback_from=(ex, ey))
+
+    def _credit_xp_shared(self, player, amount):
+        """Stage L8: fora de coop (self._room_size == 1, o padrão) aplica
+        o total normalmente - comportamento de sempre, nenhum call site
+        precisou mudar. Conectado, divide pelo número de jogadores na room
+        (quem matou incluso, decisão #2) - credita a própria fração aqui e
+        avisa a room pra cada guest aplicar a fração dele no próprio
+        Player local (cada cliente só pode mexer no seu próprio XP, não
+        existe um "Player compartilhado")."""
+        if self._room_size > 1 and net_coop.is_connected():
+            share = amount / self._room_size
+            player.gain_xp(share)
+            net_coop.send({"type": "credit_xp", "amount": share})
+        else:
+            player.gain_xp(amount)
 
     def try_break_tile(self, col, row, player, audio_mgr=None):
         """Stage K14: the picareta's actual effect on whatever tile is

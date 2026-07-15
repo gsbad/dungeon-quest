@@ -172,6 +172,14 @@ class Boss:
 
         self.enrage_timer = 0  # Phase 2 visual effect
 
+        # Stage L6 (docs/coop-implementation-plan.md): só existe um boss
+        # por vez, então não precisa de net_id (nunca ambíguo qual boss é
+        # qual) - só a mesma chave network_follower que Enemy/RemotePlayer
+        # já usam, e target_x/y pra interpolar posição em vez de teleportar.
+        self.network_follower = False
+        self.target_x = self.x
+        self.target_y = self.y
+
         # Auto-enable one-hit boss for testing if env var set
         if os.getenv("ONE_HIT_BOSS", "0") in ("1", "true", "True"):
             self.enable_one_hit()
@@ -342,7 +350,48 @@ class Boss:
                 self.projectiles.append(Projectile(cx, cy, vx, vy, self.burst_dmg, (90,255,140),
                                                      status_effect="weakness", status_chance=0.30))
 
+    def apply_snapshot(self, x, y, phase, hp, max_hp, alive, charge_state=None):
+        """Stage L6: mesma relação que Enemy.apply_snapshot()/
+        RemotePlayer.apply_snapshot() já estabelecem - nunca simula, só
+        aplica o que o host decidiu. charge_state é o único campo de
+        estado (fora posição/hp/fase/vivo) que realmente precisa vir do
+        host: sem ele, um guest nunca veria o aviso visual do "windup"
+        antes do dash do orc_warlord (draw() usa isso pro pulso vermelho)."""
+        was_alive = self.alive
+        self.target_x, self.target_y = x, y
+        self.phase = phase
+        self.hp, self.max_hp = hp, max_hp
+        self.charge_state = charge_state
+        self.alive = alive
+        if was_alive and not alive:
+            for _ in range(40):
+                self.particles.append(Particle(self.x + 48, self.y + 48, (255, 200, 0)))
+
     def update(self, dt, player, walls):
+        if self.network_follower:
+            # Stage L6: mesmo recorte de Enemy.update() - IA/fase/padrões
+            # de ataque/dano completamente desligados, só decai visual
+            # (partículas, números flutuantes, hit_flash, o pulso da aura
+            # de fase 2) e interpola posição. Projéteis do boss não são
+            # sincronizados nesta primeira passada (gap conhecido/
+            # documentado - ver docs/coop-implementation-plan.md) - um
+            # guest não vê os projéteis do boss ainda, só aplica o dano/
+            # estado que o snapshot mais recente trouxer.
+            speed = 10.0  # 1/s - mesma constante de Enemy/RemotePlayer
+            self.x += (self.target_x - self.x) * speed * dt
+            self.y += (self.target_y - self.y) * speed * dt
+            self.particles = [p for p in self.particles if p.life > 0]
+            for p in self.particles:
+                p.update(dt)
+            self.floating_numbers = [n for n in self.floating_numbers if n.alive]
+            for n in self.floating_numbers:
+                n.update(dt)
+            if self.alive and self.hit_flash > 0:
+                self.hit_flash -= dt
+            if self.phase == 2:
+                self.enrage_timer += dt
+            return
+
         # Update particles
         self.particles = [p for p in self.particles if p.life > 0]
         for p in self.particles:
@@ -554,9 +603,26 @@ class CacodemonBoss:
         self.hp_bar = ProgressBar(self.width, 10, (60,0,0), (220,100,0), border_width=1)
         self.hud_bar = ProgressBar(400, 16, (60,0,0), (255,150,0), border_width=2, margin=2)
 
+        # Stage L6 - mesma chave que Boss/Enemy/RemotePlayer já usam.
+        self.network_follower = False
+        self.target_x = self.x
+        self.target_y = self.y
+
     @property
     def rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
+
+    def apply_snapshot(self, x, y, hp, max_hp, alive):
+        """Stage L6 - sem phase/charge_state (CacodemonBoss não tem
+        nenhum dos dois), mesma relação de apply_snapshot() das outras
+        classes: nunca simula, só aplica o que o host decidiu."""
+        was_alive = self.alive
+        self.target_x, self.target_y = x, y
+        self.hp, self.max_hp = hp, max_hp
+        self.alive = alive
+        if was_alive and not alive:
+            for _ in range(40):
+                self.particles.append(Particle(self.x + self.width // 2, self.y + self.height // 2, (255, 100, 0)))
 
     def take_damage(self, amount, dtype="physical", crit=False, knockback_from=None):
         if self.hit_flash > 0.05:
@@ -591,6 +657,21 @@ class CacodemonBoss:
         self.bob_timer += dt
         self.bob_offset = 15 * math.sin(self.bob_timer * 2)
         self.hit_flash = max(0, self.hit_flash - dt)
+
+        if self.network_follower:
+            # Stage L6: mesmo recorte das outras classes - IA/dano
+            # completamente desligados, só decai visual (bob/hit_flash já
+            # rodaram acima, valem pros dois modos) e interpola posição.
+            speed = 10.0
+            self.x += (self.target_x - self.x) * speed * dt
+            self.y += (self.target_y - self.y) * speed * dt
+            self.particles = [p for p in self.particles if p.life > 0]
+            for p in self.particles:
+                p.update(dt)
+            self.floating_numbers = [n for n in self.floating_numbers if n.alive]
+            for n in self.floating_numbers:
+                n.update(dt)
+            return
 
         if self.knockback_timer > 0:
             # Stage K9: same test-before-commit shape this class's own

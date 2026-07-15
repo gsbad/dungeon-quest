@@ -21,7 +21,7 @@ from game.difficulty import DIFFICULTIES
 from game.items import ITEMS
 import game.items as items
 from game.spells import SPELLS
-from game.status_effects import STATUS_EFFECTS, ORIGINAL_DEBUFF_IDS
+from game.status_effects import STATUS_EFFECTS, ORIGINAL_DEBUFF_IDS, PVP_DEBUFF_IDS
 from game.stances import STANCES
 import game.player as player
 
@@ -103,7 +103,7 @@ def _apply_one(key, raw_value):
     # dict-of-dicts case above this needs a ._replace() + reassignment into
     # the dict rather than an in-place field set.
     if len(parts) == 3 and parts[0] in ("debuff", "buff") and parts[1] in STATUS_EFFECTS:
-        is_debuff = parts[1] in ORIGINAL_DEBUFF_IDS
+        is_debuff = parts[1] in ORIGINAL_DEBUFF_IDS or parts[1] in PVP_DEBUFF_IDS
         if (parts[0] == "debuff") != is_debuff:
             return  # e.g. "buff.poison.*" - wrong prefix for this id, ignore
         defn = STATUS_EFFECTS[parts[1]]

@@ -1,5 +1,11 @@
 # Plano de implementação: modo cooperativo
 
+**Status: implementado (L1-L14 completos).** Ver `docs/design.md`'s seção
+"Modo cooperativo" pro resumo das mecânicas e `docs/architecture.md` pros
+módulos/endpoints - este documento continua valendo como registro
+histórico das decisões e da ordem de construção, mas não descreve mais um
+plano em aberto.
+
 Companheiro de `docs/coop-feasibility.md` (Stage K21) — aquele documento
 decidiu **o quê** e **por quê** (arquitetura host-autoritativo, WebSocket
 pelo backend já existente, o que cada peça pedida exige). Este cobre **em

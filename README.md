@@ -37,6 +37,7 @@ Uma campanha em **3 atos** (13 fases, incluindo uma secreta), com sistema de atr
 - **Save/load** persistente, local e (opcionalmente) sincronizado na nuvem via login Google.
 - **Painel de debug** (`F1`, PC apenas) pra testar atributos, economia, dificuldade, status effects, posturas e clima sem precisar re-jogar a campanha inteira.
 - **Painel de balanceamento admin** (`/admin`, backend) organizado em abas por categoria (Monstros/Magias/Itens/Buffs/Debuffs/Posturas/Dificuldade), com um editor de pixel real (grade 16x16, clique/arraste) pra sobrescrever a aparência de qualquer monstro/item sem precisar editar código.
+- **Cooperativo online** (LAN/internet, sem limite de jogadores) — entra numa room por um código curto, sem precisar de login. Host-autoritativo (inimigos/boss sincronizados), XP compartilhado, jogador "caído" reviva sozinho em 5s (a partida acaba se todos caírem juntos), PvP amigável com consequência real (Traiçoeiro/Homicida punem quem acerta/derruba um aliado; Reação Justa/Acerto de Contas recompensam a vítima contra quem a atingiu), e chat por balão de fala (Enter, PC).
 - Roda no navegador (PC e celular, via Pygbag/WebAssembly) — deploy automático via GitHub Actions a cada push em `main` (ver [`docs/deploy.md`](docs/deploy.md)).
 
 ---

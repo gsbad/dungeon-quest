@@ -468,6 +468,41 @@ class SettingsButton:
         surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
 
 
+class CoopButton:
+    """Stage L4 (docs/coop-implementation-plan.md) - quick-access to the
+    coop room join/create overlay, same translucent-circle pattern as
+    PaperdollButton/ItemsButton/LeaderboardButton/SettingsButton above (two
+    overlapping heads, RPG-shorthand "party"). No key badge - same
+    click/tap-only reasoning as SettingsButton, no dedicated keyboard
+    shortcut to spare."""
+
+    def __init__(self, cx, cy, radius=22):
+        self.cx = cx
+        self.cy = cy
+        self.radius = radius
+
+    @property
+    def rect(self):
+        d = self.radius * 2
+        return pygame.Rect(self.cx - self.radius, self.cy - self.radius, d, d)
+
+    def draw(self, surface):
+        d = self.radius * 2
+        buf = pygame.Surface((d, d), pygame.SRCALPHA)
+        pygame.draw.circle(buf, (25, 25, 35, 140), (self.radius, self.radius), self.radius)
+        pygame.draw.circle(buf, (230, 230, 245, 190), (self.radius, self.radius), self.radius, 2)
+
+        color = (210, 210, 225, 230)
+        r = self.radius
+        # Two overlapping "person" glyphs (head circle + shoulder arc each).
+        for dx in (-5, 5):
+            hx, hy = r + dx, r - 5
+            pygame.draw.circle(buf, color, (hx, hy), 4, 2)
+            pygame.draw.arc(buf, color, (hx - 7, hy + 2, 14, 12), 3.4, 6.0, 2)
+
+        surface.blit(buf, (self.cx - self.radius, self.cy - self.radius))
+
+
 class InputManager:
     """
     Single translation layer between raw pygame input (keyboard, mouse,
@@ -644,6 +679,22 @@ class InputManager:
             self._actions.discard(action)
             return True
         return False
+
+    def clear_actions(self):
+        """Stage L6/L7 (docs/coop-implementation-plan.md): achado ao vivo
+        com tools/coop_harness.py - uma Action ainda não consumida (ex:
+        ESC/PAUSE) sobrevive a uma troca de tela inteira, já que
+        TransitionState.handle_event() é um no-op e nunca chama
+        consume_action(). Uma tecla apertada bem no frame em que uma
+        transição de coop_sync dispara (algo que agora pode acontecer sem
+        nenhuma ação do jogador, puxado por uma mensagem de rede - antes
+        só transições explícitas como entrar num exit existiam) ficava
+        "presa" na fila e era mal-interpretada pelo PRÓXIMO estado (o
+        sintoma real: um guest nascia pausado sozinho, sem ter apertado
+        ESC de novo). Chamado por GameStateManager._transition() no início
+        de toda troca de estado - uma Action é um sinal de UM frame, nunca
+        faz sentido ela atravessar pra um contexto totalmente diferente."""
+        self._actions.clear()
 
     def tapped_rect(self, rect):
         for i, (x, y) in enumerate(self._taps):

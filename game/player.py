@@ -7,7 +7,7 @@ from game.assets import (
     create_pickaxe_icon,
 )
 from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL, mitigate
-from game.status_effects import StatusEffectCarrier
+from game.status_effects import StatusEffectCarrier, DirectedBonusCarrier
 from game.professions import determine_profession
 from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
 from game.combat_fx import (
@@ -43,6 +43,18 @@ PICKAXE_SWING_DURATION = 0.25
 # returns - long enough to read as a deliberate beat, short enough not to
 # feel like a lockout on a hazardous floor.
 KEY_POSE_DURATION = 1.4
+
+# Stage L9 (docs/coop-implementation-plan.md): decisão #1 do plano -
+# revive automático, sem precisar de outro jogador por perto. 5s cravado
+# no pedido original ("revive de 5s"). Metade do HP máximo ao levantar -
+# volta pra luta, mas não de graça (o plano não especifica a fração,
+# julgamento razoável: nem trivial demais, nem outra queda imediata).
+DOWNED_DURATION = 5.0
+DOWNED_REVIVE_HP_FRAC = 0.5
+
+# Stage L14 (docs/coop-implementation-plan.md): "balão de fala acima do
+# herói, 3.5s" - número cravado no pedido original.
+CHAT_BUBBLE_DURATION = 3.5
 
 # Stage E2/E3 hotbar - 3 spell slots (keys F/Q/R, already cast this way)
 # plus 3 item slots (keys 4/5/6, new). Slot background tint + a real pixel
@@ -152,6 +164,12 @@ class Player:
         # stance_multiplier()) self.profession. Moved up from their old
         # spots further down (order never mattered before this).
         self.status = StatusEffectCarrier()
+        # Stage L11 (docs/coop-implementation-plan.md): separado de
+        # self.status de propósito - bonus dirigido (jogador->jogador,
+        # L12's Reacao Justa/Acerto de Contas) não é "meu stat X esta Y%
+        # melhor", é "eu causo mais dano especificamente contra Y" - ver
+        # game/status_effects.py's DirectedBonusCarrier.
+        self.vengeance = DirectedBonusCarrier()
         self.profession = determine_profession(self.stats)
         # Stage K13: stance_multiplier()/_bonus() (called by the max_hp read
         # right below) check this flag too - same construction-order class
@@ -234,6 +252,22 @@ class Player:
         # state overrides normal movement" shape as dashing/knockback.
         self.key_pose_timer = 0.0
 
+        # Stage L9: "caído" em coop (game_over normal continua intacto em
+        # single-player - GameplayState só chama trigger_downed() quando
+        # net_coop.is_connected()). Mesma forma de key_pose_timer, mas
+        # prioridade MÁXIMA no if/elif de update() - nada interrompe um
+        # downed, nem knockback, só o próprio timer zerando.
+        self.downed = False
+        self.downed_timer = 0.0
+
+        # Stage L14 (docs/coop-implementation-plan.md): balão de fala -
+        # chat_timer > 0 enquanto o balão deve aparecer (3.5s, decrementado
+        # em update() como qualquer outro timer temporário aqui). Sem
+        # histórico/persistência nenhuma - só o texto mais recente, some
+        # sozinho.
+        self.chat_text = ""
+        self.chat_timer = 0.0
+
         self.floating_numbers = []  # Stage K6
 
         # Stage K9: knockback - a short window where movement_vector-driven
@@ -251,6 +285,13 @@ class Player:
         # is a short i-frame window after a hit, not a toggle. Never
         # persisted (game/save.py) - always False on a fresh/loaded Player.
         self.debug_invincible = False
+
+        # Stage L7 (docs/coop-implementation-plan.md): "monster" cobre todo
+        # dano de hoje (monstro/boss/hazard) - "player" é o valor novo,
+        # setado só por take_damage() quando o golpe vem de outro jogador
+        # (PvP). Consumido pela Fase 3 (L11/L12), não por nada em L7.
+        self.last_attacker_source = None
+        self.last_attacker_player_id = None
 
         self.direction = "down"  # up/down/left/right
 
@@ -426,7 +467,7 @@ class Player:
 
     def can_cast(self, spell_id):
         spell = SPELLS[spell_id]
-        return (meets_requirements(self.stats, spell_id)
+        return (not self.downed and meets_requirements(self.stats, spell_id)
                 and self.spell_cooldowns.get(spell_id, 0) <= 0
                 and self.mana >= spell["mana_cost"])
 
@@ -498,8 +539,17 @@ class Player:
         self.status.apply(effect_id)
         return True
 
-    def take_damage(self, amount, dtype="physical", knockback_from=None):
-        if self.invincible or self.debug_invincible:
+    def take_damage(self, amount, dtype="physical", knockback_from=None, source="monster", attacker_player_id=None):
+        """source/attacker_player_id: Stage L7 (docs/coop-implementation-plan.md)
+        - toda origem existente (monstro/boss/hazard) continua "monster",
+        o default, sem nenhum call site precisando mudar. "player" é a
+        origem nova (outro jogador acertou este, via GameplayState's
+        checagem de attack_rect contra RemotePlayer.rect + mensagem
+        "player_hit" - ver states.py). Guardado em self.last_attacker_*
+        pra Fase 3 (L11/L12's Reação Justa/Acerto de Contas) consumir
+        depois - L7 propositalmente não reage a isso ainda (nenhum
+        debuff/bônus aplicado aqui), só deixa a informação disponível."""
+        if self.invincible or self.debug_invincible or self.downed:
             return
         # Stage K11: dodge (Duelista's Postura only, today) - a clean miss,
         # no i-frames spent, no knockback, nothing. Same "roll once, block
@@ -507,6 +557,11 @@ class Player:
         import random
         if self.dodge_chance > 0 and random.random() < self.dodge_chance:
             return
+        # Registrado só quando o golpe realmente acerta (depois do dodge) -
+        # "quem me acertou por último" não faz sentido pra um golpe que
+        # nem chegou a acontecer.
+        self.last_attacker_source = source
+        self.last_attacker_player_id = attacker_player_id
         defense = self.physical_defense if dtype == "physical" else self.magic_defense
         amount = mitigate(amount, defense) * self.status.damage_taken_multiplier * self.stance_multiplier("damage_taken_mult")
         self.hp -= amount
@@ -530,16 +585,24 @@ class Player:
 
     def update(self, dt, walls, movement_vector):
         self.mana = min(self.max_mana, self.mana + self.mana_regen * dt)
-        self.hp = min(self.max_hp, self.hp + self.hp_regen * dt)
+        # Stage L9: hp_regen fica suspenso enquanto caído - senão um
+        # regen rápido o bastante poderia empurrar o hp de volta acima de
+        # 0 ANTES dos 5s acabarem, visualmente estranho pra um estado que
+        # devia significar "fora de combate". self.hp só volta a mudar de
+        # novo no revive (trigger_downed()/o timer expirando abaixo).
+        if not self.downed:
+            self.hp = min(self.max_hp, self.hp + self.hp_regen * dt)
 
         for spell_id in list(self.spell_cooldowns):
             self.spell_cooldowns[spell_id] = max(0.0, self.spell_cooldowns[spell_id] - dt)
 
         # DoT ticks (Veneno/Fogo) go straight to hp, bypassing take_damage -
         # they shouldn't be blocked by melee-hit invincibility frames, and
-        # shouldn't themselves grant any.
+        # shouldn't themselves grant any. Caído é a exceção - já é dano
+        # zero funcionalmente (hp travado em 0), e um tick aqui só
+        # empurraria pra baixo de 0 à toa.
         tick_dmg = self.status.update(dt)
-        if tick_dmg and not self.debug_invincible:
+        if tick_dmg and not self.debug_invincible and not self.downed:
             self.hp -= tick_dmg
             # Stage K6: floating damage number for the DoT tick itself -
             # take_damage() is bypassed here (see comment above), so this
@@ -547,6 +610,7 @@ class Player:
             self.floating_numbers.append(
                 FloatingNumber(self.x + self.width / 2, self.y, tick_dmg, DOT_COLOR)
             )
+        self.vengeance.update(dt)
 
         # Stage K6: floating damage numbers (age/prune every frame,
         # regardless of source - take_damage()/the DoT tick above only add).
@@ -557,7 +621,23 @@ class Player:
         if self.dash_cooldown > 0:
             self.dash_cooldown -= dt
 
-        if self.knockback_timer > 0:
+        if self.downed:
+            # Stage L9: prioridade MÁXIMA - nem knockback interrompe um
+            # jogador caído (ao contrário de dash/key_pose, que cedem
+            # lugar pro knockback abaixo). O timer só conta aqui; revive
+            # (hp/invincibility) é decidido por quem chama update() daqui
+            # pra fora não é necessário - fica tudo contido neste método,
+            # mesmo "se auto-gerencia" que dashing/key_pose_timer já têm.
+            self.downed_timer -= dt
+            if self.downed_timer <= 0:
+                self.downed = False
+                self.hp = self.max_hp * DOWNED_REVIVE_HP_FRAC
+                # Um instante de invencibilidade ao levantar - sem isso um
+                # monstro parado em cima do corpo caído derruba o jogador
+                # nubo mesmo frame que ele volta a poder agir.
+                self.invincible = True
+                self.invincible_timer = self.invincible_duration
+        elif self.knockback_timer > 0:
             # Stage K9: takes priority over everything else, including a
             # dash in progress - getting hit interrupts it (same cleanup
             # Stage K2's normal dash-end path does, so no stale trail).
@@ -635,6 +715,8 @@ class Player:
             self.pickaxe_cooldown -= dt
         if self.pickaxe_swing_timer > 0:
             self.pickaxe_swing_timer -= dt
+        if self.chat_timer > 0:
+            self.chat_timer -= dt
 
         # Invincibility
         if self.invincible:
@@ -645,6 +727,8 @@ class Player:
                 self.flash_timer = 0
 
     def try_attack(self):
+        if self.downed:
+            return False
         if self.attack_cooldown <= 0 and not self.attacking:
             self.attacking = True
             self.attack_timer = self.attack_duration
@@ -654,7 +738,7 @@ class Player:
         return False
 
     def try_pickaxe(self):
-        if self.pickaxe_cooldown > 0:
+        if self.downed or self.pickaxe_cooldown > 0:
             return False
         self.pickaxe_cooldown = PICKAXE_COOLDOWN
         self.pickaxe_swing_timer = PICKAXE_SWING_DURATION
@@ -671,8 +755,31 @@ class Player:
         self.dash_trail = []
         self.attacking = False
 
+    def trigger_downed(self):
+        """Stage L9 (docs/coop-implementation-plan.md): chamado por
+        GameplayState quando self.hp <= 0 EM COOP (single-player continua
+        indo direto pro game_over de sempre - ver o "Check death" no fim
+        de GameplayState.update()). Interrompe qualquer outra pose/ação em
+        andamento, mesma limpeza que trigger_key_found_pose() já faz."""
+        self.downed = True
+        self.downed_timer = DOWNED_DURATION
+        self.hp = 0
+        self.attacking = False
+        self.dashing = False
+        self.dash_trail = []
+        self.key_pose_timer = 0.0
+        self.knockback_timer = 0.0
+
+    def say(self, text):
+        """Stage L14 (docs/coop-implementation-plan.md): mostra um balão
+        de fala por 3.5s - chamado tanto pelo próprio jogador (ao confirmar
+        o ChatWidget) quanto por RemotePlayer.say() no outro lado da rede,
+        mesmo shape."""
+        self.chat_text = text
+        self.chat_timer = CHAT_BUBBLE_DURATION
+
     def can_dash(self):
-        return (self.stats.dexterity >= DASH_DEX_REQ
+        return (not self.downed and self.stats.dexterity >= DASH_DEX_REQ
                 and self.dash_cooldown <= 0 and not self.dashing)
 
     def try_dash(self):
@@ -745,6 +852,15 @@ class Player:
         if self.dash_trail:
             self._draw_dash_trail(surface, cam_x, cam_y)
 
+        sx = int(self.x - cam_x)
+        sy = int(self.y - cam_y)
+
+        if self.downed:
+            # Stage L9: pose deitada + contagem regressiva - nem ataque,
+            # nem dash-trail, nem pickaxe fazem sentido pra quem está caído.
+            self._draw_downed(surface, sx, sy)
+            return
+
         key = self.direction
         if self.attacking:
             key = self.direction + "_atk"
@@ -754,8 +870,6 @@ class Player:
         if self.direction == "left":
             sprite = pygame.transform.flip(self._get_sprite("right_atk" if self.attacking else "right"), True, False)
 
-        sx = int(self.x - cam_x)
-        sy = int(self.y - cam_y)
         surface.blit(sprite, (sx - 8, sy - 12))
 
         if self.key_pose_timer > 0:
@@ -763,6 +877,52 @@ class Player:
 
         if self.pickaxe_swing_timer > 0:
             self._draw_pickaxe_swing(surface, sx, sy)
+
+        if self.chat_timer > 0:
+            self._draw_chat_bubble(surface, sx, sy)
+
+    def _draw_chat_bubble(self, surface, sx, sy):
+        """Stage L14: balão simples (retângulo arredondado + rabicho) acima
+        da cabeça, mesmo texto pros dois lados da rede (RemotePlayer tem
+        um método irmão deste)."""
+        from game.theme import font
+        f = font(13, bold=True)
+        txt = f.render(self.chat_text, True, (20, 20, 24))
+        pad_x, pad_y = 8, 5
+        bw, bh = txt.get_width() + pad_x * 2, txt.get_height() + pad_y * 2
+        bx = sx + self.width // 2 - bw // 2
+        # Stage L14: sem isso, um jogador perto do topo do mapa (spawn é
+        # perto de um canto em várias fases, câmera clampada em y=0 - ver
+        # game/camera.py) teria o balão desenhado POR BAIXO do hotbar/
+        # chips de status no topo da tela (que só desenham depois, por
+        # cima) - achado comparando um screenshot real de
+        # tools/coop_harness.py contra o esperado, o balão simplesmente
+        # não aparecia. _HOTBAR_Y+_HOTBAR_SLOT+6 é onde os chips de status
+        # começam (~48px); soma a altura deles (34px) + folga.
+        by = max(sy - 20 - bh, _HOTBAR_Y + _HOTBAR_SLOT + 6 + 34 + 8)
+        bubble = pygame.Surface((bw, bh + 6), pygame.SRCALPHA)
+        pygame.draw.rect(bubble, (240, 240, 235), (0, 0, bw, bh), border_radius=6)
+        pygame.draw.polygon(bubble, (240, 240, 235),
+                             [(bw // 2 - 5, bh), (bw // 2 + 5, bh), (bw // 2, bh + 6)])
+        surface.blit(bubble, (bx, by))
+        surface.blit(txt, (bx + pad_x, by + pad_y))
+
+    def _draw_downed(self, surface, sx, sy):
+        """Stage L9: gira o sprite parado 90° (deitado no chão) em vez de
+        precisar de uma pose nova em create_player_sprite() por profissão
+        - mesmo espírito econômico de _draw_pickaxe_swing() reusar um
+        ícone em vez de um rig novo. Contagem regressiva em texto acima,
+        mesmo padrão de fonte/cor do overlay PAUSADO (game/states.py)."""
+        from game.theme import font, SUBTEXT
+        sprite = self._get_sprite(self.direction)
+        fallen = pygame.transform.rotate(sprite, 90 if self.direction != "left" else -90)
+        fx = sx - 8 + (sprite.get_width() - fallen.get_width()) // 2
+        fy = sy - 12 + (sprite.get_height() - fallen.get_height()) // 2
+        surface.blit(fallen, (fx, fy))
+        f = font(13, bold=True)
+        secs = max(0, int(self.downed_timer) + 1)
+        txt = f.render(f"Caido - revive em {secs}s", True, SUBTEXT)
+        surface.blit(txt, (sx + self.width // 2 - txt.get_width() // 2, sy - 26))
 
     def _draw_pickaxe_swing(self, surface, sx, sy):
         """Stage K24: a quick pickaxe-icon flash out along the aim

@@ -706,9 +706,10 @@ class Paperdoll:
         per_page_shortcuts = 8
         per_page_status = 5  # icon+name+wrapped-description rows are taller than a shortcut row
 
-        from game.status_effects import STATUS_HELP, ORIGINAL_DEBUFF_IDS
-        debuff_ids = [k for k in STATUS_HELP if k in ORIGINAL_DEBUFF_IDS]
-        buff_ids = [k for k in STATUS_HELP if k not in ORIGINAL_DEBUFF_IDS]
+        from game.status_effects import STATUS_HELP, ORIGINAL_DEBUFF_IDS, PVP_DEBUFF_IDS
+        all_debuff_ids = ORIGINAL_DEBUFF_IDS | PVP_DEBUFF_IDS
+        debuff_ids = [k for k in STATUS_HELP if k in all_debuff_ids]
+        buff_ids = [k for k in STATUS_HELP if k not in all_debuff_ids]
 
         from game.stances import STANCE_DESCRIPTIONS
         stance_names = list(STANCE_DESCRIPTIONS.keys())

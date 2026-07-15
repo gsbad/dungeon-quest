@@ -148,6 +148,34 @@ STATUS_EFFECTS.update({
                               speed_mult=1.10, attack_speed_mult=1.10, crit_chance_add=0.05),
 })
 
+# Stage L10 (docs/coop-implementation-plan.md): PvP amigável - punição no
+# AGRESSOR que acerta/derruba um aliado (game/states.py aplica direto via
+# self.status.apply(), nunca try_apply_debuff() - não é um ataque inimigo
+# que dá pra resistir, é o próprio jogo cobrando a própria ação). "-15%/
+# -35% em todos os stats" (docs/coop-feasibility.md) mapeado pros eixos
+# multiplicativos de combate/sobrevivência - não inclui xp/gold_gain
+# (progressão, não "stat") nem crit_chance_add (aditivo, sem base grande o
+# bastante pra um desconto percentual fazer sentido sem zerar).
+STATUS_EFFECTS.update({
+    "traicoeiro": _buff(10.0, physical_damage_mult=0.85, magic_damage_mult=0.85,
+                         physical_defense_mult=0.85, magic_defense_mult=0.85,
+                         speed_mult=0.85, attack_speed_mult=0.85,
+                         max_hp_mult=0.85, max_mana_mult=0.85),
+    "homicida":   _buff(120.0, physical_damage_mult=0.65, magic_damage_mult=0.65,
+                         physical_defense_mult=0.65, magic_defense_mult=0.65,
+                         speed_mult=0.65, attack_speed_mult=0.65,
+                         max_hp_mult=0.65, max_mana_mult=0.65),
+})
+
+# traicoeiro/homicida landed AFTER ORIGINAL_DEBUFF_IDS was snapshotted
+# above (added post-K12, same as every potion/elixir), so they'd fall into
+# the "buff" bucket everywhere ORIGINAL_DEBUFF_IDS alone decides that split
+# - wrong for these two (negative effects, not something a player opts
+# into like a potion). Callers that need "is this really a debuff" should
+# check `id in (ORIGINAL_DEBUFF_IDS | PVP_DEBUFF_IDS)` instead of
+# ORIGINAL_DEBUFF_IDS alone.
+PVP_DEBUFF_IDS = frozenset({"traicoeiro", "homicida"})
+
 
 class ActiveEffect:
     def __init__(self, effect_id):
@@ -235,6 +263,41 @@ class StatusEffectCarrier:
         return sum(getattr(effect.defn, field) for effect in self.active.values())
 
 
+class DirectedBonusCarrier:
+    """Stage L11 (docs/coop-implementation-plan.md): bonus dirigido
+    jogador->jogador - "eu causo mais dano especificamente contra quem
+    me acertou/derrubou" (Reacao Justa/Acerto de Contas, Stage L12), uma
+    relacao que StatusEffectCarrier acima NAO consegue expressar (lá,
+    todo bonus é "meu stat X esta Y% melhor", sem nocao de QUEM está do
+    outro lado do dano). Guarda por target_player_id em vez de por
+    effect_id - o mesmo jogador pode ter um bonus ativo contra um aliado
+    e nenhum contra outro ao mesmo tempo (ex: só o Fulano que te acertou
+    último leva o troco, não a room inteira).
+
+    Só um multiplicador de dano físico por enquanto (o único tipo de
+    dano que PvP já resolve - ver _handle_pvp_attacks() em
+    game/states.py) - não um StatusEffectDef inteiro, que seria
+    estrutura demais pra um único número com prazo de validade."""
+    def __init__(self):
+        self.active = {}  # target_player_id -> {"mult": float, "remaining": float}
+
+    def grant(self, target_player_id, mult, duration):
+        """Concede (ou substitui, mesma semântica de "refresca o clock"
+        de StatusEffectCarrier.apply()) um bonus de dano contra um alvo
+        específico."""
+        self.active[target_player_id] = {"mult": mult, "remaining": duration}
+
+    def multiplier_against(self, target_player_id):
+        entry = self.active.get(target_player_id)
+        return entry["mult"] if entry else 1.0
+
+    def update(self, dt):
+        for tid in list(self.active):
+            self.active[tid]["remaining"] -= dt
+            if self.active[tid]["remaining"] <= 0:
+                del self.active[tid]
+
+
 # Display-only metadata for the HUD debuff chips - kept separate from the
 # balance numbers above so tweaking a color doesn't touch gameplay data.
 STATUS_DISPLAY = {
@@ -270,6 +333,8 @@ STATUS_DISPLAY = {
     "elixir_guardian": ("EGU", (120, 180, 225)),
     "elixir_hunter":   ("ECA", (130, 190, 100)),
     "elixir_champion": ("ECP", (255, 225, 120)),
+    "traicoeiro": ("TRA", (200, 60, 60)),
+    "homicida":   ("HOM", (120, 10, 10)),
 }
 
 # Stage J4: full name + player-facing description per effect, read by the
@@ -308,4 +373,6 @@ STATUS_HELP = {
     "elixir_guardian": ("Elixir do Guardiao", "+10% vida maxima, +10% resist. fisica por 5min."),
     "elixir_hunter":   ("Elixir do Cacador", "+10% velocidade de movimento, +10% velocidade de ataque por 5min."),
     "elixir_champion": ("Elixir do Campeao", "+10% em todos os atributos, +5% critico por 2min."),
+    "traicoeiro": ("Traicoeiro", "-15% em todos os stats por 10s - acertou um aliado em coop."),
+    "homicida":   ("Homicida", "-35% em todos os stats por 2min - derrubou um aliado em coop."),
 }
