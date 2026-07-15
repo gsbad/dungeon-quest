@@ -118,11 +118,19 @@ computador que serve o jogo.
 pip install pygbag
 
 # Terminal 1 - para abrir no navegador do próprio PC
-python -m pygbag --bind localhost --port 8000 main.py
+python -m pygbag --bind localhost --port 8000 --width 800 --height 600 --template pygbag_template.tmpl main.py
 
 # Terminal 2 - para abrir no celular (rode em paralelo, IP diferente, porta diferente)
-python -m pygbag --bind <IP-do-PC-na-rede> --port 8001 main.py
+python -m pygbag --bind <IP-do-PC-na-rede> --port 8001 --width 800 --height 600 --template pygbag_template.tmpl main.py
 ```
+
+**`--template pygbag_template.tmpl --width 800 --height 600` são obrigatórios** -
+sem eles o Pygbag usa seu template genérico embutido (tema verde/azul, sem o
+gate de login, resolução 1280x720 errada) em vez do nosso, e a página local
+não tem nada a ver com a de produção. O código do jogo em si já é sempre o
+mais atual (o Pygbag empacota direto do `main.py`/`game/` do checkout, não de
+um build antigo) - só a página HTML em volta do canvas fica desatualizada sem
+essas flags.
 
 - No **PC**, abra `http://localhost:8000`.
 - No **celular**, conecte-o na mesma rede Wi-Fi do PC e abra
