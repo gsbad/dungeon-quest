@@ -44,6 +44,16 @@ jobs:
           python3 -m pygbag --build --width 800 --height 600 \
             --template pygbag_template.tmpl main.py
 
+      # pygbag only bundles main.py + the template - it has no idea
+      # og-preview.png (referenced by the og:image tag baked into the
+      # template) exists, so a plain rebuild silently drops it and the
+      # next "Deploy web bundle" step's --delete wipes it from the server
+      # too. Copying it in here keeps the tracked source of truth at
+      # docs/assets/og-preview.png (see pygbag_template.tmpl's og:image
+      # comment) instead of duplicating the file in git.
+      - name: Copy static assets not covered by pygbag
+        run: cp docs/assets/og-preview.png build/web/og-preview.png
+
       - name: Deploy web bundle
         run: |
           # --delete: without it, an old build's leftover files (e.g. an
