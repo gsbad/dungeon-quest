@@ -29,11 +29,29 @@ Não há suíte de testes tradicional (pytest) - o jogo é validado ao vivo, num
 
 Se sua mudança mexe em balanceamento (dano, XP, custo de item/magia), rode `tools/balance_sim.py` antes/depois e compare.
 
+## Fluxo de branches
+
+`main` é protegida (exige PR + 1 aprovação, sem push direto) e é a branch de produção - todo merge nela dispara o deploy automático pra VM (`.github/workflows/deploy.yml`). Nada de branches `develop`/`release` separadas: é GitHub Flow, não GitFlow completo.
+
+1. Crie uma branch a partir de `main`, nomeada pela issue quando houver uma: `issue-42-fix-boss-hitbox` ou `feature/nome-curto`.
+2. Commits pequenos e descritivos, PR quando estiver pronto pra revisão (rascunho antes disso, se quiser feedback cedo).
+3. Peça revisão de quem não escreveu o código - o Gustavo ou o Glauco. Depois de aprovado, merge (squash, pra manter o histórico da `main` limpo).
+4. O deploy acontece sozinho no merge. Confirme em produção depois (`https://129.80.222.127.sslip.io`), CI verde não garante que uma rota nova está de fato acessível via Caddy - ver a seção de gotchas em `docs/deploy.md`.
+
 ## Abrindo um PR
 
 - Descreva o quê e por quê, não só o quê - o "por quê" é o que normalmente falta e o que mais ajuda na revisão.
 - PRs pequenos e focados são mais fáceis de revisar que um PR gigante mexendo em várias coisas não relacionadas.
 - Se sua mudança precisar de uma nova rota no backend, lembre de adicionar o bloco correspondente no `Caddyfile` de produção também (documentado em `docs/deploy.md`) - só existir no FastAPI não é suficiente.
+
+## Pedindo pro Claude implementar
+
+Este repo tem o [Claude Code GitHub Action](https://github.com/anthropics/claude-code-action) instalado (`.github/workflows/claude.yml`). Marcar `@claude` com uma descrição do que precisa:
+
+- **Numa issue** - Claude implementa a mudança e abre um PR sozinho.
+- **Num comentário de review de PR** - Claude aplica o ajuste pedido e empurra um commit na mesma branch.
+
+O PR que ele abre passa pelo mesmo fluxo de revisão de qualquer outro - `main` protegida vale pra ele também, não só pra humanos. Alternativa sem depender do bot: descrever a issue/PR numa sessão interativa do Claude Code (terminal) e pedir pra implementar - mais controle passo a passo, útil pra mudanças maiores ou mais ambíguas.
 
 ## Reportando bugs
 
