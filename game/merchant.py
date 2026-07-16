@@ -1,8 +1,8 @@
 import math
 import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
-from game.ui import Panel, draw_text, Carousel
-from game.items import ITEMS, MAX_STOCK, use_item, buy_item
+from game.ui import Panel, draw_text, Carousel, draw_tooltip
+from game.items import ITEMS, MAX_STOCK, use_item, buy_item, item_tooltip_line
 from game.assets import create_potion_icon
 from game.input_system import Action
 
@@ -140,7 +140,7 @@ class ItemsOverlay:
                         net.trigger_sync(save_state)
                     return
 
-    def draw(self, surface, player):
+    def draw(self, surface, player, mouse_pos=None):
         self._sync_carousel()
         overlay = pygame.Surface((SW, SH), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
@@ -224,6 +224,9 @@ class ItemsOverlay:
                 label = "Max" if at_cap else "Comprar"
                 draw_text(surface, label, fb, (255, 255, 255) if can_buy else (120, 120, 120),
                           rect.centerx, rect.y + 6, shadow=False)
+
+            tip = [item["name"], item_tooltip_line(item_id)]
+            draw_tooltip(surface, mouse_pos, self._row_rect(i), tip, SW, SH)
 
         self.carousel.draw(surface, font(13), indicator_y=self.py + _ROWS_START_Y + _ROWS_PER_PAGE * _ROW_H + 14)
 

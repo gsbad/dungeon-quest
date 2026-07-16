@@ -1893,7 +1893,7 @@ class GameplayState:
 
         # Itens overlay
         if self.items_open:
-            self.items.draw(self.screen, self.player)
+            self.items.draw(self.screen, self.player, mouse_pos=self.input.mouse_pos())
 
         # Debug panel overlay (Stage B5 follow-up - F1, PC only)
         if self.debug_panel_open:

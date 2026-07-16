@@ -130,27 +130,6 @@ def hotbar_slots(player):
     return slots
 
 
-def _item_tooltip_line(item_id):
-    """Stage K8: ITEMS (game/items.py) has no stored description field -
-    this reads the same effect keys use_item() branches on and turns them
-    into one objective-numbers sentence, so a new potion just works here
-    without also needing hand-written tooltip text kept in sync."""
-    from game.items import ITEMS
-    item = ITEMS[item_id]
-    parts = []
-    if "heal_hp_frac" in item:
-        parts.append(f"Cura {round(item['heal_hp_frac'] * 100)}% da vida")
-    if "heal_mana_frac" in item:
-        parts.append(f"Restaura {round(item['heal_mana_frac'] * 100)}% da mana")
-    if "cures" in item:
-        parts.append("Cura: " + ", ".join(sorted(item["cures"])))
-    if "buff" in item:
-        from game.status_effects import STATUS_HELP
-        _, desc = STATUS_HELP.get(item["buff"], (item["buff"], ""))
-        parts.append(desc)
-    return " | ".join(parts) if parts else ""
-
-
 class Player:
     def __init__(self, x, y, audio_mgr):
         self.x = float(x)
@@ -1063,7 +1042,7 @@ class Player:
 
     def _draw_hotbar(self, surface, touch_active=False, mouse_pos=None):
         from game.theme import font, ACCENT_GOLD, SW, SH
-        from game.items import ITEMS
+        from game.items import ITEMS, item_tooltip_line
         from game.ui import draw_tooltip
         f_key = font(11, bold=True)
         f_count = font(11, bold=True)
@@ -1188,7 +1167,7 @@ class Player:
                 tip = [spell["name"], spell["description"],
                        f"Custo: {spell['mana_cost']} mana | Recarga: {spell['cooldown']:.1f}s"]
             elif kind == "item":
-                tip = [ITEMS[key]["name"], _item_tooltip_line(key)]
+                tip = [ITEMS[key]["name"], item_tooltip_line(key)]
             elif kind == "attack":
                 tip = ["Ataque", f"Corpo a corpo | Recarga: {self.stats.attack_cooldown:.2f}s"]
             elif kind == "dash":
