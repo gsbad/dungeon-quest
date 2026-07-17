@@ -4,7 +4,7 @@ import math
 from game.assets import (create_tile, create_chest_sprite, create_cracked_wall_overlay, create_dig_marker,
                           create_treasure_mark_icon)
 from game.enemy import Enemy, BASE_XP, GOLD_DROPS, GoldDrop, Particle
-from game.stats import xp_for_kill, gold_for_kill
+from game.stats import xp_for_kill, gold_for_kill, resolve_family
 from game.affixes import PARAGON_REWARD_MULT, CHAMPION_REWARD_MULT
 from game.theme import font, ACCENT_GOLD
 import game.net_coop as net_coop
@@ -109,6 +109,16 @@ LEVEL_MAPS = {
         "bg": (20, 80, 20),
         "title": "Floresta Encantada",
         "description": "Uma floresta densa envolta em neblina - o primeiro territorio disputado com esqueletos e goblins.",
+        # Estagio O: nomes de familia agora, nao mais etypes crus - ver
+        # game/stats.py's MONSTER_FAMILIES/resolve_family(). Mantido
+        # PERTO do roster original de proposito (so skeleton/goblin,
+        # ambos ja lentos/gentis) - achado ao vivo pelo proprio
+        # tools/coop_harness.py: rato/lobo (base_speed 140/135, bem mais
+        # rapidos que skeleton=70/goblin=110) perto do spawn perseguiam o
+        # jogador rapido demais e atrapalhavam o posicionamento preciso
+        # que os testes de coop dependem - movidos pra fase 2 (nunca
+        # exercida pelo harness) em vez de forcar a fase 1, que TODO teste
+        # de coop passa por ela.
         "enemies": ["skeleton", "goblin"],
         "layout": [
             "####################",
@@ -144,7 +154,10 @@ LEVEL_MAPS = {
         "bg": (160, 130, 60),
         "title": "Ruinas do Deserto",
         "description": "Ruinas soterradas por uma tempestade de areia constante, com poças acidas deixadas por goblins.",
-        "enemies": ["skeleton", "goblin", "goblin"],
+        # Estagio O: rato/lobo/urso vieram da fase 1 (ver comentario lá) -
+        # a fase 2 nunca e exercida pelo coop harness, seguro pra variedade
+        # mais rapida/agressiva.
+        "enemies": ["skeleton", "goblin", "orc", "caranguejo", "rato", "lobo", "urso"],
         "layout": [
             "####################",
             "#..................#",
@@ -181,7 +194,10 @@ LEVEL_MAPS = {
         "bg": (30, 20, 50),
         "title": "Masmorra das Sombras",
         "description": "Corredores de pedra sem luz do sol, onde um Cavaleiro Negro comanda uma horda de esqueletos e goblins.",
-        "enemies": ["dark_knight", "skeleton", "goblin", "goblin", "goblin"],
+        # Estagio O: "orc" adicionado de proposito - a fase seguinte (4) e
+        # o boss orc_warlord, que antes nao tinha NENHUM orc comum na
+        # campanha pra dar contexto narrativo (so existia como boss).
+        "enemies": ["dark_knight", "skeleton", "orc"],
         "layout": [
             "####################",
             "#..................#",
@@ -248,7 +264,7 @@ LEVEL_MAPS = {
         "bg": (25, 40, 25),
         "title": "Pantano Sombrio",
         "description": "Um pantano encharcado pela chuva, lar de aranhas venenosas, serpentes e treants guardioes que se escondem entre as arvores retorcidas.",
-        "enemies": ["aranha", "serpente", "treant"],
+        "enemies": ["aranha", "saurio", "sapo", "treant", "geleia"],
         # Stage individualization pass: 2 extra root-cluster obstacles
         # (row6/row9) - a small nod to "treants lurking among the trees"
         # without touching the water hazards or existing E spawn rows.
@@ -284,7 +300,7 @@ LEVEL_MAPS = {
         "bg": (25, 15, 40),
         "title": "Torre Amaldicoada",
         "description": "Uma torre castigada por tempestades, guardada por um cavaleiro da morte, um troll amaldicoado e esqueletos remanescentes.",
-        "enemies": ["skeleton", "troll", "death_knight"],
+        "enemies": ["skeleton", "brute", "fantasma", "minotauro"],
         "layout": [
             "####################",
             "#..................#",
@@ -317,7 +333,7 @@ LEVEL_MAPS = {
         "bg": (20, 20, 30),
         "title": "Cripta Perdida",
         "description": "Uma cripta esquecida na escuridao, infestada de zumbis, vermes cadavericos e pequenos imps que se alimentam dos restos.",
-        "enemies": ["zumbi", "verme", "imp"],
+        "enemies": ["zumbi", "verme", "demonio", "vampiro"],
         "layout": [
             "####################",
             "#..................#",
@@ -385,7 +401,7 @@ LEVEL_MAPS = {
         "bg": (30, 30, 45),
         "title": "Salao dos Ecos",
         "description": "Um salao gelado onde a neve cai sem parar, palco de um ritual profano guardado por um corcel sombrio, um acolito e uma feiticeira.",
-        "enemies": ["dark_horse", "acolito", "feiticeira"],
+        "enemies": ["dark_horse", "bruxa", "fantasma"],
         "layout": [
             "####################",
             "#..................#",
@@ -418,7 +434,7 @@ LEVEL_MAPS = {
         "bg": (90, 35, 15),
         "title": "Abismo de Cinzas",
         "description": "Um abismo vulcanico sob chuva de cinzas, onde caes de fogo, ogros brutais e elementais de pedra guardam as fendas incandescentes.",
-        "enemies": ["fire_hound", "ogro", "elemental_pedra"],
+        "enemies": ["fire_hound", "golem", "drake"],
         "layout": [
             "####################",
             "#..................#",
@@ -451,7 +467,7 @@ LEVEL_MAPS = {
         "bg": (20, 10, 25),
         "title": "Corredor Final",
         "description": "O ultimo corredor antes do trono, guardado por uma quimera, lyzardmen ageis e esqueletos negros sob uma neblina densa.",
-        "enemies": ["chimera", "lyzardman", "dark_skeleton"],
+        "enemies": ["chimera", "saurio", "lobisomem"],
         "layout": [
             "####################",
             "#..................#",
@@ -549,8 +565,15 @@ LEVEL_MAPS = {
 
 
 class Level:
-    def __init__(self, level_num, extra_speed_mult=1.0, ml_bonus=0, audio_mgr=None, network_follower=False):
+    def __init__(self, level_num, extra_speed_mult=1.0, ml_bonus=0, audio_mgr=None, network_follower=False,
+                 tier_index=0):
         self.level_num = level_num
+        # Estagio O (leva de conteudo - redesenho de fases): qual dos 3
+        # tiers de cada familia em self.data["enemies"] spawna - ver
+        # game/stats.py's resolve_family()/difficulty_tier_index().
+        # Default 0 (fraco) cobre qualquer chamador antigo que ainda nao
+        # passe isso (nunca quebra, só nao varia por dificuldade).
+        self.tier_index = tier_index
         # Stage H7: forwarded to every spawned Enemy so mob attacks can play
         # their own sound (see game/audio.py's attack_{etype} sounds).
         self.audio = audio_mgr
@@ -702,7 +725,12 @@ class Level:
     def _build(self):
         floor_type = self.data["floor"]
         wall_type  = "wall"
-        enemy_types = self.data["enemies"]
+        # Estagio O: self.data["enemies"] agora lista NOMES DE FAMILIA
+        # (game/stats.py's MONSTER_FAMILIES) - resolvido pro etype
+        # concreto do tier certo aqui, uma vez só. resolve_family()
+        # devolve o proprio nome se nao for uma familia conhecida (etype
+        # cru direto, mesmo comportamento de sempre).
+        enemy_types = [resolve_family(name, self.tier_index) for name in self.data["enemies"]]
         ei = 0
 
         speed_mul = self.data.get("speed_multiplier", 1.0) * self.extra_speed_mult

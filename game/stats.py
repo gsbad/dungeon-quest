@@ -338,6 +338,65 @@ GOLD_DROPS = {
     "ogro_anciao": 15,
 }
 
+# Estagio O (leva de conteudo - redesenho de fases): as 20 familias (+7
+# monstros standalone, sem familia de 3 tiers - resolvem pra si mesmos em
+# qualquer tier) que o Estagio N construiu. LEVEL_MAPS's "enemies"
+# (game/level.py) agora referencia NOMES DE FAMILIA em vez de etypes
+# concretos - resolve_family() decide qual dos 3 tiers spawna, baseado na
+# dificuldade atual (ver difficulty_tier_index() abaixo). Um etype
+# concreto continua funcionando direto (resolve_family() devolve ele
+# mesmo se o nome nao estiver aqui), entao nada quebra pra quem ainda
+# referencia um etype cru.
+MONSTER_FAMILIES = {
+    "rato": ["rato", "rato_gigante", "rato_toxico"],
+    "aranha": ["aranha", "aranha_cacadora", "rainha_aranha"],
+    "sapo": ["sapo", "sapo_venenoso", "sapo_rei"],
+    "goblin": ["goblin", "goblin_guerreiro", "lider_goblin"],
+    "skeleton": ["skeleton", "dark_skeleton", "death_knight"],
+    "minotauro": ["minotauro_jovem", "minotauro", "minotauro_ancestral"],
+    "lobo": ["lobo", "lobo_alfa", "lobo_das_sombras"],
+    "urso": ["urso", "urso_da_matilha", "urso_ancestral"],
+    "orc": ["orc_recruta", "orc_guerreiro", "orc_brutamontes"],
+    "drake": ["drake_jovem", "drake", "drake_anciao"],
+    "demonio": ["imp", "demonio_menor", "demonio_maior"],
+    "vampiro": ["servo_vampirico", "vampiro", "lorde_vampiro"],
+    "fantasma": ["espectro", "fantasma", "espirito_vingativo"],
+    "golem": ["elemental_pedra", "golem_de_ferro", "golem_runico"],
+    "geleia": ["geleia", "geleia_acida", "geleia_real"],
+    "caranguejo": ["caranguejo", "caranguejo_blindado", "rei_caranguejo"],
+    "saurio": ["serpente", "lyzardman", "saurio_ancestral"],
+    "bruxa": ["acolito", "feiticeira", "bruxa_suprema"],
+    "lobisomem": ["licantropo", "lobisomem", "lobisomem_alfa"],
+    "zumbi": ["zumbi", "zumbi_podre", "abominacao"],
+    "brute": ["troll", "ogro", "ogro_anciao"],
+}
+
+
+def resolve_family(name, tier_index):
+    """name: chave de MONSTER_FAMILIES OU ja um etype concreto (fallback -
+    devolve ele mesmo sem variar por tier, cobre os 7 monstros standalone
+    - dark_knight/treant/dark_horse/chimera/verme/fire_hound - e qualquer
+    LEVEL_MAPS antigo que ainda liste um etype direto)."""
+    tiers = MONSTER_FAMILIES.get(name)
+    if tiers is None:
+        return name
+    return tiers[max(0, min(2, tier_index))]
+
+
+def difficulty_tier_index(difficulty_order):
+    """Reusa o dial de dificuldade ja existente (game/difficulty.py's
+    "order", 0-4) em vez de inventar um sistema paralelo - Normal/Dificil
+    (order 0-1) mostram o tier fraco de cada familia, Muito Dificil/
+    Pesadelo (2-3) o medio, Inferno (4) o forte. Jogar numa dificuldade
+    mais alta passa a mostrar monstros genuinamente diferentes (nao só
+    numeros maiores via ml_bonus, que continua se aplicando por cima)."""
+    if difficulty_order <= 1:
+        return 0
+    if difficulty_order <= 3:
+        return 1
+    return 2
+
+
 # Boss identities (Stage B4) - the campaign now has 3 acts, each ending in
 # its own boss, instead of one boss for the whole game. All 3 share the
 # exact same Boss class/attack-pattern shape (see game/boss.py) - only the

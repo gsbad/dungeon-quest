@@ -28,7 +28,7 @@ from game.input_system import (
     CoopButton,
 )
 from game.audio import SoundButton
-from game.stats import POINTS_PER_LEVEL, MAX_LEVEL
+from game.stats import POINTS_PER_LEVEL, MAX_LEVEL, difficulty_tier_index
 from game.spells import SPELLS
 from game.class_kits import spells_for, basic_attack_for
 from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER, next_difficulty, is_unlocked
@@ -709,8 +709,15 @@ class GameplayState:
         # na PRÓXIMA fase (ver docs/coop-implementation-plan.md's nota
         # sobre esse limite de v1). O host nunca é follower (só guests).
         self.net_follower = net_coop.is_connected() and not net_coop.is_host()
+        # Estagio O: qual tier de cada familia (game/stats.py's
+        # MONSTER_FAMILIES) spawna nesta fase - derivado da MESMA
+        # dificuldade que ja determina ml_bonus/champion_chance acima, nao
+        # um dial novo. Determinístico e já sincronizado em coop (host/
+        # guest concordam em self.difficulty via level_sync/coop_sync),
+        # então não introduz nenhum risco de divergência novo.
+        tier_index = difficulty_tier_index(self.difficulty["order"])
         self.level = Level(level_num, extra_speed_mult=hastened_mult, ml_bonus=self.difficulty["ml_bonus"],
-                           audio_mgr=audio_mgr, network_follower=self.net_follower)
+                           audio_mgr=audio_mgr, network_follower=self.net_follower, tier_index=tier_index)
         self.camera = Camera(SW, SH, self.level.width, self.level.height)
 
         # Stage F3 (Atlas tab): record this level as seen, permanently -
