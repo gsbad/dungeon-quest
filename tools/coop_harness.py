@@ -254,12 +254,20 @@ class _Server:
                 self.proc.kill()
 
 
-def _make_save(name):
+def _make_save(name, attributes=None):
+    """attributes: overrides merged onto the default all-10s spread - used
+    by run_world_sync_reverse_test's PvP Frost Nova check, which needs
+    int>=20/wis>=15 (game/spells.py's "req") to even be castable; every
+    other caller leaves this None and gets the original stats every
+    existing assertion (HP-based downed timing, etc.) was tuned against."""
+    attrs = {"str": 10, "dex": 10, "int": 10, "wis": 10, "vig": 10, "lck": 10}
+    if attributes:
+        attrs.update(attributes)
     return {
         "version": 8,
         "character": {
             "name": name, "level": 1, "xp": 0, "unspent_points": 0,
-            "attributes": {"str": 10, "dex": 10, "int": 10, "wis": 10, "vig": 10, "lck": 10},
+            "attributes": attrs,
         },
         "progression": {
             "current_difficulty": "normal", "highest_level_cleared": {"normal": 0},
@@ -271,14 +279,14 @@ def _make_save(name):
     }
 
 
-async def _boot_into_gameplay(page, game_url, character_name, shot_prefix, boot_timeout_s):
+async def _boot_into_gameplay(page, game_url, character_name, shot_prefix, boot_timeout_s, attributes=None):
     """Injeta um save válido (pula a criação de personagem - MenuState
     seleciona CONTINUAR sozinho quando character.name já existe, ver
     memória de projeto), abre o jogo, espera o boot terminar de verdade
     (não um sleep às cegas: espera a requisição real que o boot sempre
     dispara pro backend, GET /balance - ver game/net.py's
     trigger_balance_fetch()) e entra na fase."""
-    save = _make_save(character_name)
+    save = _make_save(character_name, attributes)
     await page.add_init_script(f'localStorage.setItem("dungeon_quest_save", {json.dumps(json.dumps(save))});')
 
     async with page.expect_request(lambda r: "/balance" in r.url, timeout=boot_timeout_s * 1000):
@@ -300,7 +308,7 @@ async def _open_coop_overlay(page):
     await asyncio.sleep(0.5)
 
 
-async def _connect_coop_session(browser, game_url, boot_timeout_s, shots_dir, tag=""):
+async def _connect_coop_session(browser, game_url, boot_timeout_s, shots_dir, tag="", guest_attributes=None):
     """Boota os dois BrowserContexts, cria+entra na mesma room, e confirma
     as 3 garantias basicas de sync (join/pos/enemies) - extraido de
     run_test original pra tambem ser reusado por run_world_sync_test sem
@@ -350,7 +358,8 @@ async def _connect_coop_session(browser, game_url, boot_timeout_s, shots_dir, ta
 
     _log(f"{tag}Guest: entrando no jogo...")
     await _boot_into_gameplay(page_guest, game_url, "GuestPlayer",
-                               os.path.join(shots_dir, f"{tag}guest"), boot_timeout_s)
+                               os.path.join(shots_dir, f"{tag}guest"), boot_timeout_s,
+                               attributes=guest_attributes)
 
     _log(f"{tag}Guest: abrindo overlay coop e entrando na room {room_id}...")
     await _open_coop_overlay(page_guest)
@@ -866,6 +875,164 @@ async def run_world_sync_test(browser, game_url, headed, boot_timeout_s, shots_d
         await ctx_guest.close()
 
 
+async def run_world_sync_reverse_test(browser, game_url, headed, boot_timeout_s, shots_dir):
+    """Bugfix round (2a leva): run_world_sync_test acima so cobre o GUEST
+    quebrando bloco/matando inimigo - a direcao oposta (HOST quebra bloco/
+    mata inimigo, GUEST confirma) nunca tinha sido testada de verdade, mesmo
+    o codigo de envio (Level.try_break_tile, o melee de Level.update())
+    parecendo simetrico so de ler (nao gated por is_host()/network_follower).
+    Tambem cobre o fix de PvP de Nova de Gelo (bugfix round: _cast_frost_nova
+    nunca checava self.remote_players). Sessao propria, mesmo motivo de
+    isolamento de run_world_sync_test (fica perto do spawn (2,2), onde
+    Camera.follow() clampa em (0,0) e tela == mundo). guest_attributes
+    empurra INT/WIS acima do "req" de Nova de Gelo (game/spells.py) - o
+    save padrão de _make_save() (10 em tudo) nem deixa a magia ser lançada,
+    o que faria a checagem (c) falhar por causa NENHUMA do fix de PvP."""
+    session = await _connect_coop_session(browser, game_url, boot_timeout_s, shots_dir, tag="wsr_",
+                                           guest_attributes={"int": 20, "wis": 15})
+    ctx_host, ctx_guest = session["ctx_host"], session["ctx_guest"]
+    page_host, page_guest = session["page_host"], session["page_guest"]
+    ws_state = session["ws_state"]
+    page_host_errors, page_guest_errors = session["page_host_errors"], session["page_guest_errors"]
+    try:
+        if not session["ok"]:
+            return False
+
+        # --- (a) Coop: bloco quebrado pelo HOST sincroniza pro GUEST ---
+        # Mesma parede interior de run_world_sync_test, mas ninguem a
+        # quebrou ainda nesta sessao (Level fresco) - sem conflito.
+        _log("[world-sync-reverse] Host andando ate a parede interior pra testar quebra de bloco...")
+        wall_target = (WALL_TILE_COL * TILE - 24, WALL_TILE_ROW * TILE + TILE / 2)
+        await page_host.bring_to_front()
+        reached = await _walk_toward(
+            page_host, lambda: wall_target,
+            lambda: _latest_pos(ws_state["guest"]["frames"]),  # posicao do HOST, vista pelo guest
+            tolerance=40, max_rounds=20,
+        )
+        _log(f"[world-sync-reverse] Host chegou perto da parede: {reached}")
+        hx, hy = _latest_pos(ws_state["guest"]["frames"])
+        if hx is not None:
+            await page_host.mouse.move(hx + 60, hy)
+        await asyncio.sleep(0.2)
+        await page_host.screenshot(path=os.path.join(shots_dir, "wsr_host_11_before_pickaxe.png"))
+
+        for _ in range(2):
+            await page_host.keyboard.down("e")
+            await asyncio.sleep(0.15)
+            await page_host.keyboard.up("e")
+            await asyncio.sleep(1.3)
+        await asyncio.sleep(0.5)
+        await page_host.screenshot(path=os.path.join(shots_dir, "wsr_host_11_after_block_broken.png"))
+        await page_guest.screenshot(path=os.path.join(shots_dir, "wsr_guest_11_after_block_broken.png"))
+
+        def _is_target_wall_break(f):
+            try:
+                d = json.loads(f)
+            except (ValueError, TypeError):
+                return False
+            return (d.get("type") == "block_broken" and d.get("col") in (6, 7) and d.get("row") in (2, 3))
+
+        block_synced = any(_is_target_wall_break(f) for f in ws_state["guest"]["frames"])
+        _log(f"[world-sync-reverse] Guest recebeu \"block_broken\" do host pro bloco alvo: {block_synced}")
+        if not block_synced or page_guest_errors or page_host_errors:
+            _log(f"RESULTADO: FALHOU (bloco do host nao sincronizou pro guest - "
+                 f"erros host={page_host_errors} guest={page_guest_errors})")
+            return False
+        _log("[world-sync-reverse] OK - quebra de bloco do host chegou no guest via WebSocket real.")
+
+        # --- (b) Coop: HOST mata um inimigo por melee comum (autoritativo,
+        # sem hit_request - o proprio kill local) e o GUEST ve a morte no
+        # snapshot "enemies" que o host transmite ---
+        latest = _latest_enemies(ws_state["guest"]["frames"])
+        hx0, hy0 = _latest_pos(ws_state["guest"]["frames"])
+        alive_enemies = [e for e in (latest or {}).get("enemies", []) if e.get("alive")]
+        target_enemy = (min(alive_enemies, key=lambda e: _dist(hx0, hy0, e["x"], e["y"]))
+                         if alive_enemies and hx0 is not None else None)
+        if target_enemy is None:
+            _log("RESULTADO: FALHOU (nenhum inimigo vivo no snapshot recebido pelo guest)")
+            return False
+        enemy_id = target_enemy["id"]
+        hp_before = target_enemy["hp"]
+        _log(f"[world-sync-reverse] Host vai atacar o inimigo id={enemy_id} (hp inicial={hp_before})...")
+
+        def _enemy_pos():
+            snap = _latest_enemies(ws_state["guest"]["frames"])
+            if not snap:
+                return None, None
+            e = next((e for e in snap["enemies"] if e.get("id") == enemy_id), None)
+            return (e["x"], e["y"]) if e else (None, None)
+
+        await _walk_toward(page_host, _enemy_pos, lambda: _latest_pos(ws_state["guest"]["frames"]),
+                            tolerance=45, max_rounds=25)
+        ex, ey = _enemy_pos()
+        if ex is not None:
+            await page_host.mouse.move(ex, ey)
+        await asyncio.sleep(0.2)
+        await page_host.screenshot(path=os.path.join(shots_dir, "wsr_host_12_before_attack_enemy.png"))
+
+        for _ in range(5):
+            hx, hy = _latest_pos(ws_state["guest"]["frames"])
+            ex, ey = _enemy_pos()
+            if hx is not None and ex is not None:
+                await page_host.mouse.move(ex, ey)
+            await page_host.keyboard.down("Space")
+            await asyncio.sleep(0.3)
+            await page_host.keyboard.up("Space")
+            await asyncio.sleep(0.6)
+            snap = _latest_enemies(ws_state["guest"]["frames"])
+            entry = next((e for e in (snap or {}).get("enemies", []) if e.get("id") == enemy_id), None)
+            if entry is None or not entry.get("alive") or entry["hp"] < hp_before:
+                break
+        await asyncio.sleep(0.5)
+        await page_host.screenshot(path=os.path.join(shots_dir, "wsr_host_12_after_kill.png"))
+        await page_guest.screenshot(path=os.path.join(shots_dir, "wsr_guest_12_after_kill.png"))
+
+        latest_after = _latest_enemies(ws_state["guest"]["frames"])
+        entry_after = next((e for e in (latest_after or {}).get("enemies", []) if e.get("id") == enemy_id), None)
+        damage_applied = entry_after is None or not entry_after.get("alive") or entry_after["hp"] < hp_before
+        _log(f"[world-sync-reverse] Inimigo {enemy_id} depois do ataque do host: {entry_after} "
+             f"(hp antes={hp_before}): guest viu o dano = {damage_applied}")
+        if not damage_applied:
+            _log("RESULTADO: FALHOU (kill do host, sem hit_request, nao chegou no snapshot do guest)")
+            return False
+        _log("[world-sync-reverse] OK - kill do host via melee local chegou no guest.")
+
+        # --- (c) PvP: Nova de Gelo do GUEST acerta o HOST (bugfix round -
+        # _cast_frost_nova nunca checava remote_players antes deste fix) ---
+        # Nova de Gelo e uma AoE CENTRADA NO PROPRIO CONJURADOR (game/
+        # states.py's _cast_frost_nova: px,py = self.player.x/y, nao mira
+        # por mouse) - o passo (b) acima levou o HOST pra longe do spawn
+        # (parede + inimigo), entao o GUEST (que nunca se moveu) precisa
+        # andar ate perto dele de verdade antes de conjurar, ou a checagem
+        # de raio (110px) nunca bate mesmo com o fix correto.
+        await page_guest.bring_to_front()
+        _log("[world-sync-reverse] Guest andando ate perto do host pra testar a Nova de Gelo (AoE no proprio conjurador)...")
+        await _walk_toward(
+            page_guest, lambda: _latest_pos(ws_state["guest"]["frames"]),  # posicao do HOST, vista pelo guest
+            lambda: _latest_pos(ws_state["host"]["frames"]),  # posicao do GUEST, vista pelo host
+            tolerance=70, max_rounds=25,
+        )
+        await asyncio.sleep(0.2)
+        await page_guest.screenshot(path=os.path.join(shots_dir, "wsr_guest_13_before_pvp_frost.png"))
+        await page_guest.keyboard.down("q")  # CAST_2 = Nova de Gelo (game/keybinds.py)
+        await asyncio.sleep(0.15)
+        await page_guest.keyboard.up("q")
+        await asyncio.sleep(0.6)
+        await page_host.screenshot(path=os.path.join(shots_dir, "wsr_host_13_after_pvp_frost.png"))
+
+        pvp_hit_seen = _frames_contain(ws_state["host"]["frames"], "player_hit")
+        _log(f"[world-sync-reverse] Host recebeu \"player_hit\" da Nova de Gelo do guest: {pvp_hit_seen}")
+        if not pvp_hit_seen:
+            _log("RESULTADO: FALHOU (Nova de Gelo nao acertou o outro jogador via rede)")
+            return False
+
+        _log("RESULTADO: OK - bloco/kill do host sincronizam pro guest, e PvP de Nova de Gelo acerta o outro jogador.")
+        return True
+    finally:
+        await ctx_host.close()
+        await ctx_guest.close()
+
+
 async def run_all(game_url, backend_health_url, headed, boot_timeout_s, shots_dir):
     from playwright.async_api import async_playwright
 
@@ -886,7 +1053,8 @@ async def run_all(game_url, backend_health_url, headed, boot_timeout_s, shots_di
         try:
             main_ok = await run_test(browser, game_url, headed, boot_timeout_s, shots_dir)
             world_sync_ok = await run_world_sync_test(browser, game_url, headed, boot_timeout_s, shots_dir)
-            return main_ok and world_sync_ok
+            world_sync_reverse_ok = await run_world_sync_reverse_test(browser, game_url, headed, boot_timeout_s, shots_dir)
+            return main_ok and world_sync_ok and world_sync_reverse_ok
         finally:
             await browser.close()
 

@@ -489,7 +489,8 @@ class StageCompleteState:
     TransitionState path did, so no other transition logic needs to change."""
 
     def __init__(self, screen, input_mgr, audio_mgr, level_num, next_level,
-                 xp_gained, gold_gained, player, coop=None, remote_players=None):
+                 xp_gained, gold_gained, player, coop=None, remote_players=None,
+                 kills_gained=0, key_finder_id=None):
         self.screen = screen
         self.input = input_mgr
         self.audio = audio_mgr
@@ -514,6 +515,27 @@ class StageCompleteState:
         self._hero_portrait = pygame.transform.scale(
             create_player_sprite("down", False, self.player.profession), (120, 120))
 
+        # Bugfix round (2a leva): coop score screen - kills_gained/
+        # key_finder_id are already local (computed by GameStateManager
+        # before constructing this), but a REMOTE player's kills/gold/xp
+        # for THIS level only exist on their own machine - each side
+        # self-reports once here (same "each client authoritative for its
+        # own Player" shape as pos/chat/credit_xp), and remote_stats fills
+        # in as those "level_complete_stats" messages arrive. GameplayState
+        # is the only place net_coop.poll_messages() got drained before -
+        # this screen has to do its own polling now (see update()) or a
+        # message sent while it's on screen would just queue unread until
+        # the NEXT GameplayState.update() (too late to show it here).
+        self.kills_gained = kills_gained
+        self.key_finder_id = key_finder_id
+        self.remote_stats = {}
+        if self.coop and net_coop.is_connected():
+            net_coop.send({
+                "type": "level_complete_stats", "player_id": net_coop.get_player_id(),
+                "kills": kills_gained, "gold": gold_gained, "xp": xp_gained,
+                "level": player.level, "xp_frac": player.xp_frac,
+            })
+
     def handle_event(self, event):
         if self.input.consume_action(Action.CONFIRM):
             self.audio.play("menu_select")
@@ -524,7 +546,10 @@ class StageCompleteState:
         return None
 
     def update(self, dt):
-        pass
+        if self.coop and net_coop.is_connected():
+            for msg in net_coop.poll_messages():
+                if msg.get("type") == "level_complete_stats":
+                    self.remote_stats[msg.get("player_id")] = msg
 
     def draw(self):
         self.screen.fill((10, 12, 22))
@@ -532,6 +557,15 @@ class StageCompleteState:
         f1 = font(40, bold=True)
         draw_text(self.screen, f"Fase {self.level_num} concluida!", f1, ACCENT_GOLD, SW // 2, 110)
 
+        if self.coop and self.remote_players:
+            self._draw_coop_scoreboard()
+        else:
+            self._draw_solo_summary()
+
+        f4 = font(18, bold=True)
+        self.continue_button.draw(self.screen, f4, (220, 220, 235))
+
+    def _draw_solo_summary(self):
         f2 = font(20)
         draw_text(self.screen, f"+{self.xp_gained} XP", f2, (200, 220, 255), SW // 2, 200)
         draw_text(self.screen, f"+{self.gold_gained} ouro", f2, (230, 200, 80), SW // 2, 232)
@@ -545,8 +579,64 @@ class StageCompleteState:
         portrait_x = SW // 2 - self._hero_portrait.get_width() // 2
         self.screen.blit(self._hero_portrait, (portrait_x, 330))
 
-        f4 = font(18, bold=True)
-        self.continue_button.draw(self.screen, f4, (220, 220, 235))
+    def _draw_coop_scoreboard(self):
+        """Bugfix round (2a leva): uma coluna por jogador (local + cada
+        RemotePlayer), portrait/nome/kills/ouro/XP individual, e um
+        destaque pra quem achou a chave - pedido explicito do usuário
+        depois de notar que a tela de vitoria coop era identica a solo."""
+        columns = [{
+            "name": self.player.name, "profession": self.player.profession,
+            "kills": self.kills_gained, "gold": self.gold_gained, "xp": self.xp_gained,
+            "level": self.player.level, "xp_frac": self.player.xp_frac,
+            "is_key_finder": self.key_finder_id is not None and self.key_finder_id == net_coop.get_player_id(),
+        }]
+        for rp in self.remote_players.values():
+            stat = self.remote_stats.get(rp.player_id)
+            columns.append({
+                "name": rp.name, "profession": rp.profession,
+                "kills": stat.get("kills") if stat else None,
+                "gold": stat.get("gold") if stat else None,
+                "xp": stat.get("xp") if stat else None,
+                "level": stat.get("level") if stat else None,
+                "xp_frac": stat.get("xp_frac", 0.0) if stat else 0.0,
+                "is_key_finder": self.key_finder_id is not None and self.key_finder_id == rp.player_id,
+            })
+
+        n = len(columns)
+        col_w = min(220, (SW - 40) // n)
+        total_w = col_w * n
+        start_x = (SW - total_w) // 2
+        f_name = font(18, bold=True)
+        f_stat = font(15)
+        f_badge = font(13, bold=True)
+        col_bar = ProgressBar(min(160, col_w - 30), 10, (40, 40, 40), (140, 140, 140), border_width=1)
+
+        for i, col in enumerate(columns):
+            cx = start_x + i * col_w + col_w // 2
+            portrait = pygame.transform.scale(
+                create_player_sprite("down", False, col["profession"]), (72, 72))
+            self.screen.blit(portrait, (cx - 36, 175))
+
+            draw_text(self.screen, col["name"], f_name, (220, 220, 235), cx, 260)
+            if col["is_key_finder"]:
+                draw_text(self.screen, f"CHAVE ENCONTRADA (+{self._key_bonus_label()} XP)",
+                          f_badge, ACCENT_GOLD, cx, 280)
+
+            def _fmt(v, suffix=""):
+                return f"+{v}{suffix}" if v is not None else "..."
+
+            draw_text(self.screen, f"Kills: {_fmt(col['kills'])}", f_stat, (220, 160, 160), cx, 305)
+            draw_text(self.screen, f"Ouro: {_fmt(col['gold'])}", f_stat, (230, 200, 80), cx, 326)
+            draw_text(self.screen, f"XP: {_fmt(col['xp'])}", f_stat, (200, 220, 255), cx, 347)
+
+            bar_x = cx - col_bar.w // 2
+            col_bar.draw(self.screen, bar_x, 368, col["xp_frac"] or 0.0, ACCENT_GOLD)
+            lvl_txt = f"Nivel {col['level']}" if col["level"] is not None else "..."
+            draw_text(self.screen, lvl_txt, font(12), SUBTEXT, cx, 388)
+
+    def _key_bonus_label(self):
+        import game.stats as stats
+        return stats.KEY_FINDER_XP_BONUS
 
 
 # ─── Transition ───────────────────────────────────────────────────────────────
@@ -776,6 +866,9 @@ class GameplayState:
         # "next:" branch).
         self._xp_at_level_start = self.player.xp_earned_total
         self._gold_at_level_start = self.player.gold
+        # Bugfix round (2a leva): same delta-snapshot shape, for the coop
+        # victory screen's per-player kill count (StageCompleteState).
+        self._kills_at_level_start = sum(self.player.kills.values())
 
     def handle_event(self, event):
         if self.chat.active:
@@ -1217,9 +1310,46 @@ class GameplayState:
             tx = target.x + target.width / 2
             ty = target.y + target.height / 2
             if math.hypot(tx - px, ty - py) <= radius:
-                target.take_damage(dmg, dtype="magic", knockback_from=(px, py))
-                if hasattr(target, "status"):
-                    target.status.apply("slow")
+                # Bugfix round: Frost Nova was the one damage source never
+                # migrated to the hit_request pipeline melee/dash/Fireball's
+                # projectile loop already use (see cast_targets further
+                # down) - a guest casting it against a host-owned Enemy/Boss
+                # applied damage only locally, reverting on the next
+                # "enemies" snapshot (silent no-op, same bug class already
+                # fixed elsewhere, just missed here).
+                if getattr(target, "network_follower", False):
+                    target_id = "boss" if target is self.boss else target.net_id
+                    net_coop.send({"type": "hit_request", "enemy_id": target_id,
+                                   "damage": dmg, "dtype": "magic",
+                                   "kbx": px, "kby": py, "player_id": net_coop.get_player_id()})
+                else:
+                    target.take_damage(dmg, dtype="magic", knockback_from=(px, py))
+                    if hasattr(target, "status"):
+                        target.status.apply("slow")
+                    # Also missing before: a Frost Nova kill never called
+                    # credit_kill (melee/dash/Fireball all do), so XP/gold
+                    # never dropped for anything it killed, coop or not.
+                    if not target.alive and hasattr(target, "etype"):
+                        self.level.credit_kill(self.player, target)
+        # PvP: unlike melee (_handle_pvp_attacks, checked every frame) and
+        # Fireball (checked in the projectile loop below), Frost Nova never
+        # tested self.remote_players at all - a caster standing next to
+        # another player's avatar dealt them zero damage. Same "player_hit"
+        # shape _handle_pvp_attacks already sends, applied to every remote
+        # player caught in the burst (an AoE can hit more than one, unlike
+        # a single-target projectile).
+        if net_coop.is_connected():
+            for rp in self.remote_players.values():
+                if rp.x is None:
+                    continue
+                rx, ry = rp.x + rp.width / 2, rp.y + rp.height / 2
+                if math.hypot(rx - px, ry - py) <= radius:
+                    net_coop.send({
+                        "type": "player_hit",
+                        "target_player_id": rp.player_id,
+                        "damage": round(dmg), "dtype": "magic",
+                        "attacker_x": self.player.x, "attacker_y": self.player.y,
+                    })
         # Ring burst - particles placed AROUND the circumference of the real
         # hit radius (not scattered randomly from the player), so the
         # nova's actual reach flashes into view instead of reading as a
@@ -1317,7 +1447,15 @@ class GameplayState:
                         if enemy is not None:
                             enemy.take_damage(dmg, dtype=dtype, crit=crit, knockback_from=kb)
                             if not enemy.alive:
-                                self.level.credit_kill(self.player, enemy)
+                                # Bugfix round (2a leva): before this,
+                                # EVERY hit_request-resolved kill got
+                                # credited to the HOST's own player.kills
+                                # (self.player here), never the guest who
+                                # actually landed it - see credit_kill()'s
+                                # killer_id param and the new "kill_credit"
+                                # broadcast it sends when killer_id isn't
+                                # the resolver's own id.
+                                self.level.credit_kill(self.player, enemy, killer_id=msg.get("player_id"))
                 elif t == "block_broken":
                     # Symmetric, not host-gated - whichever side (host or
                     # guest) actually broke the block locally sent this;
@@ -1329,6 +1467,12 @@ class GameplayState:
                     # idempotent (setting True twice is harmless).
                     self.level._key_found = True
                     self.level.exit_open = True
+                    # Bugfix round (2a leva): quem achou, pro bonus de XP
+                    # na tela de vitoria coop - só aceita a primeira vez
+                    # (key_finder_id ainda None), a mesma idempotencia do
+                    # resto deste handler.
+                    if self.level.key_finder_id is None:
+                        self.level.key_finder_id = msg.get("player_id")
                 elif t == "credit_xp" and not net_coop.is_host():
                     # Stage L8: só o host manda isso (quem realmente
                     # resolve a morte) - decisão #2, a fração já vem
@@ -1338,6 +1482,14 @@ class GameplayState:
                     self.player.gain_xp(msg.get("amount", 0))
                 elif t == "credit_gold" and not net_coop.is_host():
                     self.player.credit_gold(msg.get("amount", 0))
+                elif t == "kill_credit" and msg.get("player_id") == net_coop.get_player_id():
+                    # Bugfix round (2a leva): Level.credit_kill() sends this
+                    # (host-side, resolving a hit_request) when the actual
+                    # killer isn't the resolver itself - same self-filtering
+                    # shape as "player_hit" above, since only the rightful
+                    # killer's own kills counter should move.
+                    et = msg.get("etype")
+                    self.player.kills[et] = self.player.kills.get(et, 0) + 1
                 elif t == "player_hit" and msg.get("target_player_id") == net_coop.get_player_id():
                     # Stage L7: quem manda essa mensagem já rolou o próprio
                     # dano (mesma lógica de sempre, contra um RemotePlayer
@@ -1633,7 +1785,7 @@ class GameplayState:
                     if self.boss.network_follower:
                         net_coop.send({"type": "hit_request", "enemy_id": "boss",
                                        "damage": dmg, "dtype": "physical", "crit": is_crit,
-                                       "kbx": kb[0], "kby": kb[1]})
+                                       "kbx": kb[0], "kby": kb[1], "player_id": net_coop.get_player_id()})
                     else:
                         self.boss.take_damage(dmg, dtype="physical", crit=is_crit, knockback_from=kb)
                     self.camera.shake(5, 0.12)
@@ -1707,7 +1859,7 @@ class GameplayState:
                         target_id = "boss" if target is self.boss else target.net_id
                         net_coop.send({"type": "hit_request", "enemy_id": target_id,
                                        "damage": dmg, "dtype": "physical", "crit": is_crit,
-                                       "kbx": kb[0], "kby": kb[1]})
+                                       "kbx": kb[0], "kby": kb[1], "player_id": net_coop.get_player_id()})
                     else:
                         target.take_damage(dmg, dtype="physical", crit=is_crit, knockback_from=kb)
                         if not target.alive and hasattr(target, "etype"):
@@ -1717,6 +1869,28 @@ class GameplayState:
             proj.update(dt, self.level.walls)
             if not proj.alive:
                 continue
+            # PvP: this loop only ever tested cast_targets (enemies/boss) -
+            # a Fireball flying through another player's avatar passed
+            # straight through with zero effect. Checked before the enemy
+            # loop below and consumes the projectile the same way a hit on
+            # an enemy would (one target per projectile).
+            if net_coop.is_connected():
+                hit_player = False
+                for rp in self.remote_players.values():
+                    if rp.x is None:
+                        continue
+                    if proj.rect.colliderect(rp.rect):
+                        net_coop.send({
+                            "type": "player_hit",
+                            "target_player_id": rp.player_id,
+                            "damage": round(proj.damage), "dtype": proj.dtype,
+                            "attacker_x": self.player.x, "attacker_y": self.player.y,
+                        })
+                        proj.alive = False
+                        hit_player = True
+                        break
+                if hit_player:
+                    continue
             for target in cast_targets:
                 if not (getattr(target, "alive", True) and proj.rect.colliderect(target.rect)):
                     continue
@@ -1724,7 +1898,7 @@ class GameplayState:
                     target_id = "boss" if target is self.boss else target.net_id
                     net_coop.send({"type": "hit_request", "enemy_id": target_id,
                                    "damage": proj.damage, "dtype": proj.dtype,
-                                   "kbx": proj.x, "kby": proj.y})
+                                   "kbx": proj.x, "kby": proj.y, "player_id": net_coop.get_player_id()})
                 else:
                     target.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
                     if not target.alive and hasattr(target, "etype"):
@@ -2661,12 +2835,27 @@ class GameStateManager:
                 # same one-screen-per-transition path dev level-skips
                 # (M/N keys) also go through, unmodified.
                 finished = self.state
+                kills_gained = sum(self.player.kills.values()) - finished._kills_at_level_start
+                # Bugfix round (2a leva): key_finder_id is None outside coop
+                # (Level.__init__'s default) and never equals a real
+                # net_coop.get_player_id(), so this bonus can't fire in
+                # single-player - qualified import (not a top-level
+                # `from game.stats import KEY_FINDER_XP_BONUS`) since
+                # balance_config.py overrides it via `setattr(stats, ...)`
+                # on the module object, which a name-binding import would
+                # freeze at whatever value existed at first import.
+                import game.stats as stats
+                key_finder_id = finished.level.key_finder_id
+                local_pid = net_coop.get_player_id() if net_coop.is_connected() else None
+                if key_finder_id is not None and key_finder_id == local_pid:
+                    self.player.gain_xp(stats.KEY_FINDER_XP_BONUS)
                 xp_gained = self.player.xp_earned_total - finished._xp_at_level_start
                 gold_gained = self.player.gold - finished._gold_at_level_start
                 self.state = StageCompleteState(self.screen, self.input, self.audio,
                                                  finished.level_num, next_lvl,
                                                  xp_gained, gold_gained, self.player,
-                                                 coop=finished.coop, remote_players=finished.remote_players)
+                                                 coop=finished.coop, remote_players=finished.remote_players,
+                                                 kills_gained=kills_gained, key_finder_id=key_finder_id)
             else:
                 # self.state aqui é a StageCompleteState que acabou de
                 # confirmar "Continuar" (ver docstring da classe) - Stage

@@ -234,10 +234,16 @@ class Player:
         self.pickaxe_swing_timer = 0.0
 
         # Stage K23: the "found the hidden key" pose - turns to face the
-        # camera and holds the key overhead for KEY_POSE_DURATION (see
+        # camera and holds an item overhead for KEY_POSE_DURATION (see
         # trigger_key_found_pose()/update()/draw() below), same "temporary
         # state overrides normal movement" shape as dashing/knockback.
+        # Bugfix round (2a leva): generalized to also play for the
+        # "treasure map found" easter egg (trigger_map_found_pose()) -
+        # pose_icon picks which create_item_sprite() id _draw_key_pose()
+        # raises, same single timer either way (the two can't overlap:
+        # each swaps in whichever icon and restarts the timer fresh).
         self.key_pose_timer = 0.0
+        self.pose_icon = "key"
 
         # Stage L9: "caído" em coop (game_over normal continua intacto em
         # single-player - GameplayState só chama trigger_downed() quando
@@ -758,6 +764,19 @@ class Player:
         once, the frame Level.try_break_tile()'s key branch actually fires
         (not on every dig) - see update()/draw() for how the pose itself
         plays out."""
+        self.pose_icon = "key"
+        self.key_pose_timer = KEY_POSE_DURATION
+        self.direction = "down"
+        self.dashing = False
+        self.dash_trail = []
+        self.attacking = False
+
+    def trigger_map_found_pose(self):
+        """Bugfix round (2a leva): called by Level.update() exactly once,
+        the frame the level's original enemy wave is fully cleared - same
+        pose/timer as trigger_key_found_pose(), just a different held icon
+        (see pose_icon/_draw_key_pose)."""
+        self.pose_icon = "map"
         self.key_pose_timer = KEY_POSE_DURATION
         self.direction = "down"
         self.dashing = False
@@ -956,16 +975,18 @@ class Player:
         surface.blit(icon, (icon_x, icon_y))
 
     def _draw_key_pose(self, surface, sx, sy):
-        """Stage K23: a small key icon rising above the hero's head while
+        """Stage K23: a small item icon rising above the hero's head while
         key_pose_timer counts down - the "arm raise" reads through the
         icon's own motion (rises for the first ~35% of the pose, then
         holds overhead) rather than needing a new sprite pose per
-        profession/costume in create_player_sprite."""
+        profession/costume in create_player_sprite. Bugfix round (2a leva):
+        which icon is self.pose_icon (set by trigger_key_found_pose() or
+        trigger_map_found_pose())."""
         from game.assets import create_item_sprite
         progress = 1.0 - (self.key_pose_timer / KEY_POSE_DURATION)
         rise = min(1.0, progress / 0.35)
         y_offset = int(18 - 18 * rise)
-        icon = create_item_sprite("key")
+        icon = create_item_sprite(self.pose_icon)
         icon_x = sx + self.width // 2 - icon.get_width() // 2
         icon_y = sy - 22 + y_offset
         surface.blit(icon, (icon_x, icon_y))

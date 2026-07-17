@@ -29,7 +29,7 @@ import game.level as level
 _STATS_KEYS = {
     "mitigation_k", "xp_curve_base", "xp_curve_exp",
     "ml_growth_rate", "anti_farm_level_gap", "anti_farm_xp_mult",
-    "base_attack_cooldown",
+    "base_attack_cooldown", "key_finder_xp_bonus",
 }
 
 # Stage K23: Dash (game/player.py's DASH_* module constants) - not a dict

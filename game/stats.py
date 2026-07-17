@@ -19,6 +19,12 @@ MAX_LEVEL = 30
 POINTS_PER_LEVEL = 4
 BASE_ATTACK_COOLDOWN = 0.45
 
+# Bugfix round (2a leva): bonus flat de XP pra quem cavou a chave escondida
+# num level coop (game/level.py's key_finder_id) - só se aplica em coop
+# (key_finder_id fica None em single-player, ver Level.__init__), aplicado
+# uma vez na transicao de fase (GameStateManager._transition, "next:" branch).
+KEY_FINDER_XP_BONUS = 40
+
 
 class StatBlock:
     def __init__(self, strength=10, dexterity=10, intelligence=10, wisdom=10,

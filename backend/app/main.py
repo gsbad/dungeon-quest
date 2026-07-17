@@ -73,6 +73,10 @@ BALANCE_DEFAULTS = {
     # RESPAWN_INTERVAL) - "level" prefix is its own namespace, falls back to
     # the admin panel's "Geral" tab (categoryOf has no explicit mapping for it).
     "level.respawn_interval": 6.0,
+    # Bugfix round (2a leva): bonus de XP pra quem acha a chave escondida
+    # num level coop (game/stats.py's KEY_FINDER_XP_BONUS) - reusa o mesmo
+    # branch "stats.<field>" de base_attack_cooldown acima.
+    "stats.key_finder_xp_bonus": 40,
     # Stage K16: monster combat stats + xp/gold-per-kill, one line per etype
     # (same dotted-key shape as item/difficulty/spell above).
     "monster.goblin.strength": 3, "monster.goblin.dexterity": 0, "monster.goblin.vigor": 0, "monster.goblin.luck": 0, "monster.goblin.weapon_base": 5.5, "monster.goblin.base_speed": 110, "monster.goblin.base_xp": 8, "monster.goblin.gold_drop": 3,
@@ -788,12 +792,39 @@ details table { margin: 0; }
 const API = location.origin;
 function token() { return sessionStorage.getItem("dq_admin_token"); }
 
+// Bugfix round (2a leva): usuario relatou o login do painel "dando
+// timeout" - testado direto contra producao (curl) e nada la estava lento
+// (POST /admin/login, GET /admin/balance etc. todos < 1s), entao a causa
+// nao foi reproduzida no servidor. Essa checagem defensiva nao resolve uma
+// causa raiz que nunca ficou clara, mas evita que um fetch preso pareça
+// simplesmente nao fazer nada - se acontecer de novo, "Tempo esgotado"
+// (distinto de "Senha invalida") e algo que da pra reportar de volta.
+async function fetchWithTimeout(url, opts, ms = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, {...opts, signal: controller.signal});
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("timeout");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function doLogin() {
   const pw = document.getElementById("pw").value;
-  const res = await fetch(API + "/admin/login", {
-    method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({password: pw}),
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(API + "/admin/login", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({password: pw}),
+    });
+  } catch (e) {
+    document.getElementById("status").textContent =
+      e.message === "timeout" ? "Tempo esgotado - tente novamente." : "Erro de rede - tente novamente.";
+    return;
+  }
   if (!res.ok) {
     document.getElementById("status").textContent = "Senha invalida.";
     return;
@@ -874,7 +905,14 @@ async function loadAppearance() {
 }
 
 async function loadBalance() {
-  const res = await fetch(API + "/admin/balance", {headers: {"Authorization": "Bearer " + token()}});
+  let res;
+  try {
+    res = await fetchWithTimeout(API + "/admin/balance", {headers: {"Authorization": "Bearer " + token()}});
+  } catch (e) {
+    document.getElementById("status").textContent =
+      e.message === "timeout" ? "Tempo esgotado - tente novamente." : "Erro de rede - tente novamente.";
+    return;
+  }
   if (!res.ok) {
     sessionStorage.removeItem("dq_admin_token");
     document.getElementById("status").textContent = "Sessao expirada, logue de novo.";

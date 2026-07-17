@@ -1334,6 +1334,28 @@ def create_dig_marker():
     return s
 
 
+_TREASURE_MARK_CACHE = None
+
+
+def create_treasure_mark_icon():
+    """Bugfix round (2a leva): a faded red "X" over a torn-parchment patch -
+    one of the 10 decorative "mapa do tesouro" locations game/level.py
+    scatters after the first enemy wave clears (Level.treasure_marks). Only
+    ever drawn, never collidable/collectible - same "hint, not a beacon"
+    restraint as create_dig_marker() above, just a different shape so it
+    doesn't get confused with the key's own dig patch."""
+    global _TREASURE_MARK_CACHE
+    if _TREASURE_MARK_CACHE is not None:
+        return _TREASURE_MARK_CACHE
+    s = pygame.Surface((32, 32), pygame.SRCALPHA)
+    pygame.draw.circle(s, (210, 180, 120, 70), (16, 16), 13)
+    c = (180, 30, 30, 210)
+    pygame.draw.line(s, c, (9, 9), (23, 23), 4)
+    pygame.draw.line(s, c, (23, 9), (9, 23), 4)
+    _TREASURE_MARK_CACHE = s
+    return s
+
+
 def create_heart_sprite(full=True):
     s = pygame.Surface((24, 24), pygame.SRCALPHA)
     color = (220, 40, 40) if full else (80, 80, 80)
@@ -1410,6 +1432,15 @@ def create_item_sprite(itype="key"):
         pygame.draw.circle(s, GOLD, (8, 8), 6)
         pygame.draw.circle(s, (170, 130, 0), (8, 8), 6, 1)
         pygame.draw.circle(s, (255, 240, 160), (6, 6), 2)
+    elif itype == "map":
+        # Bugfix round (2a leva): held aloft by Player._draw_key_pose() -
+        # a rolled parchment (the pose is generic now, see pose_icon on
+        # Player) with a small red X, echoing create_treasure_mark_icon()'s
+        # ground markers without being the exact same shape/size.
+        pygame.draw.rect(s, (225, 200, 150), (2, 3, 12, 10), border_radius=2)
+        pygame.draw.rect(s, (170, 140, 95), (2, 3, 12, 10), 1, border_radius=2)
+        pygame.draw.line(s, (180, 30, 30), (5, 6), (10, 11), 2)
+        pygame.draw.line(s, (180, 30, 30), (10, 6), (5, 11), 2)
     _ITEM_SPRITE_CACHE[itype] = s
     return s
 

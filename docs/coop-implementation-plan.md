@@ -14,6 +14,19 @@ como "incremento futuro"). Os dois corrigidos - ver `design.md` pros
 detalhes e `tools/coop_harness.py`'s `run_world_sync_test()` pra
 verificação via tráfego de rede real.
 
+**Pós-L16 (2ª rodada de bugfix, ver "2ª rodada de correções pós-playtest
+coop" em `design.md`):** um novo playtest reportou os mesmos sintomas de
+sync ainda presentes - investigação achou que `block_broken`/`hit_request`
+já eram simétricos de verdade (confirmado com uma extensão do harness
+testando a direção host→guest, nunca coberta antes), e a causa real
+era `_cast_frost_nova()` ter ficado de fora do pipeline `hit_request` que
+melee/dash/Bola de Fogo já usavam - um guest lançando Nova de Gelo contra
+um inimigo do host aplicava dano só local (revertia no snapshot seguinte),
+e a magia nunca verificava `remote_players` pra PvP também. Os dois
+corrigidos juntos. Tela de vitória de fase coop redesenhada (placar por
+jogador) e o easter egg do "mapa do tesouro" também entraram nesta
+rodada - ver `design.md`.
+
 Companheiro de `docs/coop-feasibility.md` (Stage K21) — aquele documento
 decidiu **o quê** e **por quê** (arquitetura host-autoritativo, WebSocket
 pelo backend já existente, o que cada peça pedida exige). Este cobre **em

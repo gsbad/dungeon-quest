@@ -1,7 +1,8 @@
 import pygame
 import random
 import math
-from game.assets import create_tile, create_chest_sprite, create_cracked_wall_overlay, create_dig_marker
+from game.assets import (create_tile, create_chest_sprite, create_cracked_wall_overlay, create_dig_marker,
+                          create_treasure_mark_icon)
 from game.enemy import Enemy, BASE_XP, GOLD_DROPS, GoldDrop, Particle
 from game.stats import xp_for_kill, gold_for_kill
 from game.affixes import PARAGON_REWARD_MULT, CHAMPION_REWARD_MULT
@@ -528,6 +529,12 @@ class Level:
         self._block_hits = {}
         self._key_tile = None
         self._key_found = False
+        # Bugfix round (2a leva): quem achou a chave, pra tela de vitoria
+        # coop dar um bonus de XP a essa pessoa - None em single-player (e
+        # até a chave ser achada), setado local ou via a mensagem
+        # "key_found" (game/states.py) pro net_coop.get_player_id() de
+        # quem realmente digitou o golpe que revelou.
+        self.key_finder_id = None
         self.dig_particles = []
         # Stage K23: every floor (col,row) the player has ever swung the
         # pickaxe at, regardless of whether it turned out to be the key -
@@ -547,6 +554,14 @@ class Level:
         self._respawn_interval = RESPAWN_INTERVAL
         self._speed_mul = 1.0
         self._monster_level = 1
+
+        # Bugfix round (2a leva): "mapa do tesouro" - disparado uma unica
+        # vez quando a leva original de inimigos (nao as ondas de respawn
+        # depois dela) e totalmente eliminada. treasure_marks sao só visuais
+        # (sem hitbox, nunca viram item de inventário) - ver
+        # _spawn_treasure_marks()/update()/draw().
+        self._first_wave_map_shown = False
+        self.treasure_marks = []
 
         # Difficulty-tier hooks (Stage B5) - Level itself stays unaware
         # difficulty exists, same separation already used for Paragon/
@@ -676,6 +691,22 @@ class Level:
         if candidates:
             self._key_tile = random.choice(candidates)
 
+    def _spawn_treasure_marks(self, count=10):
+        """Bugfix round (2a leva): 10 marcacoes decorativas ("X" de mapa do
+        tesouro) espalhadas pela fase, geradas quando a leva original de
+        inimigos e limpa - ver update(). Plain random.choice/sample (nao um
+        RNG seedado), mesma convencao ja usada por _pick_key_tile() acima -
+        uma tentativa anterior de seedar deterministicamente a posicao da
+        chave (pra host/guest baterem) foi revertida por ter quebrado o PvP
+        de um jeito nunca totalmente entendido (ver historico de commits);
+        como estas marcacoes sao só decorativas (sem hitbox, sem item),
+        host e guest podem ver posicoes levemente diferentes sem problema
+        real, o mesmo risco que a própria chave já aceita hoje."""
+        candidates = [(col, row) for row in range(1, self.rows - 1) for col in range(1, self.cols - 1)
+                      if self.layout[row][col] == '.']
+        picked = random.sample(candidates, min(count, len(candidates)))
+        self.treasure_marks = [(col * TILE + TILE / 2, row * TILE + TILE / 2) for col, row in picked]
+
     def get_player_start(self):
         col, row = self.data["player_start"]
         return (col * TILE + 8, row * TILE + 8)
@@ -732,6 +763,24 @@ class Level:
         # aleatória de etype) - só o host faz isso. Um guest só vê a onda
         # aparecer quando o próprio broadcast do host incluir os novos ids.
         living = [e for e in self.enemies if e.alive]
+
+        # Bugfix round (2a leva): "mapa do tesouro" - dispara uma unica vez
+        # na transicao pra leva original zerada (nao nas ondas de respawn
+        # que vem depois, ja cobertas por _first_wave_map_shown). De
+        # propósito SEM o gate "not self.network_follower" que a trickle de
+        # respawn logo abaixo usa - gerar a onda nova é uma decisão de
+        # simulação (só o host rola), mas tocar a pose/som no PRÓPRIO herói
+        # e desenhar as marcações e um efeito local em cada cliente, os dois
+        # lados devem reagir sozinhos ao próprio "not living" (que já reflete
+        # o snapshot do host no caso do guest, via apply_snapshot()).
+        if (not self._first_wave_map_shown and not living and self.data["type"] == "combat"
+                and self._original_enemy_specs):
+            self._first_wave_map_shown = True
+            player.trigger_map_found_pose()
+            if audio_mgr:
+                audio_mgr.play("victory")
+            self._spawn_treasure_marks()
+
         if not self.network_follower and not living and self.data["type"] == "combat" and self._respawns_remaining > 0:
             self._respawn_timer -= dt
             if self._respawn_timer <= 0:
@@ -764,13 +813,13 @@ class Level:
                 if self.network_follower:
                     net_coop.send({"type": "hit_request", "enemy_id": enemy.net_id,
                                    "damage": dmg, "dtype": "physical", "crit": is_crit,
-                                   "kbx": kb[0], "kby": kb[1]})
+                                   "kbx": kb[0], "kby": kb[1], "player_id": net_coop.get_player_id()})
                 else:
                     enemy.take_damage(dmg, dtype="physical", crit=is_crit, knockback_from=kb)
                     if not enemy.alive:
                         self.credit_kill(player, enemy)
 
-    def credit_kill(self, player, enemy):
+    def credit_kill(self, player, enemy, killer_id=None):
         """XP/gold/kill-tracking for a just-died regular enemy - shared by
         the melee path above and game/states.py's Fireball collision, so a
         kill is rewarded identically no matter which weapon landed it.
@@ -783,7 +832,18 @@ class Level:
         escopo desta fase. XP não tem esse problema (crédito instantâneo
         já hoje), então é o que a decisão #2 (split igual, não
         proporcional a dano) realmente cobre aqui - quem matou E o resto
-        da room recebem 1/N do XP cada, não o total cada um."""
+        da room recebem 1/N do XP cada, não o total cada um.
+
+        Bugfix round (2a leva): killer_id é só pro CONTADOR de kills (pro
+        placar da tela de vitoria coop) - `player` continua sendo sempre
+        quem está resolvendo localmente (o host, no caso de um hit_request),
+        usado pra XP compartilhado/afixo volatile como sempre. Antes deste
+        fix, um kill resolvido via hit_request sempre incrementava
+        player.kills do HOST mesmo quando foi o GUEST quem acertou o golpe -
+        killer_id (o net_coop.get_player_id() de quem mandou o hit_request)
+        deixa creditar a pessoa certa: se for outra pessoa que não quem está
+        resolvendo, manda um "kill_credit" pra ela aplicar no próprio
+        Player local (mesmo padrão de "credit_xp"/"credit_gold" acima)."""
         if enemy.is_paragon:
             reward_mult = PARAGON_REWARD_MULT
         elif enemy.is_champion:
@@ -808,7 +868,10 @@ class Level:
             self.pending_drops.append(("mana", cx, cy))
         if random.random() < 0.06:
             self.pending_drops.append(("potion", cx, cy))
-        player.kills[enemy.etype] = player.kills.get(enemy.etype, 0) + 1
+        if killer_id is not None and net_coop.is_connected() and killer_id != net_coop.get_player_id():
+            net_coop.send({"type": "kill_credit", "player_id": killer_id, "etype": enemy.etype})
+        else:
+            player.kills[enemy.etype] = player.kills.get(enemy.etype, 0) + 1
         if enemy.affix == "volatile":
             ex, ey = enemy.x + enemy.width / 2, enemy.y + enemy.height / 2
             px, py = player.x + player.width / 2, player.y + player.height / 2
@@ -884,7 +947,8 @@ class Level:
             # closed forever, since _key_found/exit_open never had any sync
             # either (same underlying gap as block-breaking above).
             if net_coop.is_connected():
-                net_coop.send({"type": "key_found"})
+                self.key_finder_id = net_coop.get_player_id()
+                net_coop.send({"type": "key_found", "player_id": self.key_finder_id})
             return True
         elif ch == '.':
             # Stage K22: an ordinary floor tile used to be a total no-op -
@@ -1011,6 +1075,16 @@ class Level:
 
         for particle in self.dig_particles:
             particle.draw(surface, cam_x, cam_y)
+
+        # Bugfix round (2a leva): "mapa do tesouro" - só visual, sem
+        # hitbox/item (ver update()/_spawn_treasure_marks()). Culled contra
+        # a câmera igual ao resto do mundo, mas por posição de mundo direto
+        # (não por tile) já que não moram no grid layout/walls.
+        icon = create_treasure_mark_icon()
+        for mx, my in self.treasure_marks:
+            sx, sy = mx - cam_x - icon.get_width() / 2, my - cam_y - icon.get_height() / 2
+            if -TILE <= sx <= screen_w and -TILE <= sy <= screen_h:
+                surface.blit(icon, (sx, sy))
 
         # Draw puddles/gold first (so enemies/players appear above)
         if hasattr(self, 'puddles'):
