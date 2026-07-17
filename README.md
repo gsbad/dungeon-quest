@@ -13,21 +13,21 @@ Um action-RPG 2D top-down estilo Zelda, feito em Python com pygame — projeto i
 
 ## 🕹️ Sobre o jogo
 
-Uma campanha em **3 atos** (13 fases, incluindo uma secreta), com sistema de atributos/profissões estilo Ultima Online, magias, itens, clima dinâmico, afixos de monstro (Paragon/Campeão), 5 níveis de dificuldade e um Bestiário/Atlas pra acompanhar o que já foi descoberto.
+Uma campanha em **3 atos** (13 fases, incluindo uma secreta), com sistema de atributos/profissões estilo Ultima Online, 15 classes com kit próprio de ataque+magias, 20 famílias de monstro com 3 variações cada, clima dinâmico, afixos de monstro (Paragon/Campeão), 5 níveis de dificuldade e um Bestiário/Atlas pra acompanhar o que já foi descoberto.
 
 ### Destaques
 
 - **3 atos, 4 bosses únicos** — cada um com sprite, sala e padrão de ataque próprios (Senhor da Guerra Orc, Necromante, Rei das Sombras, e o Cacodemônio da fase secreta).
-- **20 arquétipos de monstro comuns**, cada um com seu próprio rig visual e "magia"/ataque de acordo com a natureza dele (veneno, gelo, choque, fogo, fraqueza...), espalhados pelas 12 fases de combate.
+- **15 classes, cada uma com ataque básico e kit de 3 magias autorais** (47 magias no total) — Guerreiro/Assassino/Mago/Feiticeiro/Cavaleiro/Duelista/Cavaleiro Arcano/Paladino/Campeão/Monge/Xamã/Ranger/Arcanista/Druida/Templário, cada trio seguindo o padrão ofensiva (recarga curta) / utilitária / ultimate. Inclui sistemas próprios como provocação, atordoamento, raiz, teleporte curto, totem de cura, armadilha e execução (bônus contra alvos feridos).
+- **89 monstros comuns em 20 famílias** (Rato, Aranha, Sapo, Goblin, Esqueleto, Minotauro, Lobo, Urso, Orc, Drake, Demônio, Vampiro, Fantasma, Golem, Geleia, Caranguejo, Saurio, Bruxa, Lobisomem, Zumbi...), cada família com 3 variações de poder próprias (stats/sprite/comportamento independentes, nunca um reskin de cor) — **qual variação aparece depende da dificuldade escolhida**, então jogar em Inferno mostra monstros visivelmente diferentes de Normal, não só números maiores.
 - **Atributos e profissões**: FOR/DES/INT/SAB/VIG/SOR determinam 16 profissões possíveis (5 puras + 10 híbridas + Aventureiro), sem nada "guardado" — é só a leitura dos pontos gastos.
-- **Combate mirado no mouse (PC) / toque-e-arraste (celular)**: ataque corpo a corpo, Bola de Fogo, Nova de Gelo e a Investida (Dash) seguem a direção real do cursor/arraste, não só 4 direções fixas. Recuo físico (knockback) em todo dano recebido, e herói/monstro nunca ocupam o mesmo espaço.
+- **Combate mirado no mouse (PC) / toque-e-arraste (celular)**: ataque corpo a corpo, magias e a Investida (Dash) seguem a direção real do cursor/arraste, não só 4 direções fixas. Recuo físico (knockback) em todo dano recebido, e herói/monstro nunca ocupam o mesmo espaço.
 - **Dash**: mobilidade baseada em Destreza, dano de contato, e um rastro fantasma que se apaga atrás do herói.
 - **Posturas**: cada uma das 15 profissões (5 puras + 10 híbridas) ganha um bônus permanente próprio — dano, defesa, velocidade, regeneração — só por estar naquela profissão, sem gasto extra.
-- **Masmorra com chave escondida**: a saída de cada fase é um baú trancado — cave com a Picareta (bloco por bloco, 2 golpes cada) até achar a chave enterrada num ponto do mapa. Blocos quebrados podem soltar poções/vida/mana; monstros voltam aos poucos depois que a sala é limpa.
-- **Magias**: Bola de Fogo, Nova de Gelo, Luz Curativa — desbloqueadas por requisito de atributo.
+- **Masmorra com chave escondida**: a saída de cada fase é um baú trancado — cave com a Picareta (bloco por bloco, 2 golpes cada) até achar a chave enterrada num ponto do mapa. Blocos quebrados podem soltar poções/vida/mana; monstros voltam aos poucos depois que a sala é limpa (mapa do tesouro revelado ao limpar a primeira leva, com marcações decorativas espalhadas pela fase).
 - **~25 poções e elixires**, cada um com um buff temporário próprio (dano, defesa, regeneração, XP, ouro...) — até 3 selecionáveis para o hotbar.
 - **Status effects**: Veneno, Lentidão, Fraqueza, Fogo, Frio, Calor e Choque, com cura por Antídoto onde faz sentido; números de dano flutuantes (físico/mágico/dano-ao-longo-do-tempo) em todo acerto.
-- **5 dificuldades** (Normal → Inferno), cada uma a mesma campanha com monstros mais fortes, chance de Campeões, afixos de fase inteira e enrage de boss mais cedo — desbloqueadas sequencialmente.
+- **5 dificuldades** (Normal → Inferno), cada uma a mesma campanha com monstros mais fortes E de tier diferente, chance de Campeões, afixos de fase inteira e enrage de boss mais cedo — desbloqueadas sequencialmente.
 - **Paragon**: spawn raro (3%, com pity) de monstro comum upgradado, x4 XP/ouro.
 - **Clima dinâmico** por fase (neblina, chuva, neve, tempestade, cinzas...).
 - **Remapeamento de teclas**: qualquer tecla de ação (ataque, magias, dash, picareta, atalhos de menu) pode ser trocada pelo próprio jogador, pelo botão de engrenagem.
@@ -49,9 +49,9 @@ Uma campanha em **3 atos** (13 fases, incluindo uma secreta), com sistema de atr
 | W / A / S / D ou ↑↓←→ | Mover personagem |
 | Mouse | Mirar ataque/magias na direção do cursor |
 | ESPAÇO | Atacar corpo a corpo |
-| F | Conjurar Bola de Fogo |
-| Q | Conjurar Nova de Gelo |
-| R | Conjurar Luz Curativa (ou Reiniciar, na tela de pausa/morte) |
+| F | Conjurar magia ofensiva (1ª do kit da profissão) |
+| Q | Conjurar magia utilitária (2ª do kit da profissão) |
+| R | Conjurar magia ultimate (3ª do kit da profissão, ou Reiniciar, na tela de pausa/morte) |
 | X | Investida (Dash) |
 | E | Picareta — quebra blocos e cava em busca da chave escondida da masmorra |
 | 1 / 2 / 3 | Usar item (slots do hotbar, escolhidos no menu Itens) |
@@ -73,21 +73,23 @@ No navegador/celular, assim que a tela é tocada aparecem controles virtuais: jo
 
 ## 🏰 Campanha
 
-| Fase | Título | Tipo | Monstros / Boss | ML |
+| Fase | Título | Tipo | Famílias de monstro / Boss | ML |
 |---|---|---|---|---|
-| 1 | Floresta Encantada | combate | esqueleto, goblin | 1 |
-| 2 | Ruínas do Deserto | combate | esqueleto, goblin | 4 |
-| 3 | Masmorra das Sombras | combate | esqueleto, goblin, cavaleiro negro | 8 |
+| 1 | Floresta Encantada | combate | Esqueleto, Goblin | 1 |
+| 2 | Ruínas do Deserto | combate | Esqueleto, Goblin, Orc, Caranguejo, Rato, Lobo, Urso | 4 |
+| 3 | Masmorra das Sombras | combate | Cavaleiro Negro, Esqueleto, Orc | 8 |
 | 4 | Acampamento de Guerra | **boss** | Senhor da Guerra Orc | — |
-| 5 | Pântano Sombrio | combate | aranha, serpente, treant | 12 |
-| 6 | Torre Amaldiçoada | combate | esqueleto, troll, cavaleiro da morte | 16 |
-| 7 | Cripta Perdida | combate | zumbi, verme, imp | 20 |
+| 5 | Pântano Sombrio | combate | Aranha, Saurio, Sapo, Treant, Geleia | 12 |
+| 6 | Torre Amaldiçoada | combate | Esqueleto, Brute (Troll/Ogro), Fantasma, Minotauro | 16 |
+| 7 | Cripta Perdida | combate | Zumbi, Verme, Demônio, Vampiro | 20 |
 | 8 | Cripta do Necromante | **boss** | Necromante | — |
-| 9 | Salão dos Ecos | combate | dark horse, acólito, feiticeira | 24 |
-| 10 | Abismo de Cinzas | combate | fire hound, ogro, elemental de pedra | 28 |
-| 11 | Corredor Final | combate | quimera, lyzardman, esqueleto sombrio | 32 |
+| 9 | Salão dos Ecos | combate | Corcel Espectral, Bruxa, Fantasma | 24 |
+| 10 | Abismo de Cinzas | combate | Cão Infernal, Golem, Drake | 28 |
+| 11 | Corredor Final | combate | Quimera, Saurio, Lobisomem | 32 |
 | 12 | Trono das Trevas | **boss** (final da campanha) | Rei das Sombras | — |
 | 13 | Fase Secreta: INFERNO | **boss** (desbloqueada após vencer o Inferno) | Cacodemônio | — |
+
+Cada família tem 3 variações de poder (fraca/média/forte) — qual aparece depende da dificuldade escolhida (Normal/Difícil → fraca, Muito Difícil/Pesadelo → média, Inferno → forte), então a mesma fase mostra monstros diferentes conforme a dificuldade sobe.
 
 ### Condição de vitória
 Derrotar o **Rei das Sombras** na Fase 12 (a fase secreta é um bônus pós-campanha).
@@ -242,7 +244,8 @@ dungeon-quest/
     ├── affixes.py                     ← Paragon/Campeão e afixos de fase
     ├── difficulty.py                   ← 5 tiers de dificuldade
     ├── professions.py                   ← Derivação de profissão a partir dos atributos
-    ├── spells.py                         ← Magias do jogador
+    ├── class_kits.py                     ← Kit de ataque básico + 3 magias por profissão (15 classes)
+    ├── spells.py                         ← Definição de todas as magias do jogo (47)
     ├── items.py                           ← Poções/elixires/consumíveis (~25 itens)
     ├── merchant.py                         ← Loja + seleção de hotbar (menu Itens)
     ├── weather.py                           ← Clima dinâmico por fase
