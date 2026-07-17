@@ -184,6 +184,86 @@ ENEMY_ARCHETYPES = {
     # Elite crit archetype (role royal_guard used to fill) - luck>0 telegraphs
     # "this one can crit" without a whole new mechanic.
     "dark_skeleton":   dict(strength=13, dexterity=6, vigor=9,  luck=15, weapon_base=9,  base_speed=60),
+
+    # Estagio N (leva de conteudo - familias de monstro): 20 familias x 3
+    # tiers, cada tier com sua PROPRIA entrada (nao um multiplicador em
+    # cima de uma base compartilhada) - mesma disciplina que a passagem de
+    # individualizacao acima já seguiu, pra nao repetir o erro dos
+    # recolors aposentados. 7 familias reusam 1-3 monstros ja existentes
+    # como algum dos tiers (Skeleton/Spider/Goblin/Demon/Golem/Zombie/
+    # Saurian/Witch/Brute) - só as entradas NOVAS aparecem aqui.
+
+    # --- Rato (Rat) ---
+    "rato":              dict(strength=2,  dexterity=3,  vigor=0,  luck=0,  weapon_base=3.5, base_speed=140),
+    "rato_gigante":      dict(strength=6,  dexterity=5,  vigor=4,  luck=0,  weapon_base=6,   base_speed=125),
+    "rato_toxico":       dict(strength=10, dexterity=7,  vigor=8,  luck=8,  weapon_base=8,   base_speed=115),
+    # --- Sapo (Toad) ---
+    "sapo":              dict(strength=3,  dexterity=1,  vigor=3,  luck=0,  weapon_base=4.5, base_speed=75),
+    "sapo_venenoso":     dict(strength=7,  dexterity=3,  vigor=8,  luck=0,  weapon_base=7,   base_speed=65),
+    "sapo_rei":          dict(strength=12, dexterity=4,  vigor=14, luck=3,  weapon_base=9.5,  base_speed=60),
+    # --- Minotauro (Minotaur) ---
+    "minotauro_jovem":   dict(strength=7,  dexterity=1,  vigor=4,  luck=0,  weapon_base=6,   base_speed=85),
+    "minotauro":         dict(strength=13, dexterity=2,  vigor=10, luck=0,  weapon_base=9,   base_speed=75),
+    "minotauro_ancestral": dict(strength=19, dexterity=3, vigor=16, luck=8, weapon_base=12,  base_speed=65),
+    # --- Lobo (Wolf) ---
+    "lobo":              dict(strength=4,  dexterity=5,  vigor=1,  luck=0,  weapon_base=5,   base_speed=135),
+    "lobo_alfa":         dict(strength=9,  dexterity=8,  vigor=6,  luck=0,  weapon_base=7.5, base_speed=125),
+    "lobo_das_sombras":  dict(strength=14, dexterity=11, vigor=11, luck=10, weapon_base=10,  base_speed=115),
+    # --- Urso (Bear) ---
+    "urso":              dict(strength=6,  dexterity=0,  vigor=6,  luck=0,  weapon_base=6,   base_speed=70),
+    "urso_da_matilha":   dict(strength=11, dexterity=1,  vigor=13, luck=0,  weapon_base=9,   base_speed=60),
+    "urso_ancestral":    dict(strength=17, dexterity=2,  vigor=20, luck=5,  weapon_base=12,  base_speed=50),
+    # --- Orc ---
+    "orc_recruta":       dict(strength=6,  dexterity=2,  vigor=2,  luck=0,  weapon_base=5.5, base_speed=95),
+    "orc_guerreiro":     dict(strength=12, dexterity=4,  vigor=7,  luck=0,  weapon_base=8.5, base_speed=85),
+    "orc_brutamontes":   dict(strength=18, dexterity=5,  vigor=13, luck=5,  weapon_base=11.5, base_speed=75),
+    # --- Drake ---
+    "drake_jovem":       dict(strength=5,  dexterity=5,  vigor=2,  luck=0,  weapon_base=5.5, base_speed=110),
+    "drake":             dict(strength=10, dexterity=8,  vigor=7,  luck=0,  weapon_base=8.5, base_speed=100),
+    "drake_anciao":      dict(strength=16, dexterity=10, vigor=13, luck=10, weapon_base=12,  base_speed=90),
+    # --- Vampiro (Vampire) ---
+    "servo_vampirico":   dict(strength=4,  dexterity=5,  vigor=1,  luck=3,  weapon_base=5,   base_speed=105),
+    "vampiro":           dict(strength=9,  dexterity=9,  vigor=6,  luck=10, weapon_base=8,   base_speed=100),
+    "lorde_vampiro":     dict(strength=14, dexterity=13, vigor=11, luck=20, weapon_base=11,  base_speed=95),
+    # --- Fantasma (Ghost) ---
+    "espectro":          dict(strength=3,  dexterity=6,  vigor=0,  luck=0,  weapon_base=5,   base_speed=130),
+    "fantasma":          dict(strength=7,  dexterity=10, vigor=3,  luck=5,  weapon_base=7.5, base_speed=120),
+    "espirito_vingativo": dict(strength=11, dexterity=14, vigor=6, luck=15, weapon_base=10.5, base_speed=115),
+    # --- Geleia (Slime) ---
+    "geleia":            dict(strength=2,  dexterity=0,  vigor=4,  luck=0,  weapon_base=4,   base_speed=65),
+    "geleia_acida":      dict(strength=6,  dexterity=1,  vigor=10, luck=0,  weapon_base=6.5, base_speed=55),
+    "geleia_real":       dict(strength=10, dexterity=2,  vigor=17, luck=5,  weapon_base=9,   base_speed=50),
+    # --- Caranguejo (Crab) ---
+    "caranguejo":        dict(strength=4,  dexterity=1,  vigor=4,  luck=0,  weapon_base=5,   base_speed=75),
+    "caranguejo_blindado": dict(strength=9, dexterity=2, vigor=10, luck=0,  weapon_base=7.5, base_speed=65),
+    "rei_caranguejo":    dict(strength=14, dexterity=3,  vigor=17, luck=5,  weapon_base=10.5, base_speed=55),
+    # --- Lobisomem (Werewolf) ---
+    "licantropo":        dict(strength=6,  dexterity=5,  vigor=2,  luck=0,  weapon_base=6,   base_speed=110),
+    "lobisomem":         dict(strength=12, dexterity=9,  vigor=7,  luck=5,  weapon_base=9,   base_speed=105),
+    "lobisomem_alfa":    dict(strength=18, dexterity=13, vigor=13, luck=15, weapon_base=12,  base_speed=100),
+
+    # --- Novos tiers de familias que ja tinham monstro(s) existente(s) ---
+    # Spider (aranha ja existe como tier 1)
+    "aranha_cacadora":   dict(strength=9,  dexterity=13, vigor=7,  luck=0,  weapon_base=7,   base_speed=95),
+    "rainha_aranha":     dict(strength=14, dexterity=18, vigor=12, luck=15, weapon_base=10,  base_speed=90),
+    # Goblin (goblin ja existe como tier 1)
+    "goblin_guerreiro":  dict(strength=9,  dexterity=3,  vigor=5,  luck=0,  weapon_base=8,   base_speed=100),
+    "lider_goblin":      dict(strength=14, dexterity=4,  vigor=10, luck=15, weapon_base=11,  base_speed=90),
+    # Demon (imp ja existe como tier 1)
+    "demonio_menor":     dict(strength=8,  dexterity=10, vigor=6,  luck=0,  weapon_base=7,   base_speed=110),
+    "demonio_maior":     dict(strength=13, dexterity=13, vigor=11, luck=15, weapon_base=10.5, base_speed=105),
+    # Golem (elemental_pedra ja existe como tier 1)
+    "golem_de_ferro":    dict(strength=16, dexterity=1,  vigor=24, luck=0,  weapon_base=10.5, base_speed=30),
+    "golem_runico":      dict(strength=20, dexterity=2,  vigor=30, luck=10, weapon_base=13,  base_speed=28),
+    # Zombie (zumbi ja existe como tier 1)
+    "zumbi_podre":       dict(strength=11, dexterity=1,  vigor=13, luck=0,  weapon_base=8,   base_speed=35),
+    "abominacao":        dict(strength=16, dexterity=1,  vigor=20, luck=5,  weapon_base=11,  base_speed=30),
+    # Saurian (serpente=tier1, lyzardman=tier2 ja existem)
+    "saurio_ancestral":  dict(strength=17, dexterity=10, vigor=12, luck=12, weapon_base=11.5, base_speed=95),
+    # Witch (acolito=tier1, feiticeira=tier2 ja existem)
+    "bruxa_suprema":     dict(strength=8,  dexterity=6,  vigor=9,  luck=10, weapon_base=12,  base_speed=80),
+    # Brute (troll=tier1, ogro=tier2 ja existem)
+    "ogro_anciao":       dict(strength=22, dexterity=2,  vigor=22, luck=10, weapon_base=13.5, base_speed=45),
 }
 
 # Base XP/gold per kill at monster level (ML) 1 - see scale_by_ml() below for
@@ -200,6 +280,30 @@ BASE_XP = {
     "dark_horse": 24, "acolito": 20, "feiticeira": 26,
     "fire_hound": 22, "ogro": 28, "elemental_pedra": 30,
     "chimera": 32, "lyzardman": 24, "dark_skeleton": 28,
+    # Estagio N: 49 monstros novos - XP/ouro flat por tier (1=fraco,
+    # 2=medio, 3=forte), mesma faixa que os arquétipos ML1-11 acima já
+    # cobrem, sem uma calibracao individual por familia (nao existe
+    # balance_sim.py ainda pra validar isso com precisao).
+    "rato": 9, "rato_gigante": 19, "rato_toxico": 30,
+    "sapo": 9, "sapo_venenoso": 19, "sapo_rei": 30,
+    "minotauro_jovem": 19, "minotauro": 30, "minotauro_ancestral": 38,
+    "lobo": 9, "lobo_alfa": 19, "lobo_das_sombras": 30,
+    "urso": 19, "urso_da_matilha": 30, "urso_ancestral": 38,
+    "orc_recruta": 9, "orc_guerreiro": 19, "orc_brutamontes": 30,
+    "drake_jovem": 19, "drake": 30, "drake_anciao": 38,
+    "servo_vampirico": 9, "vampiro": 19, "lorde_vampiro": 30,
+    "espectro": 9, "fantasma": 19, "espirito_vingativo": 30,
+    "geleia": 9, "geleia_acida": 19, "geleia_real": 30,
+    "caranguejo": 9, "caranguejo_blindado": 19, "rei_caranguejo": 30,
+    "licantropo": 19, "lobisomem": 30, "lobisomem_alfa": 38,
+    "aranha_cacadora": 19, "rainha_aranha": 30,
+    "goblin_guerreiro": 19, "lider_goblin": 30,
+    "demonio_menor": 19, "demonio_maior": 30,
+    "golem_de_ferro": 30, "golem_runico": 38,
+    "zumbi_podre": 19, "abominacao": 30,
+    "saurio_ancestral": 30,
+    "bruxa_suprema": 30,
+    "ogro_anciao": 38,
 }
 GOLD_DROPS = {
     "skeleton": 4,
@@ -211,6 +315,27 @@ GOLD_DROPS = {
     "dark_horse": 9, "acolito": 8, "feiticeira": 10,
     "fire_hound": 9, "ogro": 11, "elemental_pedra": 12,
     "chimera": 13, "lyzardman": 9, "dark_skeleton": 11,
+    # Estagio N: mesma faixa flat por tier de BASE_XP acima.
+    "rato": 4, "rato_gigante": 7, "rato_toxico": 12,
+    "sapo": 4, "sapo_venenoso": 7, "sapo_rei": 12,
+    "minotauro_jovem": 7, "minotauro": 12, "minotauro_ancestral": 15,
+    "lobo": 4, "lobo_alfa": 7, "lobo_das_sombras": 12,
+    "urso": 7, "urso_da_matilha": 12, "urso_ancestral": 15,
+    "orc_recruta": 4, "orc_guerreiro": 7, "orc_brutamontes": 12,
+    "drake_jovem": 7, "drake": 12, "drake_anciao": 15,
+    "servo_vampirico": 4, "vampiro": 7, "lorde_vampiro": 12,
+    "espectro": 4, "fantasma": 7, "espirito_vingativo": 12,
+    "geleia": 4, "geleia_acida": 7, "geleia_real": 12,
+    "caranguejo": 4, "caranguejo_blindado": 7, "rei_caranguejo": 12,
+    "licantropo": 7, "lobisomem": 12, "lobisomem_alfa": 15,
+    "aranha_cacadora": 7, "rainha_aranha": 12,
+    "goblin_guerreiro": 7, "lider_goblin": 12,
+    "demonio_menor": 7, "demonio_maior": 12,
+    "golem_de_ferro": 12, "golem_runico": 15,
+    "zumbi_podre": 7, "abominacao": 12,
+    "saurio_ancestral": 12,
+    "bruxa_suprema": 12,
+    "ogro_anciao": 15,
 }
 
 # Boss identities (Stage B4) - the campaign now has 3 acts, each ending in

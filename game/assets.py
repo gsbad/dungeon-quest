@@ -636,6 +636,66 @@ ENEMY_SPRITES = {
     "chimera":       {"rig": "chimera", "body": (140, 100, 40), "accent": (230, 210, 60)},
     "lyzardman":     {"rig": "reptile", "body": (40, 110, 70),  "accent": (220, 230, 80)},
     "dark_skeleton": {"rig": "skeleton", "body": (70, 70, 80),  "eye": (170, 60, 255)},
+
+    # Estagio N (leva de conteudo - familias de monstro): 49 entradas
+    # novas - tier 1 usa só a rig nova/existente recolorida, tiers 2/3
+    # empilham 1-2 overlays (ver _OVERLAY_PAINTERS acima) em cima da MESMA
+    # rig - silhueta genuinamente diferente por tier, não só cor.
+    "rato":              {"rig": "rat", "body": (150, 130, 110), "eye": RED},
+    "rato_gigante":      {"rig": "rat", "body": (110, 90, 75), "eye": RED, "overlay": ["spikes"]},
+    "rato_toxico":       {"rig": "rat", "body": (90, 140, 60), "eye": (200, 255, 80),
+                            "overlay": ["spikes", "glow_eyes"], "overlay_color": (140, 255, 90)},
+    "sapo":              {"rig": "toad", "body": (90, 140, 70), "eye": (255, 220, 60)},
+    "sapo_venenoso":     {"rig": "toad", "body": (110, 160, 50), "eye": (200, 255, 80), "overlay": ["spikes"]},
+    "sapo_rei":          {"rig": "toad", "body": (150, 180, 40), "eye": GOLD, "overlay": ["crown"]},
+    "minotauro_jovem":   {"rig": "minotaur", "body": (140, 100, 60), "accent": (210, 200, 180)},
+    "minotauro":         {"rig": "minotaur", "body": (110, 75, 45), "accent": (220, 210, 190), "overlay": ["armor"]},
+    "minotauro_ancestral": {"rig": "minotaur", "body": (80, 55, 35), "accent": GOLD, "overlay": ["armor", "crown"]},
+    "lobo":              {"rig": "wolf", "body": (140, 140, 145), "accent": (200, 60, 60)},
+    "lobo_alfa":         {"rig": "wolf", "body": (100, 100, 110), "accent": (220, 80, 80), "overlay": ["spikes"]},
+    "lobo_das_sombras":  {"rig": "wolf", "body": (50, 50, 65), "accent": PURPLE,
+                            "overlay": ["glow_eyes", "spikes"], "overlay_color": (170, 110, 255)},
+    "urso":              {"rig": "bear", "body": (120, 85, 55), "accent": (60, 40, 25)},
+    "urso_da_matilha":   {"rig": "bear", "body": (95, 65, 40), "accent": (200, 60, 60), "overlay": ["spikes"]},
+    "urso_ancestral":    {"rig": "bear", "body": (60, 45, 30), "accent": GOLD, "overlay": ["crown", "spikes"]},
+    "orc_recruta":       {"rig": "orc", "body": (90, 140, 70), "accent": (50, 90, 40)},
+    "orc_guerreiro":     {"rig": "orc", "body": (70, 115, 55), "accent": (150, 120, 60), "overlay": ["armor"]},
+    "orc_brutamontes":   {"rig": "orc", "body": (50, 90, 40), "accent": GOLD, "overlay": ["armor", "crown"]},
+    "drake_jovem":       {"rig": "drake", "body": (200, 90, 40), "accent": (255, 180, 80)},
+    "drake":             {"rig": "drake", "body": (170, 60, 30), "accent": (255, 140, 50), "overlay": ["spikes"]},
+    "drake_anciao":      {"rig": "drake", "body": (130, 40, 25), "accent": GOLD, "overlay": ["crown", "spikes"]},
+    "servo_vampirico":   {"rig": "vampire", "body": (200, 190, 190), "accent": (50, 20, 30)},
+    "vampiro":           {"rig": "vampire", "body": (210, 200, 200), "accent": (80, 10, 20), "overlay": ["glow_eyes"]},
+    "lorde_vampiro":     {"rig": "vampire", "body": (220, 210, 210), "accent": (30, 5, 15),
+                            "overlay": ["crown", "glow_eyes"], "overlay_color": RED},
+    "espectro":          {"rig": "ghost", "body": (200, 210, 230, 170), "eye": (80, 80, 120)},
+    "fantasma":          {"rig": "ghost", "body": (170, 185, 220, 190), "eye": (60, 60, 140), "overlay": ["glow_eyes"]},
+    "espirito_vingativo": {"rig": "ghost", "body": (130, 150, 210, 210), "eye": RED,
+                            "overlay": ["glow_eyes", "spikes"], "overlay_color": RED},
+    "geleia":            {"rig": "slime", "body": (110, 200, 110), "accent": (60, 140, 60)},
+    "geleia_acida":      {"rig": "slime", "body": (150, 220, 60), "accent": (200, 255, 80), "overlay": ["spikes"]},
+    "geleia_real":       {"rig": "slime", "body": (200, 190, 40), "accent": GOLD, "overlay": ["crown"]},
+    "caranguejo":        {"rig": "crab", "body": (200, 90, 60), "accent": (230, 150, 110)},
+    "caranguejo_blindado": {"rig": "crab", "body": (170, 70, 50), "accent": (120, 120, 130), "overlay": ["armor"]},
+    "rei_caranguejo":    {"rig": "crab", "body": (140, 50, 40), "accent": GOLD, "overlay": ["armor", "crown"]},
+    "licantropo":        {"rig": "werewolf", "body": (110, 90, 70), "accent": (200, 60, 60)},
+    "lobisomem":         {"rig": "werewolf", "body": (85, 65, 50), "accent": (220, 80, 80), "overlay": ["spikes"]},
+    "lobisomem_alfa":    {"rig": "werewolf", "body": (55, 40, 30), "accent": GOLD, "overlay": ["crown", "spikes"]},
+
+    # --- Novos tiers de familias que ja tinham monstro(s) ---
+    "aranha_cacadora":   {"rig": "spider", "body": (75, 50, 85), "eye": (255, 60, 60), "overlay": ["spikes"]},
+    "rainha_aranha":     {"rig": "spider", "body": (45, 25, 55), "eye": GOLD, "overlay": ["crown", "glow_eyes"]},
+    "goblin_guerreiro":  {"rig": "goblin", "body": (60, 150, 60), "eye": (255, 200, 0), "overlay": ["armor"]},
+    "lider_goblin":      {"rig": "goblin", "body": (40, 120, 40), "eye": GOLD, "overlay": ["crown", "armor"]},
+    "demonio_menor":     {"rig": "imp", "body": (170, 50, 50), "accent": (80, 15, 15), "overlay": ["spikes"]},
+    "demonio_maior":     {"rig": "imp", "body": (130, 30, 30), "accent": GOLD, "overlay": ["crown", "spikes"]},
+    "golem_de_ferro":    {"rig": "golem", "body": (130, 130, 140), "accent": (200, 200, 220), "overlay": ["armor"]},
+    "golem_runico":      {"rig": "golem", "body": (90, 110, 160), "accent": (140, 170, 255), "overlay": ["armor", "glow_eyes"]},
+    "zumbi_podre":       {"rig": "skeleton", "body": (100, 120, 80), "eye": (60, 50, 20), "overlay": ["spikes"]},
+    "abominacao":        {"rig": "brute", "body": (80, 100, 60), "accent": (40, 50, 20), "overlay": ["spikes", "armor"]},
+    "saurio_ancestral":  {"rig": "reptile", "body": (30, 90, 60), "accent": GOLD, "overlay": ["crown", "spikes"]},
+    "bruxa_suprema":     {"rig": "robed", "body": (40, 30, 80), "accent": (200, 140, 255), "overlay": ["crown", "glow_eyes"]},
+    "ogro_anciao":       {"rig": "brute", "body": (75, 55, 25), "accent": GOLD, "overlay": ["crown", "armor"]},
 }
 
 
@@ -887,6 +947,238 @@ def _paint_chimera(s, SC, body, accent):
     pygame.draw.circle(s, accent, (0, 6*SC), max(1, SC-2))
 
 
+def _paint_rat(s, SC, body, eye):
+    # Rato: pequeno quadrupede baixo, focinho pontudo, orelhas grandes,
+    # cauda fina longa - a menor/mais rapida das rigs novas.
+    torso = [(x, y) for y in range(8, 11) for x in range(5, 11)]
+    for (x, y) in torso:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.polygon(s, body, [(11*SC, 8*SC), (15*SC, 9*SC), (11*SC, 10*SC)])
+    for (x, y) in [(4, 6), (5, 6), (4, 7)]:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.rect(s, eye, (5*SC, 8*SC, SC, SC))
+    for x in [6, 8]:
+        for y in range(11, 13):
+            pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.line(s, body, (5*SC, 10*SC), (1*SC, 13*SC), max(1, SC-2))
+
+
+def _paint_toad(s, SC, body, eye):
+    # Sapo: corpo redondo e baixo, olhos grandes no topo, sem pescoço.
+    torso = [(x, y) for y in range(7, 12) for x in range(4, 12)]
+    for (x, y) in torso:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.circle(s, body, (6*SC, 6*SC), int(1.6*SC))
+    pygame.draw.circle(s, body, (10*SC, 6*SC), int(1.6*SC))
+    pygame.draw.circle(s, eye, (6*SC, 6*SC), max(1, SC-2))
+    pygame.draw.circle(s, eye, (10*SC, 6*SC), max(1, SC-2))
+    for x in [4, 6, 9, 11]:
+        for y in range(12, 14):
+            pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+
+
+def _paint_minotaur(s, SC, body, accent):
+    # Minotauro: brute com chifres grandes e focinho bovino.
+    torso = [(x, y) for y in range(5, 11) for x in range(4, 12)]
+    for (x, y) in torso:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    head = [(x, y) for y in range(2, 5) for x in range(6, 10)]
+    for (x, y) in head:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.polygon(s, accent, [(6*SC, 2*SC), (3*SC, 0), (5*SC, 3*SC)])
+    pygame.draw.polygon(s, accent, [(10*SC, 2*SC), (13*SC, 0), (11*SC, 3*SC)])
+    pygame.draw.rect(s, accent, (7*SC, 4*SC, SC*2, SC))
+    for y in range(6, 10):
+        pygame.draw.rect(s, body, (1*SC, y*SC, SC*2, SC))
+        pygame.draw.rect(s, body, (13*SC, y*SC, SC*2, SC))
+    darker = _shade(body, 0.8)
+    for (x, y) in [(5, 11), (6, 11), (9, 11), (10, 11), (5, 12), (9, 12)]:
+        pygame.draw.rect(s, darker, (x*SC, y*SC, SC, SC))
+
+
+def _paint_wolf(s, SC, body, accent):
+    # Lobo: quadrupede magro/agil - focinho longo, orelhas pontudas eretas.
+    torso = [(x, y) for y in range(8, 10) for x in range(3, 12)]
+    for (x, y) in torso:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    head = [(x, y) for y in range(6, 9) for x in range(11, 15)]
+    for (x, y) in head:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.polygon(s, body, [(11*SC, 6*SC), (10*SC, 3*SC), (12*SC, 6*SC)])
+    pygame.draw.polygon(s, body, [(14*SC, 6*SC), (15*SC, 3*SC), (13*SC, 6*SC)])
+    for x in [4, 6, 9, 11]:
+        for y in range(10, 14):
+            pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.rect(s, accent, (14*SC, 7*SC, SC, SC))
+    pygame.draw.line(s, body, (3*SC, 9*SC), (0, 11*SC), max(1, SC-2))
+
+
+def _paint_bear(s, SC, body, accent):
+    # Urso: quadrupede pesado/redondo, orelhas pequenas arredondadas.
+    torso = [(x, y) for y in range(6, 10) for x in range(3, 13)]
+    for (x, y) in torso:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    head = [(x, y) for y in range(5, 9) for x in range(11, 15)]
+    for (x, y) in head:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.circle(s, body, (11*SC, 4*SC), max(1, SC-1))
+    pygame.draw.circle(s, body, (14*SC, 4*SC), max(1, SC-1))
+    pygame.draw.rect(s, accent, (14*SC, 7*SC, SC, SC))
+    for x in [4, 6, 9, 11]:
+        for y in range(10, 14):
+            pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    darker = _shade(body, 0.8)
+    for x in [4, 6, 9, 11]:
+        pygame.draw.rect(s, darker, (x*SC, 13*SC, SC, SC))
+
+
+def _paint_orc(s, SC, body, accent):
+    # Orc: humanoide robusto, presas pra fora, ombros largos.
+    torso = [(x, y) for y in range(6, 11) for x in range(4, 12)]
+    for (x, y) in torso:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    head = [(x, y) for y in range(3, 6) for x in range(6, 10)]
+    for (x, y) in head:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.polygon(s, WHITE, [(6*SC, 5*SC), (5*SC, 7*SC), (7*SC, 5*SC)])
+    pygame.draw.polygon(s, WHITE, [(10*SC, 5*SC), (11*SC, 7*SC), (9*SC, 5*SC)])
+    pygame.draw.rect(s, accent, (7*SC, 4*SC, SC, SC))
+    for y in range(6, 9):
+        pygame.draw.rect(s, body, (2*SC, y*SC, SC*2, SC))
+        pygame.draw.rect(s, body, (12*SC, y*SC, SC*2, SC))
+    darker = _shade(body, 0.75)
+    for (x, y) in [(5, 11), (6, 11), (9, 11), (10, 11), (5, 12), (9, 12), (5, 13), (9, 13)]:
+        pygame.draw.rect(s, darker, (x*SC, y*SC, SC, SC))
+
+
+def _paint_drake(s, SC, body, accent):
+    # Drake: pequeno dragao - pescoco longo, asas, cauda.
+    torso = [(x, y) for y in range(8, 11) for x in range(5, 11)]
+    for (x, y) in torso:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    neck = [(9, 6), (10, 6), (10, 7), (11, 5)]
+    for (x, y) in neck:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    head = [(x, y) for y in range(3, 6) for x in range(11, 14)]
+    for (x, y) in head:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.polygon(s, accent, [(2, 8*SC), (7*SC, 5*SC), (7*SC, 9*SC)])
+    pygame.draw.rect(s, accent, (12*SC, 4*SC, SC, SC))
+    pygame.draw.rect(s, WHITE, (13*SC, 4*SC, SC, SC))
+    for x in [6, 9]:
+        for y in range(11, 13):
+            pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.line(s, body, (5*SC, 9*SC), (1*SC, 12*SC), max(1, SC-1))
+
+
+def _paint_vampire(s, SC, body, accent):
+    # Vampiro: humanoide esguio, capa larga, presas visiveis, pele palida.
+    cape = [(x, y) for y in range(6, 14) for x in range(3, 13) if abs(x-8) <= (y-4)]
+    for (x, y) in cape:
+        pygame.draw.rect(s, accent, (x*SC, y*SC, SC, SC))
+    torso = [(x, y) for y in range(6, 11) for x in range(6, 10)]
+    for (x, y) in torso:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    head = [(x, y) for y in range(2, 6) for x in range(6, 10)]
+    for (x, y) in head:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.rect(s, WHITE, (6*SC, 4*SC, SC, SC))
+    pygame.draw.rect(s, WHITE, (9*SC, 4*SC, SC, SC))
+    pygame.draw.rect(s, RED, (7*SC, 4*SC, SC, SC))
+
+
+def _paint_ghost(s, SC, body, eye):
+    # Fantasma: forma flutuante de "lagrima" translucida, sem pernas.
+    for y in range(4, 12):
+        half = max(1, 5 - abs(y - 7) // 2)
+        for x in range(8 - half, 8 + half):
+            pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    for i in range(4):
+        wx = 4 + i * 2
+        pygame.draw.polygon(s, body, [(wx*SC, 12*SC), ((wx+1)*SC, 12*SC), ((wx+1)*SC, 14*SC)])
+    pygame.draw.rect(s, eye, (6*SC, 7*SC, SC, SC))
+    pygame.draw.rect(s, eye, (9*SC, 7*SC, SC, SC))
+
+
+def _paint_slime(s, SC, body, accent):
+    # Geleia: blob gelatinoso, sem membros - um unico corpo arredondado.
+    pygame.draw.ellipse(s, body, (2*SC, 6*SC, 12*SC, 8*SC))
+    lighter = _shade(body, 1.3)
+    pygame.draw.ellipse(s, lighter, (4*SC, 7*SC, 5*SC, 3*SC))
+    pygame.draw.circle(s, accent, (6*SC, 10*SC), max(1, SC-2))
+    pygame.draw.circle(s, accent, (10*SC, 10*SC), max(1, SC-2))
+
+
+def _paint_crab(s, SC, body, accent):
+    # Caranguejo: corpo largo e baixo, 2 pinças grandes, pernas curtas.
+    torso = [(x, y) for y in range(8, 11) for x in range(5, 11)]
+    for (x, y) in torso:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.circle(s, accent, (3*SC, 8*SC), int(2*SC))
+    pygame.draw.circle(s, accent, (13*SC, 8*SC), int(2*SC))
+    pygame.draw.rect(s, WHITE, (6*SC, 8*SC, SC, SC))
+    pygame.draw.rect(s, WHITE, (9*SC, 8*SC, SC, SC))
+    for x in [5, 7, 9]:
+        pygame.draw.line(s, body, (x*SC, 11*SC), ((x-1)*SC, 14*SC), max(1, SC-2))
+
+
+def _paint_werewolf(s, SC, body, accent):
+    # Lobisomem: hibrido bipede - torso humanoide, cabeça de lobo, garras.
+    torso = [(x, y) for y in range(6, 11) for x in range(5, 11)]
+    for (x, y) in torso:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    head = [(x, y) for y in range(3, 6) for x in range(6, 10)]
+    for (x, y) in head:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+    pygame.draw.polygon(s, body, [(6*SC, 3*SC), (5*SC, 0), (7*SC, 3*SC)])
+    pygame.draw.polygon(s, body, [(10*SC, 3*SC), (11*SC, 0), (9*SC, 3*SC)])
+    pygame.draw.rect(s, body, (9*SC, 5*SC, SC*2, SC))
+    pygame.draw.rect(s, accent, (6*SC, 4*SC, SC, SC))
+    pygame.draw.rect(s, accent, (9*SC, 4*SC, SC, SC))
+    for y in range(6, 9):
+        pygame.draw.rect(s, body, (2*SC, y*SC, SC*2, SC))
+        pygame.draw.rect(s, body, (12*SC, y*SC, SC*2, SC))
+    pygame.draw.polygon(s, WHITE, [(2*SC, 9*SC), (1*SC, 11*SC), (3*SC, 9*SC)])
+    pygame.draw.polygon(s, WHITE, [(13*SC, 9*SC), (14*SC, 11*SC), (12*SC, 9*SC)])
+    for (x, y) in [(6, 11), (7, 11), (9, 11), (5, 12), (10, 12)]:
+        pygame.draw.rect(s, body, (x*SC, y*SC, SC, SC))
+
+
+# Estagio N (leva de conteudo - familias de monstro): overlays genericos
+# aplicados DEPOIS da rig base - a diferenca real (nao so cor) entre um
+# tier 1 e seus tiers 2/3, sem precisar de uma funcao pintora bespoke por
+# tier. Reaproveitados entre varias familias (ex: _overlay_crown serve
+# pro lider de qualquer familia).
+def _overlay_spikes(s, SC, color):
+    for (x, y) in [(3, 5), (12, 5), (2, 9), (13, 9)]:
+        pygame.draw.polygon(s, color, [(x*SC, y*SC), ((x+1)*SC, (y-2)*SC), ((x+2)*SC, y*SC)])
+
+
+def _overlay_crown(s, SC, color):
+    pygame.draw.rect(s, color, (5*SC, 1*SC, SC*6, SC))
+    for x in [5, 8, 10]:
+        pygame.draw.polygon(s, color, [(x*SC, 1*SC), ((x+1)*SC, -1*SC), ((x+2)*SC, 1*SC)])
+
+
+def _overlay_glow_eyes(s, SC, color):
+    pygame.draw.circle(s, color, (6*SC, 6*SC), max(1, SC-1), 1)
+    pygame.draw.circle(s, color, (10*SC, 6*SC), max(1, SC-1), 1)
+
+
+def _overlay_armor(s, SC, color):
+    pygame.draw.rect(s, color, (4*SC, 7*SC, SC*8, SC))
+    pygame.draw.rect(s, color, (5*SC, 5*SC, SC, SC))
+    pygame.draw.rect(s, color, (10*SC, 5*SC, SC, SC))
+
+
+_OVERLAY_PAINTERS = {
+    "spikes": _overlay_spikes,
+    "crown": _overlay_crown,
+    "glow_eyes": _overlay_glow_eyes,
+    "armor": _overlay_armor,
+}
+
+
 _RIG_PAINTERS = {
     "skeleton": _paint_skeleton,
     "goblin": _paint_goblin,
@@ -901,6 +1193,18 @@ _RIG_PAINTERS = {
     "golem": _paint_golem,
     "reptile": _paint_reptile,
     "chimera": _paint_chimera,
+    "rat": _paint_rat,
+    "toad": _paint_toad,
+    "minotaur": _paint_minotaur,
+    "wolf": _paint_wolf,
+    "bear": _paint_bear,
+    "orc": _paint_orc,
+    "drake": _paint_drake,
+    "vampire": _paint_vampire,
+    "ghost": _paint_ghost,
+    "slime": _paint_slime,
+    "crab": _paint_crab,
+    "werewolf": _paint_werewolf,
 }
 
 
@@ -919,6 +1223,11 @@ def create_enemy_sprite(etype="skeleton"):
     # whichever secondary color the rig's paint function expects.
     secondary = defn.get("eye") or defn.get("accent")
     _RIG_PAINTERS[defn["rig"]](s, SC, body, secondary)
+    # Estagio N: tier 2/3 de uma familia empilham 1-2 overlays em cima da
+    # MESMA rig do tier 1 - uma diferenca real de silhueta (presas/coroa/
+    # olhos brilhantes/placas), nao so uma cor diferente.
+    for overlay_name in defn.get("overlay", ()):
+        _OVERLAY_PAINTERS[overlay_name](s, SC, defn.get("overlay_color", secondary or WHITE))
     return s
 
 
