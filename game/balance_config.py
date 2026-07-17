@@ -24,10 +24,12 @@ from game.spells import SPELLS
 from game.status_effects import STATUS_EFFECTS, ORIGINAL_DEBUFF_IDS, PVP_DEBUFF_IDS
 from game.stances import STANCES
 import game.player as player
+import game.level as level
 
 _STATS_KEYS = {
     "mitigation_k", "xp_curve_base", "xp_curve_exp",
     "ml_growth_rate", "anti_farm_level_gap", "anti_farm_xp_mult",
+    "base_attack_cooldown",
 }
 
 # Stage K23: Dash (game/player.py's DASH_* module constants) - not a dict
@@ -38,6 +40,10 @@ _DASH_KEYS = {
     "dex_req": "DASH_DEX_REQ", "duration": "DASH_DURATION",
     "speed": "DASH_SPEED", "cooldown": "DASH_COOLDOWN",
 }
+
+# Same setattr-on-module pattern as _DASH_KEYS, for the pickaxe's own lone
+# cooldown constant.
+_PICKAXE_KEYS = {"cooldown": "PICKAXE_COOLDOWN"}
 
 
 def apply_overrides(config):
@@ -73,6 +79,15 @@ def _apply_one(key, raw_value):
     if len(parts) == 3 and parts[0] == "player" and parts[1] == "dash" and parts[2] in _DASH_KEYS:
         attr = _DASH_KEYS[parts[2]]
         setattr(player, attr, type(getattr(player, attr))(raw_value))
+        return
+
+    if len(parts) == 3 and parts[0] == "player" and parts[1] == "pickaxe" and parts[2] in _PICKAXE_KEYS:
+        attr = _PICKAXE_KEYS[parts[2]]
+        setattr(player, attr, type(getattr(player, attr))(raw_value))
+        return
+
+    if len(parts) == 2 and parts[0] == "level" and parts[1] == "respawn_interval":
+        level.RESPAWN_INTERVAL = type(level.RESPAWN_INTERVAL)(raw_value)
         return
 
     if len(parts) == 2 and parts[0] == "stats" and parts[1] in _STATS_KEYS:

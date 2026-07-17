@@ -174,7 +174,7 @@ essas flags.
 
 ## 🏗️ Arquitetura
 
-O jogo roda inteiramente no cliente (nenhuma chamada de rede no caminho crítico de jogar); um backend FastAPI opcional cuida só de login/sync de save/leaderboard, hospedado numa VM Oracle Cloud com deploy automático via GitHub Actions. Visão detalhada de módulos, fluxo de dados e a decisão de ser offline-first em [`docs/architecture.md`](docs/architecture.md); passo a passo de deploy/CI em [`docs/deploy.md`](docs/deploy.md). Modo cooperativo ainda não existe — [`docs/coop-feasibility.md`](docs/coop-feasibility.md) é um estudo de viabilidade (arquitetura recomendada, o que mudaria, estimativa de esforço), não uma feature implementada.
+O jogo roda inteiramente no cliente (nenhuma chamada de rede no caminho crítico de jogar); um backend FastAPI opcional cuida de login/sync de save/leaderboard/painel admin/cooperativo, hospedado numa VM Oracle Cloud com deploy automático via GitHub Actions. Visão detalhada de módulos, fluxo de dados e a decisão de ser offline-first em [`docs/architecture.md`](docs/architecture.md); passo a passo de deploy/CI em [`docs/deploy.md`](docs/deploy.md). O modo cooperativo (host-autoritativo, sem limite de jogadores, sem exigir login) partiu de um estudo de viabilidade ([`docs/coop-feasibility.md`](docs/coop-feasibility.md)) e está implementado — ordem de construção e decisões em [`docs/coop-implementation-plan.md`](docs/coop-implementation-plan.md).
 
 ---
 
@@ -207,15 +207,21 @@ dungeon-quest/
 ├── CONTRIBUTING.md
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml        ← CI/CD: build + deploy automático a cada push em main
+│       ├── deploy.yml        ← CI/CD: build + deploy automático a cada push em main
+│       └── claude.yml         ← Claude Code GitHub Action (@claude em issue/PR)
 ├── docs/
 │   ├── architecture.md        ← Visão geral de módulos/fluxo de dados/deploy (onboarding)
 │   ├── design.md               ← Documento vivo de design/balanceamento
 │   ├── deploy.md                 ← Deploy manual + CI/CD + acesso à VM
 │   ├── save-schema.md             ← Formato do arquivo de save
-│   └── assets/                     ← Ícones/GIFs renderizados para esta documentação
+│   ├── coop-feasibility.md         ← Estudo de viabilidade do cooperativo (arquitetura/decisões)
+│   ├── coop-implementation-plan.md  ← Ordem de construção do cooperativo, sub-estágio por sub-estágio
+│   └── assets/                       ← Ícones/GIFs renderizados para esta documentação
 ├── tools/
-│   └── balance_sim.py               ← Simulador headless de curva de XP/combate
+│   ├── balance_sim.py                 ← Simulador headless de curva de XP/combate
+│   ├── coop_harness.py                 ← Testa o cooperativo com 2 BrowserContext Playwright reais
+│   ├── coop_soak_test.py                ← Soak test de memória do cooperativo (sessão longa)
+│   └── soak_test.py                      ← Soak test de memória single-player
 ├── backend/                          ← FastAPI: login Google, sync de save, leaderboard, painel admin
 │   ├── app/
 │   │   ├── main.py

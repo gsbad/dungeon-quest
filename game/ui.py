@@ -25,7 +25,7 @@ def draw_tooltip(surface, mouse_pos, rect, text, screen_w=None, screen_h=None):
     if screen_h:
         y = min(y, screen_h - h - 4)
     box = pygame.Surface((w, h), pygame.SRCALPHA)
-    box.fill((15, 15, 22, 235))
+    box.fill((0, 0, 0, 255))
     pygame.draw.rect(box, (120, 120, 150, 255), (0, 0, w, h), 1)
     surface.blit(box, (x, y))
     ty = y + 5

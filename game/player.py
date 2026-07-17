@@ -581,7 +581,7 @@ class Player:
             )
             self.knockback_timer = KNOCKBACK_DURATION
 
-    def update(self, dt, walls, movement_vector):
+    def update(self, dt, walls, movement_vector, level_width=None, level_height=None):
         self.mana = min(self.max_mana, self.mana + self.mana_regen * dt)
         # Stage L9: hp_regen fica suspenso enquanto caído - senão um
         # regen rápido o bastante poderia empurrar o hp de volta acima de
@@ -723,6 +723,17 @@ class Player:
             if self.invincible_timer <= 0:
                 self.invincible = False
                 self.flash_timer = 0
+
+        # Safety-net clamp: the collision resolvers above only correct
+        # position *after* moving, by testing final-rect overlap - a large
+        # enough single-frame dt (stutter/GC pause) combined with knockback/
+        # dash speeds can tunnel straight through a 1-tile-wide border wall
+        # before any overlap is ever detected. Cheaper and lower-risk than
+        # making every movement branch swept-collision-aware.
+        if level_width is not None:
+            self.x = max(0.0, min(self.x, level_width - self.width))
+        if level_height is not None:
+            self.y = max(0.0, min(self.y, level_height - self.height))
 
     def try_attack(self):
         if self.downed:

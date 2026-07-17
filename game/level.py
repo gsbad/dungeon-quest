@@ -10,6 +10,12 @@ import game.net_coop as net_coop
 
 TILE = 48
 
+# Gradual post-clear respawn (K14) - seconds between respawns once the
+# level's original enemy wave is cleared. Module constant (not just a
+# hardcoded literal in __init__) so the balance panel can tune it via
+# game/balance_config.py's "level.respawn_interval" key.
+RESPAWN_INTERVAL = 6.0
+
 # Map layouts: '#'=wall, '.'=floor/grass, 'W'=water, 'E'=enemy spawn, 'P'=player, 'X'=exit
 LEVEL_MAPS = {
     1: {
@@ -538,7 +544,7 @@ class Level:
         self._original_enemy_specs = []
         self._respawns_remaining = 0
         self._respawn_timer = 0.0
-        self._respawn_interval = 6.0
+        self._respawn_interval = RESPAWN_INTERVAL
         self._speed_mul = 1.0
         self._monster_level = 1
 
@@ -739,13 +745,14 @@ class Level:
             particle.update(dt)
         self.dig_particles = [p for p in self.dig_particles if p.life > 0]
 
-        # Check player attack vs enemies - Stage L6: só o host resolve isso.
-        # Um guest atacando um Enemy follower não pode chamar take_damage()
-        # local (o HP real mora no host; aplicar dano aqui divergiria do
-        # próximo snapshot e "voltaria" visualmente). Dano de guest contra
-        # inimigo do host fica pra um incremento futuro (repassar o golpe
-        # pro host resolver) - não coberto por este L6.
-        if not self.network_follower and player.attacking:
+        # Check player attack vs enemies - Stage L6/L8 follow-up: a guest
+        # can't call enemy.take_damage() locally (real HP lives on the
+        # host; applying it here would diverge from the next snapshot and
+        # visually "come back") - instead of doing nothing, it forwards a
+        # "hit_request" for the host to resolve (see the message-loop
+        # handler in game/states.py), and the existing "enemies" broadcast
+        # carries the result back automatically.
+        if player.attacking:
             atk_rect = player.get_attack_rect()
             for enemy in self.enemies:
                 if not (enemy.alive and atk_rect.colliderect(enemy.rect)):
@@ -753,10 +760,15 @@ class Level:
                 if enemy.affix == "warded" and random.random() < 0.25:
                     continue  # blocked - Paragon affix
                 dmg, is_crit = player.roll_physical()
-                enemy.take_damage(dmg, dtype="physical", crit=is_crit,
-                                   knockback_from=(player.x + player.width / 2, player.y + player.height / 2))
-                if not enemy.alive:
-                    self.credit_kill(player, enemy)
+                kb = (player.x + player.width / 2, player.y + player.height / 2)
+                if self.network_follower:
+                    net_coop.send({"type": "hit_request", "enemy_id": enemy.net_id,
+                                   "damage": dmg, "dtype": "physical", "crit": is_crit,
+                                   "kbx": kb[0], "kby": kb[1]})
+                else:
+                    enemy.take_damage(dmg, dtype="physical", crit=is_crit, knockback_from=kb)
+                    if not enemy.alive:
+                        self.credit_kill(player, enemy)
 
     def credit_kill(self, player, enemy):
         """XP/gold/kill-tracking for a just-died regular enemy - shared by
@@ -839,6 +851,19 @@ class Level:
             hits = self._block_hits.get((col, row), 0) + 1
             if hits >= 2:
                 self._break_block(col, row)
+                # Coop: block-breaking never had any sync at all before -
+                # each client mutated its own Level.layout/_block_hits in
+                # isolation, so a block one player broke stayed solid
+                # forever on the other's screen. Symmetric event instead of
+                # host-authoritative (unlike enemy HP, a block's "broken"
+                # state has no real conflict risk worth an authority
+                # round-trip): whichever side actually completes the break
+                # locally announces it, the peer applies the same
+                # _break_block() without re-rolling its drop (see
+                # roll_drop=False below and the "block_broken" handler in
+                # states.py).
+                if net_coop.is_connected():
+                    net_coop.send({"type": "block_broken", "col": col, "row": row})
             else:
                 self._block_hits[(col, row)] = hits
             for _ in range(6):
@@ -854,6 +879,12 @@ class Level:
                 self.dig_particles.append(Particle(col * TILE + TILE / 2, row * TILE + TILE / 2, ACCENT_GOLD))
             if audio_mgr:
                 audio_mgr.play("pickup")
+            # Coop: whoever actually digs up the key opens the exit for
+            # both - without this the other player's exit/chest would stay
+            # closed forever, since _key_found/exit_open never had any sync
+            # either (same underlying gap as block-breaking above).
+            if net_coop.is_connected():
+                net_coop.send({"type": "key_found"})
             return True
         elif ch == '.':
             # Stage K22: an ordinary floor tile used to be a total no-op -
@@ -881,12 +912,18 @@ class Level:
             return True
         return False
 
-    def _break_block(self, col, row):
+    def _break_block(self, col, row, roll_drop=True):
+        if self.layout[row][col] != '#':
+            # Already broken - lets the remote echo of our own break (or a
+            # duplicate "block_broken" message) apply harmlessly instead of
+            # raising on the del below.
+            return
         self.layout[row][col] = '.'
         rect = pygame.Rect(col * TILE, row * TILE, TILE, TILE)
         self.walls = [w for w in self.walls if w.topleft != rect.topleft]
-        del self._block_hits[(col, row)]
-        self._roll_block_drop(col, row)
+        self._block_hits.pop((col, row), None)
+        if roll_drop:
+            self._roll_block_drop(col, row)
 
     def _roll_block_drop(self, col, row):
         # Stage K14: "pot/coracao/mana, chance baixa/media" per the user's

@@ -70,7 +70,14 @@ class ItemsOverlay:
     def _toggle_hotbar(self, player, item_id, input_mgr=None):
         if item_id in player.hotbar_items:
             player.hotbar_items.remove(item_id)
-        elif len(player.hotbar_items) < _MAX_HOTBAR:
+        else:
+            if len(player.hotbar_items) >= _MAX_HOTBAR:
+                # Selecting a 4th item evicts the oldest pick (index 0)
+                # instead of silently no-op'ing - hotbar_slots() (game/
+                # player.py) lays slots out left to right in list order,
+                # so this also reads naturally as "everyone shifts left,
+                # new pick lands on the right."
+                player.hotbar_items.pop(0)
             player.hotbar_items.append(item_id)
         if input_mgr is not None:
             input_mgr.refresh_item_icons(player)

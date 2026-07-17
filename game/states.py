@@ -1253,6 +1253,14 @@ class GameplayState:
         self.coop.update(dt)
         self.chat.update(dt)
 
+        # Captured before the message loop (not at its old spot right
+        # before the local boss-melee block below) - a guest's "hit_request"
+        # can now kill the boss from inside this same loop, and the one-shot
+        # "just died this frame" guard further down needs boss_was_alive to
+        # reflect the state from before ANY of this frame's combat (message-
+        # driven or local), not just local melee.
+        boss_was_alive = self.boss.alive if self.boss else False
+
         if net_coop.is_connected():
             for msg in net_coop.poll_messages():
                 t = msg.get("type")
@@ -1284,6 +1292,43 @@ class GameplayState:
                         return
                 elif t == "enemies" and not net_coop.is_host():
                     self._apply_remote_enemies(msg)
+                elif t == "hit_request" and net_coop.is_host():
+                    # A guest's melee/dash/projectile against an Enemy or
+                    # Boss follower can't call take_damage() locally (real
+                    # HP lives on the host - see the network_follower checks
+                    # below in this same update()), so it forwards the
+                    # already-rolled damage/crit here instead of silently
+                    # doing nothing. Host applies it exactly like its own
+                    # local attacks would, then the existing "enemies"
+                    # broadcast (12Hz, further down) carries the result back
+                    # out to every guest automatically - no new outbound
+                    # message needed.
+                    target_id = msg.get("enemy_id")
+                    dmg = msg.get("damage", 0)
+                    dtype = msg.get("dtype", "physical")
+                    crit = msg.get("crit", False)
+                    kb = (msg.get("kbx", 0), msg.get("kby", 0))
+                    if target_id == "boss":
+                        if self.boss is not None and self.boss.alive:
+                            self.boss.take_damage(dmg, dtype=dtype, crit=crit, knockback_from=kb)
+                    else:
+                        enemy = next((e for e in self.level.enemies
+                                      if e.net_id == target_id and e.alive), None)
+                        if enemy is not None:
+                            enemy.take_damage(dmg, dtype=dtype, crit=crit, knockback_from=kb)
+                            if not enemy.alive:
+                                self.level.credit_kill(self.player, enemy)
+                elif t == "block_broken":
+                    # Symmetric, not host-gated - whichever side (host or
+                    # guest) actually broke the block locally sent this;
+                    # roll_drop=False so the peer doesn't re-roll a second
+                    # independent heart/mana/potion drop for the same break.
+                    self.level._break_block(msg.get("col"), msg.get("row"), roll_drop=False)
+                elif t == "key_found":
+                    # Symmetric too, same reasoning as "block_broken" -
+                    # idempotent (setting True twice is harmless).
+                    self.level._key_found = True
+                    self.level.exit_open = True
                 elif t == "credit_xp" and not net_coop.is_host():
                     # Stage L8: só o host manda isso (quem realmente
                     # resolve a morte) - decisão #2, a fração já vem
@@ -1488,7 +1533,8 @@ class GameplayState:
             self.player.try_apply_debuff("shock")
 
         hp_before = self.player.hp
-        self.player.update(dt, self.level.walls, self.input.movement_vector())
+        self.player.update(dt, self.level.walls, self.input.movement_vector(),
+                           level_width=self.level.width, level_height=self.level.height)
 
         # Stage J13: mouse-aimed combat (PC) - continuous facing towards the
         # cursor's world position, independent of movement, feeding
@@ -1562,21 +1608,19 @@ class GameplayState:
         self._update_pickup_spawns(dt)
         self._check_pickup_pickups()
 
-        boss_was_alive = self.boss.alive if self.boss else False
         # Stage L8: quantos jogadores estão na room agora - 1 fora de
         # coop. self.coop.roster já exclui o próprio jogador local, então
         # +1 é o total certo.
         room_size = (1 + len(self.coop.roster)) if net_coop.is_connected() else 1
 
         if self.boss:
-            # Stage L6/L8: um guest nunca resolve dano contra um boss
-            # follower localmente - o HP real mora no host, aplicar aqui
-            # divergiria do próximo snapshot (mesmo motivo que já protege
-            # o melee contra Enemy dentro de Level.update()). Achado só
-            # agora, implementando L8 (split de XP/ouro não faz sentido se
-            # um guest também pudesse matar o boss por conta própria) -
-            # gap real que passou batido no L6.
-            if self.player.attacking and not self.boss.network_follower:
+            # Stage L6/L8: a guest's damage against a boss follower can't be
+            # applied locally (real HP lives on the host) - it now forwards
+            # a "hit_request" instead of silently doing nothing (see the
+            # message-loop handler above), so this branch runs for both
+            # host and guest; only which of the two paths at the bottom
+            # fires differs.
+            if self.player.attacking:
                 atk_rect = self.player.get_attack_rect()
                 # take_damage() used to be called unconditionally here (with
                 # dmg=0 on a miss) - Boss/CacodemonBoss.take_damage() always
@@ -1585,9 +1629,13 @@ class GameplayState:
                 # never actually connecting. Only call it on an actual hit.
                 if atk_rect.colliderect(self.boss.rect):
                     dmg, is_crit = self.player.roll_physical()
-                    self.boss.take_damage(dmg, dtype="physical", crit=is_crit,
-                                           knockback_from=(self.player.x + self.player.width / 2,
-                                                            self.player.y + self.player.height / 2))
+                    kb = (self.player.x + self.player.width / 2, self.player.y + self.player.height / 2)
+                    if self.boss.network_follower:
+                        net_coop.send({"type": "hit_request", "enemy_id": "boss",
+                                       "damage": dmg, "dtype": "physical", "crit": is_crit,
+                                       "kbx": kb[0], "kby": kb[1]})
+                    else:
+                        self.boss.take_damage(dmg, dtype="physical", crit=is_crit, knockback_from=kb)
                     self.camera.shake(5, 0.12)
                     self.camera.zoom_pulse(0.05, 0.15)
             self.boss.update(dt, self.player, self.level.walls)
@@ -1645,34 +1693,44 @@ class GameplayState:
         # swing not re-hitting every frame it's held "attacking".
         if self.player.dashing:
             for target in cast_targets:
-                if (not getattr(target, "alive", True) or id(target) in self.player._dash_hit_ids
-                        or getattr(target, "network_follower", False)):
-                    # Stage L6/L8: mesma proteção do bloco do boss acima -
-                    # um guest nunca resolve dano local contra um alvo
-                    # follower (Enemy OU Boss, os dois têm essa flag).
+                if not getattr(target, "alive", True) or id(target) in self.player._dash_hit_ids:
                     continue
                 if self.player.rect.colliderect(target.rect):
                     self.player._dash_hit_ids.add(id(target))
                     dmg, is_crit = self.player.roll_physical()
-                    target.take_damage(dmg, dtype="physical", crit=is_crit,
-                                        knockback_from=(self.player.x + self.player.width / 2,
-                                                         self.player.y + self.player.height / 2))
-                    if not target.alive and hasattr(target, "etype"):
-                        self.level.credit_kill(self.player, target)
+                    kb = (self.player.x + self.player.width / 2, self.player.y + self.player.height / 2)
+                    if getattr(target, "network_follower", False):
+                        # Stage L6/L8 follow-up: a guest's dash contact
+                        # against a follower target (Enemy OR Boss) used to
+                        # just no-op here - now forwarded the same way the
+                        # boss-melee block above does.
+                        target_id = "boss" if target is self.boss else target.net_id
+                        net_coop.send({"type": "hit_request", "enemy_id": target_id,
+                                       "damage": dmg, "dtype": "physical", "crit": is_crit,
+                                       "kbx": kb[0], "kby": kb[1]})
+                    else:
+                        target.take_damage(dmg, dtype="physical", crit=is_crit, knockback_from=kb)
+                        if not target.alive and hasattr(target, "etype"):
+                            self.level.credit_kill(self.player, target)
 
         for proj in self.player_projectiles:
             proj.update(dt, self.level.walls)
             if not proj.alive:
                 continue
             for target in cast_targets:
+                if not (getattr(target, "alive", True) and proj.rect.colliderect(target.rect)):
+                    continue
                 if getattr(target, "network_follower", False):
-                    continue  # Stage L6/L8: mesma proteção - nunca resolve dano local contra um follower
-                if getattr(target, "alive", True) and proj.rect.colliderect(target.rect):
+                    target_id = "boss" if target is self.boss else target.net_id
+                    net_coop.send({"type": "hit_request", "enemy_id": target_id,
+                                   "damage": proj.damage, "dtype": proj.dtype,
+                                   "kbx": proj.x, "kby": proj.y})
+                else:
                     target.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
-                    proj.alive = False
                     if not target.alive and hasattr(target, "etype"):
                         self.level.credit_kill(self.player, target)
-                    break
+                proj.alive = False
+                break
         self.player_projectiles = [p for p in self.player_projectiles if p.alive]
 
         if self.boss and boss_was_alive and not self.boss.alive:

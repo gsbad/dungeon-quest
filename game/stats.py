@@ -17,6 +17,7 @@ Stage B), but the player's own level curve caps at 30 by design.
 
 MAX_LEVEL = 30
 POINTS_PER_LEVEL = 4
+BASE_ATTACK_COOLDOWN = 0.45
 
 
 class StatBlock:
@@ -72,7 +73,7 @@ class StatBlock:
 
     @property
     def attack_cooldown(self):
-        return 0.45 * (1 - self.haste)
+        return BASE_ATTACK_COOLDOWN * (1 - self.haste)
 
     # Each defense sums to 1.0 total weight across its 3 contributing
     # attributes, so no single attribute can trivialize it - see mitigate()

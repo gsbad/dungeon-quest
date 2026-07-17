@@ -6,6 +6,14 @@ módulos/endpoints - este documento continua valendo como registro
 histórico das decisões e da ordem de construção, mas não descreve mais um
 plano em aberto.
 
+**Pós-L14 (bugfix round, ver "Correções pós-playtest coop" em `design.md`):**
+um playtest real com 2 jogadores achou dois gaps que a v1 não cobria -
+quebra de bloco/chave escondida sem sync nenhum, e dano de guest contra
+`Enemy`/`Boss` sendo um no-op silencioso (documentado desde a própria L6
+como "incremento futuro"). Os dois corrigidos - ver `design.md` pros
+detalhes e `tools/coop_harness.py`'s `run_world_sync_test()` pra
+verificação via tráfego de rede real.
+
 Companheiro de `docs/coop-feasibility.md` (Stage K21) — aquele documento
 decidiu **o quê** e **por quê** (arquitetura host-autoritativo, WebSocket
 pelo backend já existente, o que cada peça pedida exige). Este cobre **em

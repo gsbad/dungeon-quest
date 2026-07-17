@@ -63,6 +63,16 @@ BALANCE_DEFAULTS = {
     # the admin page's groupEntities() renders it as its own "dash"
     # collapsible block instead of one unlabeled flat list.
     "player.dash.dex_req": 18, "player.dash.duration": 0.18, "player.dash.speed": 780, "player.dash.cooldown": 3.5,
+    # Picareta (game/player.py's PICKAXE_COOLDOWN) - same "player" prefix/
+    # groupEntities() collapsible-block treatment as player.dash.* above.
+    "player.pickaxe.cooldown": 1.0,
+    # Golpe basico (game/stats.py's BASE_ATTACK_COOLDOWN) - reuses the
+    # existing "stats.<field>" branch in balance_config.py, no new one needed.
+    "stats.base_attack_cooldown": 0.45,
+    # Respawn gradual pos-limpeza da leva original (game/level.py's
+    # RESPAWN_INTERVAL) - "level" prefix is its own namespace, falls back to
+    # the admin panel's "Geral" tab (categoryOf has no explicit mapping for it).
+    "level.respawn_interval": 6.0,
     # Stage K16: monster combat stats + xp/gold-per-kill, one line per etype
     # (same dotted-key shape as item/difficulty/spell above).
     "monster.goblin.strength": 3, "monster.goblin.dexterity": 0, "monster.goblin.vigor": 0, "monster.goblin.luck": 0, "monster.goblin.weapon_base": 5.5, "monster.goblin.base_speed": 110, "monster.goblin.base_xp": 8, "monster.goblin.gold_drop": 3,
