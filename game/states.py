@@ -29,7 +29,8 @@ from game.input_system import (
 )
 from game.audio import SoundButton
 from game.stats import POINTS_PER_LEVEL, MAX_LEVEL
-from game.spells import SPELLS, ORDER as SPELL_ORDER, missing_requirements, requirement_text
+from game.spells import SPELLS
+from game.class_kits import spells_for, basic_attack_for
 from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER, next_difficulty, is_unlocked
 from game.affixes import AFFIXES
 from game.theme import (
@@ -733,6 +734,9 @@ class GameplayState:
         # (InputManager construction) - repoint their icons at whichever 3
         # items this player actually has selected.
         self.input.refresh_item_icons(self.player)
+        # Estagio M1: mesma razao - o arco de magias moveis foi construido
+        # com o DEFAULT_KIT antes de qualquer Player existir.
+        self.input.refresh_spell_buttons(self.player.profession)
 
         # Paragon rolls (Stage B3) - upgrades some already-spawned enemies
         # in place; Level itself stays unaware Paragon exists at all. Then
@@ -1206,18 +1210,18 @@ class GameplayState:
             return
         spell = SPELLS[spell_id]
         self.audio.play("attack")
-        if spell_id == "fireball":
-            self._cast_fireball(spell)
-        elif spell_id == "frost_nova":
-            self._cast_frost_nova(spell)
-        elif spell_id == "healing_light":
-            self._cast_healing_light(spell)
+        # Estagio M1: dispatch dinamico em vez de um if/elif por magia - os
+        # 16 metodos _cast_<spell_id> (3 originais + 13 novos) seguem essa
+        # convencao de nome a risca, então getattr() já resolve certo sem
+        # precisar crescer esta cadeia a cada magia nova.
+        getattr(self, f"_cast_{spell_id}")(spell)
 
     def _cast_fail_message(self, spell_id):
+        # Estagio M1: sem mais o caso "bloqueada: requer X" - ter a
+        # profissao com essa magia no kit ja e o unico requisito agora
+        # (game/class_kits.py), so cooldown/mana podem bloquear um cast.
         spell = SPELLS[spell_id]
-        if missing_requirements(self.player.stats, spell_id):
-            text = f"{spell['name']} bloqueada: requer {requirement_text(spell_id)}"
-        elif self.player.spell_cooldowns.get(spell_id, 0) > 0:
+        if self.player.spell_cooldowns.get(spell_id, 0) > 0:
             text = f"{spell['name']} em recarga"
         elif self.player.mana < spell["mana_cost"]:
             text = f"Mana insuficiente para {spell['name']}"
@@ -1372,6 +1376,227 @@ class GameplayState:
                 Particle(self.player.x + self.player.width/2,
                          self.player.y + self.player.height/2, (255, 240, 200))
             )
+
+    # ------------------------------------------------------------------
+    # Estagio M1 (leva de conteudo - kits de classe): 13 magias novas.
+    # ------------------------------------------------------------------
+
+    def _aoe_around_player(self, dmg, radius, dtype="physical", status_to_enemy=None, hit_players=True):
+        """Nucleo compartilhado por toda magia de area centrada no PROPRIO
+        jogador (Investida Brutal, Terremoto, Veneno Mortal, Laminas
+        Giratorias, Impacto Sismico, Danca das Laminas) - mesmo pipeline
+        coop-aware (hit_request/credit_kill/PvP) que _cast_frost_nova já
+        tinha, generalizado pra nao repetir 6 vezes quase identico.
+        status_to_enemy só se aplica no alvo LOCAL (não-follower) - mesma
+        limitação que a Nova de Gelo já tinha antes desta leva (o protocolo
+        "hit_request" hoje só carrega dano, nao status; consistente, nao
+        um bug novo). Retorna (px, py) pro chamador desenhar suas próprias
+        particulas."""
+        px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
+        targets = list(self.level.enemies)
+        if self.boss:
+            targets.append(self.boss)
+        for target in targets:
+            if not getattr(target, "alive", True):
+                continue
+            tx, ty = target.x + target.width / 2, target.y + target.height / 2
+            if math.hypot(tx - px, ty - py) > radius:
+                continue
+            if getattr(target, "network_follower", False):
+                target_id = "boss" if target is self.boss else target.net_id
+                net_coop.send({"type": "hit_request", "enemy_id": target_id,
+                               "damage": dmg, "dtype": dtype,
+                               "kbx": px, "kby": py, "player_id": net_coop.get_player_id()})
+            else:
+                target.take_damage(dmg, dtype=dtype, knockback_from=(px, py))
+                if status_to_enemy and hasattr(target, "status"):
+                    target.status.apply(status_to_enemy)
+                if not target.alive and hasattr(target, "etype"):
+                    self.level.credit_kill(self.player, target)
+        if hit_players and net_coop.is_connected():
+            for rp in self.remote_players.values():
+                if rp.x is None:
+                    continue
+                rx, ry = rp.x + rp.width / 2, rp.y + rp.height / 2
+                if math.hypot(rx - px, ry - py) <= radius:
+                    net_coop.send({
+                        "type": "player_hit", "target_player_id": rp.player_id,
+                        "damage": round(dmg), "dtype": dtype,
+                        "attacker_x": self.player.x, "attacker_y": self.player.y,
+                    })
+        return px, py
+
+    def _status_around_player(self, radius, status_id):
+        """Nucleo pras magias que so aplicam status (sem dano) num raio ao
+        redor do jogador - Provocacao (taunt) e Raizes Prendentes (root).
+        Sem HP envolvido, aplicado direto no proprio objeto local de cada
+        cliente (host ou guest) - nao precisa do protocolo hit_request
+        (esse existe pra resolver HP de forma autoritativa, nao pra
+        cosmetica/comportamento que nao gera conflito real)."""
+        px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
+        targets = list(self.level.enemies)
+        if self.boss:
+            targets.append(self.boss)
+        hit_any = False
+        for target in targets:
+            if not getattr(target, "alive", True):
+                continue
+            tx, ty = target.x + target.width / 2, target.y + target.height / 2
+            if math.hypot(tx - px, ty - py) <= radius and hasattr(target, "status"):
+                target.status.apply(status_id)
+                hit_any = True
+        return px, py, hit_any
+
+    def _cast_investida_brutal(self, spell):
+        # Guerreiro (ofensiva): area curta a frente do proprio jogador, mais
+        # forte que o ataque basico, cooldown baixo - reusa o mesmo nucleo
+        # de AoE da Nova de Gelo em vez de um "avanco" fisico novo (ver
+        # Player.try_teleport() abaixo pra uma primitiva de movimento real,
+        # usada por Passo Sombrio - aqui o efeito e so dano, sem deslocar).
+        dmg = self.player.magic_damage(spell["spell_base"])
+        px, py = self._aoe_around_player(dmg, 70, dtype="physical")
+        for _ in range(10):
+            self.level_up_particles.append(Particle(px, py, (230, 90, 60)))
+
+    def _cast_grito_de_guerra(self, spell):
+        # Guerreiro (utilitaria): +25% dano fisico por 10s - buff temporario
+        # puro, mesmo StatusEffectCarrier.apply() que qualquer pocao usa.
+        self.player.status.apply("grito_de_guerra")
+        for _ in range(14):
+            self.level_up_particles.append(
+                Particle(self.player.x + self.player.width / 2,
+                         self.player.y + self.player.height / 2, (255, 160, 60))
+            )
+
+    def _cast_terremoto(self, spell):
+        # Guerreiro (ultimate): area grande, dano pesado.
+        dmg = self.player.magic_damage(spell["spell_base"])
+        px, py = self._aoe_around_player(dmg, 140, dtype="physical")
+        ring_count = 24
+        for i in range(ring_count):
+            angle = (2 * math.pi / ring_count) * i
+            rx = px + math.cos(angle) * 140
+            ry = py + math.sin(angle) * 140
+            self.level_up_particles.append(Particle(rx, ry, (150, 110, 60)))
+
+    def _cast_veneno_mortal(self, spell):
+        # Assassino (ofensiva): dano curto + envenena tudo ao redor.
+        dmg = self.player.magic_damage(spell["spell_base"])
+        px, py = self._aoe_around_player(dmg, 65, dtype="physical", status_to_enemy="poison")
+        for _ in range(10):
+            self.level_up_particles.append(Particle(px, py, (110, 200, 90)))
+
+    def _cast_passo_sombrio(self, spell):
+        # Assassino (utilitaria): TELEPORTE - primitiva nova (Player.
+        # try_teleport()), nao existia nenhuma forma de atravessar geometria
+        # sem colidir antes desta leva.
+        px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
+        for _ in range(8):
+            self.level_up_particles.append(Particle(px, py, (150, 90, 200)))
+        self.player.try_teleport(spell["teleport_dist"], self.level.walls)
+        px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
+        for _ in range(8):
+            self.level_up_particles.append(Particle(px, py, (190, 140, 230)))
+
+    def _cast_laminas_giratorias(self, spell):
+        # Assassino (ultimate): rodopio, area grande.
+        dmg = self.player.magic_damage(spell["spell_base"])
+        px, py = self._aoe_around_player(dmg, 120, dtype="physical")
+        for i in range(3):
+            angle = (2 * math.pi / 3) * i
+            for r in (40, 80, 120):
+                rx = px + math.cos(angle) * r
+                ry = py + math.sin(angle) * r
+                self.level_up_particles.append(Particle(rx, ry, (215, 218, 225)))
+
+    def _cast_provocacao(self, spell):
+        # Cavaleiro: TAUNT - primitiva nova. Inimigos proximos ficam mais
+        # agressivos (status "provoked", speed_mult>1.0 - o unico status
+        # "positivo" pro alvo que o jogo aplica de proposito, ver game/
+        # status_effects.py). Sem alvo real de ameaca multi-jogador ainda
+        # (Enemy.update() so enxerga um Player por vez hoje) - prova de
+        # conceito de UM sistema, kit completo de Cavaleiro fica pro
+        # Estagio M2+.
+        px, py, hit_any = self._status_around_player(130, "provoked")
+        for _ in range(12):
+            self.level_up_particles.append(Particle(px, py, (220, 60, 60)))
+
+    def _cast_impacto_sismico(self, spell):
+        # Campeao: STUN - primitiva nova (Enemy.status.has("stun"), ver
+        # game/enemy.py's update()). Dano + atordoamento numa area grande.
+        dmg = self.player.magic_damage(spell["spell_base"])
+        px, py = self._aoe_around_player(dmg, 110, dtype="physical", status_to_enemy="stun")
+        for _ in range(16):
+            self.level_up_particles.append(Particle(px, py, (160, 120, 60)))
+
+    def _cast_raizes_prendentes(self, spell):
+        # Druida: ROOT - reusa o eixo speed_mult existente (sem eixo novo),
+        # so o id "root" (duracao/força diferente de "slow").
+        px, py, hit_any = self._status_around_player(120, "root")
+        for _ in range(12):
+            self.level_up_particles.append(Particle(px, py, (90, 150, 70)))
+
+    def _cast_totem_curativo(self, spell):
+        # Xama: TOTEM - primitiva nova (game/level.py's HealTotem), a
+        # primeira entidade persistente "do lado do jogador" no jogo.
+        from game.level import HealTotem
+        px = self.player.x + self.player.width / 2
+        py = self.player.y + self.player.height / 2
+        self.level.player_totems.append(HealTotem(px, py, spell["heal_frac"]))
+        for _ in range(10):
+            self.level_up_particles.append(Particle(px, py, (110, 220, 130)))
+
+    def _cast_armadilha(self, spell):
+        # Ranger: ARMADILHA - primitiva nova (game/level.py's Trap),
+        # plantada aos pes do jogador.
+        from game.level import Trap
+        dmg = self.player.magic_damage(spell["spell_base"])
+        px = self.player.x + self.player.width / 2
+        py = self.player.y + self.player.height / 2
+        self.level.player_traps.append(Trap(px, py, dmg))
+        for _ in range(8):
+            self.level_up_particles.append(Particle(px, py, (170, 170, 178)))
+
+    def _cast_julgamento(self, spell):
+        # Paladino: EXECUCAO - primitiva nova (bonus de dano proporcional a
+        # vida FALTANTE do alvo). Acha o inimigo vivo mais proximo num raio
+        # curto (sem mira - "o mais proximo", nao um projetil).
+        px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
+        targets = [t for t in list(self.level.enemies) + ([self.boss] if self.boss else [])
+                   if getattr(t, "alive", True)]
+        if not targets:
+            return
+        def _dist(t):
+            return math.hypot(t.x + t.width / 2 - px, t.y + t.height / 2 - py)
+        target = min((t for t in targets if _dist(t) <= 130), key=_dist, default=None)
+        if target is None:
+            return
+        base = self.player.magic_damage(spell["spell_base"])
+        missing_frac = 1.0 - (target.hp / target.max_hp if target.max_hp else 0)
+        dmg = round(base * (1 + missing_frac * 1.5))  # ate +150% contra um alvo quase morto
+        if getattr(target, "network_follower", False):
+            target_id = "boss" if target is self.boss else target.net_id
+            net_coop.send({"type": "hit_request", "enemy_id": target_id,
+                           "damage": dmg, "dtype": "magic",
+                           "kbx": px, "kby": py, "player_id": net_coop.get_player_id()})
+        else:
+            target.take_damage(dmg, dtype="magic", knockback_from=(px, py))
+            if not target.alive and hasattr(target, "etype"):
+                self.level.credit_kill(self.player, target)
+        tx, ty = target.x + target.width / 2, target.y + target.height / 2
+        for _ in range(10):
+            self.level_up_particles.append(Particle(tx, ty, (255, 220, 120)))
+
+    def _cast_danca_das_laminas(self, spell):
+        # Duelista: COMBO reinterpretado como 3 golpes rapidos NUM cast so
+        # (em vez de um contador persistente entre ataques normais, que
+        # exigiria instrumentar todo golpe do jogo - fora do escopo desta
+        # leva) - ainda assim 3 pulsos reais de dano, nao um so multiplicado.
+        dmg = self.player.magic_damage(spell["spell_base"])
+        for _ in range(3):
+            px, py = self._aoe_around_player(dmg, 90, dtype="physical")
+            for _ in range(6):
+                self.level_up_particles.append(Particle(px, py, (215, 218, 225)))
 
     def update(self, dt):
         # Stage L5/L6 (docs/coop-implementation-plan.md): processa
@@ -1721,23 +1946,25 @@ class GameplayState:
             # which the earlier soak test predates and never exercised.
             keys = pygame.key.get_pressed()
             mouse = pygame.mouse.get_pressed(num_buttons=3)
+            player_spells = spells_for(self.player.profession)
             if self.input.is_action_held("ATTACK", keys, mouse):
                 self.player.try_attack()
             if self.input.is_action_held("CAST_1", keys, mouse):
-                self._attempt_cast(SPELL_ORDER[0], silent=True)
+                self._attempt_cast(player_spells[0], silent=True)
             if self.input.is_action_held("CAST_2", keys, mouse):
-                self._attempt_cast(SPELL_ORDER[1], silent=True)
+                self._attempt_cast(player_spells[1], silent=True)
             if self.input.is_action_held("CAST_3", keys, mouse):
-                self._attempt_cast(SPELL_ORDER[2], silent=True)
+                self._attempt_cast(player_spells[2], silent=True)
         else:
             atk_btn = self.input.attack_button
             if atk_btn.active and atk_btn.has_aim:
                 self.player.set_aim(atk_btn.aim_dx, atk_btn.aim_dy)
                 self.player.try_attack()
+            player_spells = spells_for(self.player.profession)
             for i, btn in enumerate(self.input.spell_buttons):
                 if btn.active and btn.has_aim:
                     self.player.set_aim(btn.aim_dx, btn.aim_dy)
-                    self._attempt_cast(SPELL_ORDER[i], silent=True)
+                    self._attempt_cast(player_spells[i], silent=True)
             # Stage K24: same "touch+drag to aim, auto-fires while held"
             # shape as atk_btn above - try_dash() directly (not
             # _attempt_dash(), which also flashes a "bloqueada"/"em
@@ -2002,6 +2229,9 @@ class GameplayState:
             self.msg_timer = 2.5
             self.msg_text = f"Profissao alterada: {self.player.pending_profession_change}!"
             self.audio.play("menu_select")
+            # Estagio M1: um respec troca o kit de magias inteiro - repoe o
+            # arco movel pra mostrar as 3 magias novas, nao mais as antigas.
+            self.input.refresh_spell_buttons(self.player.profession)
             self.player.pending_profession_change = None
 
         # Check death - Stage L9 (docs/coop-implementation-plan.md): em

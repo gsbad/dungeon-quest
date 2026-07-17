@@ -11,6 +11,84 @@ import game.net_coop as net_coop
 
 TILE = 48
 
+
+class HealTotem:
+    """Estagio M1 (leva de conteudo - kits de classe): Totem Curativo
+    (Xama) - fica parado onde foi conjurado, curando quem estiver perto a
+    cada intervalo, por uma duracao limitada. Primeira entidade
+    persistente "do jogador" no jogo - GoldDrop/Puddle acima são do lado
+    do mundo/hostil, esta é a mesma ideia só que a favor de quem conjurou.
+    Local-only por enquanto (sem broadcast de rede) - em coop, só quem
+    conjurou/está perto o suficiente na PROPRIA tela vê o efeito."""
+    DURATION = 10.0
+    TICK_INTERVAL = 1.5
+    RADIUS = 90
+
+    def __init__(self, x, y, heal_frac):
+        self.x, self.y = x, y
+        self.heal_frac = heal_frac
+        self.life = self.DURATION
+        self.tick_timer = self.TICK_INTERVAL
+        self.alive = True
+
+    def update(self, dt, player):
+        self.life -= dt
+        if self.life <= 0:
+            self.alive = False
+            return
+        self.tick_timer -= dt
+        if self.tick_timer <= 0:
+            self.tick_timer = self.TICK_INTERVAL
+            px, py = player.x + player.width / 2, player.y + player.height / 2
+            if math.hypot(px - self.x, py - self.y) <= self.RADIUS:
+                player.hp = min(player.max_hp, player.hp + player.max_hp * self.heal_frac)
+
+    def draw(self, surface, cam_x, cam_y):
+        sx, sy = int(self.x - cam_x), int(self.y - cam_y)
+        alpha = 255 if self.life > 1.0 else max(0, int(255 * self.life))
+        s = pygame.Surface((28, 28), pygame.SRCALPHA)
+        pygame.draw.rect(s, (120, 85, 50, alpha), (12, 8, 4, 20))
+        pygame.draw.circle(s, (110, 220, 130, alpha), (14, 8), 8)
+        surface.blit(s, (sx - 14, sy - 20))
+
+
+class Trap:
+    """Estagio M1: Armadilha (Ranger) - fica parada ate um inimigo chegar
+    perto o bastante, dispara dano fisico uma unica vez e some. O inverso
+    de Puddle (que fere o JOGADOR, sempre ativo) - esta fere um INIMIGO,
+    gatilho unico. Local-only, mesma razao de HealTotem acima."""
+    DURATION = 20.0
+    RADIUS = 26
+
+    def __init__(self, x, y, damage):
+        self.x, self.y = x, y
+        self.damage = damage
+        self.life = self.DURATION
+        self.alive = True
+        self.triggered = False
+
+    def update(self, dt, enemies):
+        if self.triggered:
+            self.alive = False
+            return
+        self.life -= dt
+        if self.life <= 0:
+            self.alive = False
+            return
+        for enemy in enemies:
+            if not enemy.alive:
+                continue
+            ex, ey = enemy.x + enemy.width / 2, enemy.y + enemy.height / 2
+            if math.hypot(ex - self.x, ey - self.y) <= self.RADIUS:
+                enemy.take_damage(self.damage, dtype="physical", knockback_from=(self.x, self.y))
+                self.triggered = True
+                break
+
+    def draw(self, surface, cam_x, cam_y):
+        sx, sy = int(self.x - cam_x), int(self.y - cam_y)
+        pygame.draw.circle(surface, (170, 170, 178), (sx, sy), 6, 1)
+        pygame.draw.circle(surface, (100, 30, 30), (sx, sy), 3)
+
 # Gradual post-clear respawn (K14) - seconds between respawns once the
 # level's original enemy wave is cleared. Module constant (not just a
 # hardcoded literal in __init__) so the balance panel can tune it via
@@ -563,6 +641,12 @@ class Level:
         self._first_wave_map_shown = False
         self.treasure_marks = []
 
+        # Estagio M1 (leva de conteudo - kits de classe): entidades
+        # persistentes criadas por magia do jogador - ver HealTotem/Trap
+        # acima.
+        self.player_totems = []
+        self.player_traps = []
+
         # Difficulty-tier hooks (Stage B5) - Level itself stays unaware
         # difficulty exists, same separation already used for Paragon/
         # weather; GameplayState just hands in two numbers.
@@ -743,6 +827,15 @@ class Level:
                     if random.random() < 0.20:
                         player.try_apply_debuff("poison")
         self.puddles = [p for p in self.puddles if p.alive]
+
+        # Estagio M1: totens/armadilhas do jogador (HealTotem/Trap acima) -
+        # mesma forma de gold_drops/puddles (update + poda pelo .alive).
+        for t in self.player_totems:
+            t.update(dt, player)
+        self.player_totems = [t for t in self.player_totems if t.alive]
+        for t in self.player_traps:
+            t.update(dt, self.enemies)
+        self.player_traps = [t for t in self.player_traps if t.alive]
 
         # Update gold drops - expire the unclaimed ones, collect the rest
         for g in self.gold_drops:
@@ -1093,6 +1186,11 @@ class Level:
 
         for g in self.gold_drops:
             g.draw(surface, cam_x, cam_y)
+
+        for t in self.player_totems:
+            t.draw(surface, cam_x, cam_y)
+        for t in self.player_traps:
+            t.draw(surface, cam_x, cam_y)
 
         for enemy in self.enemies:
             enemy.draw(surface, cam_x, cam_y)

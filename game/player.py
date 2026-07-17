@@ -9,7 +9,8 @@ from game.assets import (
 from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL, mitigate
 from game.status_effects import StatusEffectCarrier, DirectedBonusCarrier
 from game.professions import determine_profession
-from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
+from game.spells import SPELLS
+from game.class_kits import spells_for, basic_attack_for
 from game.combat_fx import (
     FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR, DOT_COLOR,
     knockback_vector, KNOCKBACK_DURATION,
@@ -104,7 +105,7 @@ def hotbar_slots(player):
     actually visible anywhere in the hotbar, same None-key/kind-branch shape
     as attack/dash above."""
     from game.theme import SW
-    spell_ids = [("spell", s) for s in SPELL_ORDER]
+    spell_ids = [("spell", s) for s in spells_for(player.profession)]
     item_ids = [("item", i) for i in player.hotbar_items]
     attack_w = _HOTBAR_SLOT
     spell_w = len(spell_ids) * _HOTBAR_SLOT + (len(spell_ids) - 1) * _HOTBAR_GAP
@@ -178,7 +179,7 @@ class Player:
         # the original 3 potions so a player who never opens "SEUS ITENS"
         # sees the exact hotbar the game always had.
         self.hotbar_items = ["health_potion", "mana_potion", "antidote"]
-        self.selected_spell = SPELL_ORDER[0]
+        self.selected_spell = spells_for(self.profession)[0]
         self.spell_cooldowns = {}
         # Pity counter for game/affixes.py's Paragon roll - not persisted
         # (it's a short-lived streak-breaker, not meaningful progress).
@@ -382,7 +383,12 @@ class Player:
 
     @property
     def attack_damage(self):
-        return self.stats.physical_damage * self._mult("physical_damage_mult")
+        # Estagio M1: damage_mult vem do ataque basico da profissao
+        # (game/class_kits.py) - Guerreiro bate mais forte por golpe,
+        # Assassino mais fraco (compensado pela cadencia mais rapida em
+        # try_attack() abaixo), a maioria fica em 1.0 (sem mudanca).
+        return (self.stats.physical_damage * self._mult("physical_damage_mult")
+                * basic_attack_for(self.profession)["damage_mult"])
 
     def magic_damage(self, spell_base):
         return round(self.stats.magic_damage(spell_base) * self._mult("magic_damage_mult"))
@@ -470,8 +476,11 @@ class Player:
             self.pending_profession_change = new_profession
 
     def can_cast(self, spell_id):
+        # Estagio M1: sem mais checagem de atributo (meets_requirements) -
+        # ter a profissao com essa magia no kit ja e o requisito, ver
+        # game/class_kits.py.
         spell = SPELLS[spell_id]
-        return (not self.downed and meets_requirements(self.stats, spell_id)
+        return (not self.downed
                 and self.spell_cooldowns.get(spell_id, 0) <= 0
                 and self.mana >= spell["mana_cost"])
 
@@ -519,10 +528,17 @@ class Player:
         # (max(width, height) side, centered attack_range/2 + size/2 beyond
         # the player) matches the old cardinal cases closely at dx/dy=(±1,0)
         # or (0,±1).
+        # Estagio M1: size_mult/range_mult vem do ataque basico da
+        # profissao (game/class_kits.py) - Golpe Devastador (Guerreiro)
+        # atinge uma area maior/mais longe, Estocada Rapida (Assassino) uma
+        # hitbox menor/mais curta. Sem forma geometrica nova (nenhum arco/
+        # cone existe no motor de colisao hoje) - so um quadrado maior ou
+        # menor no mesmo lugar.
+        basic = basic_attack_for(self.profession)
         cx = self.x + self.width / 2
         cy = self.y + self.height / 2
-        size = max(self.width, self.height)
-        offset = size / 2 + self.attack_range / 2
+        size = max(self.width, self.height) * basic["size_mult"]
+        offset = size / 2 + (self.attack_range * basic["range_mult"]) / 2
         center_x = cx + self.aim_dx * offset
         center_y = cy + self.aim_dy * offset
         return pygame.Rect(center_x - size / 2, center_y - size / 2, size, size)
@@ -747,7 +763,11 @@ class Player:
         if self.attack_cooldown <= 0 and not self.attacking:
             self.attacking = True
             self.attack_timer = self.attack_duration
-            self.attack_cooldown = self.stats.attack_cooldown / self._mult("attack_speed_mult")
+            # Estagio M1: cooldown_mult vem do ataque basico da profissao -
+            # Guerreiro mais lento (Golpe Devastador), Assassino mais
+            # rapido (Estocada Rapida).
+            self.attack_cooldown = (self.stats.attack_cooldown / self._mult("attack_speed_mult")
+                                     * basic_attack_for(self.profession)["cooldown_mult"])
             self.audio.play("attack")
             return True
         return False
@@ -827,6 +847,26 @@ class Player:
         self._dash_hit_ids = set()
         self.audio.play("attack")
         return True
+
+    def try_teleport(self, dist, walls):
+        """Estagio M1 (leva de conteudo): Passo Sombrio (Assassino) - salto
+        instantaneo na direcao mirada, primitiva nova (nenhum teleporte
+        existia no jogo). Diferente do Dash (que anda de verdade, colidindo
+        passo a passo), aqui só a posicao FINAL precisa ser valida - anda o
+        salto pra tras em passos curtos até achar um ponto sem parede, ou
+        desiste (retorna False, sem mover) se nao achar nenhum no caminho
+        inteiro."""
+        step = 8
+        remaining = dist
+        while remaining > 0:
+            tx = self.x + self.aim_dx * remaining
+            ty = self.y + self.aim_dy * remaining
+            test_rect = pygame.Rect(tx, ty, self.width, self.height)
+            if not any(test_rect.colliderect(w) for w in walls):
+                self.x, self.y = tx, ty
+                return True
+            remaining -= step
+        return False
 
     def _resolve_collisions_x(self, walls):
         r = self.rect
@@ -1097,7 +1137,12 @@ class Player:
             label = keybinds.display_key(action_name)
             return "SPC" if label == "SPACE" else label
 
-        _spell_action = {"fireball": "CAST_1", "frost_nova": "CAST_2", "healing_light": "CAST_3"}
+        # Estagio M1: posicional contra o kit da profissao ATUAL em vez de
+        # por nome literal - antes so existiam essas 3 magias no jogo
+        # inteiro, agora cada profissao tem seu proprio trio nessas mesmas
+        # 3 posicoes (game/class_kits.py's spells_for()).
+        _cast_actions = ["CAST_1", "CAST_2", "CAST_3"]
+        _spell_action = dict(zip(spells_for(self.profession), _cast_actions))
         item_i = 0
         for i, (kind, key, rect) in enumerate(hotbar_slots(self)):
             # Stage H10: on touch devices, both spell casting and item use
@@ -1109,10 +1154,9 @@ class Player:
                 continue
             on_cooldown = False
             if kind == "spell":
-                locked = bool(missing_requirements(self.stats, key))
                 on_cooldown = self.spell_cooldowns.get(key, 0) > 0
                 affordable = self.mana >= SPELLS[key]["mana_cost"]
-                usable = not locked and not on_cooldown and affordable
+                usable = not on_cooldown and affordable
                 icon = create_spell_icon(key)
                 selected = self.selected_spell == key
             elif kind == "item":

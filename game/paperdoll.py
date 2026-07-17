@@ -7,7 +7,8 @@ from game.assets import (
     create_debuff_icon, create_spell_icon, create_trophy_icon, create_stance_icon,
 )
 from game.achievements import ACHIEVEMENTS, check_unlocks
-from game.spells import SPELLS, ORDER as SPELL_ORDER, meets_requirements, missing_requirements
+from game.spells import SPELLS
+from game.class_kits import spells_for
 from game.input_system import Action, HELP_ENTRIES
 from game.stats import mitigate
 from game.bestiary import (
@@ -174,11 +175,15 @@ class Paperdoll:
             self.minus_buttons[attr] = pygame.Rect(self.px + 260, y - 14, 28, 28)
             self.plus_buttons[attr] = pygame.Rect(self.px + 300, y - 14, 28, 28)
 
-        self.select_buttons = {}
-        for i, spell_id in enumerate(SPELL_ORDER):
+        # Estagio M1: posicional (indice 0-2), nao mais por spell_id - o
+        # trio de magias em si agora depende da profissao ATUAL do
+        # jogador (game/class_kits.py's spells_for()), que pode mudar em
+        # tempo real (respec) depois deste __init__ já ter rodado uma vez.
+        self.select_buttons = []
+        for i in range(3):
             y = self.py + _CONTENT_TOP + _SPELL_START_Y + i * _SPELL_BLOCK_H
             btn_x = self.px + _PANEL_W // 2 - 55
-            self.select_buttons[spell_id] = pygame.Rect(btn_x, y + 66, 110, 26)
+            self.select_buttons.append(pygame.Rect(btn_x, y + 66, 110, 26))
 
         self._portrait_cache = {}
         self._bestiary_sprite_cache = {}
@@ -249,10 +254,13 @@ class Paperdoll:
                 return
 
     def _handle_tap_spells(self, input_mgr, player):
-        for spell_id, rect in self.select_buttons.items():
+        # Estagio M1: qualquer uma das 3 magias do kit atual ja e sempre
+        # selecionavel - "ter a profissao" e o unico requisito agora, sem
+        # mais um estado "bloqueada" por atributo.
+        spells = spells_for(player.profession)
+        for i, rect in enumerate(self.select_buttons):
             if input_mgr.tapped_rect(rect):
-                if meets_requirements(player.stats, spell_id):
-                    player.selected_spell = spell_id
+                player.selected_spell = spells[i]
                 return
 
     def handle_keys(self, input_mgr, player, save_state=None):
@@ -314,13 +322,11 @@ class Paperdoll:
 
     def _handle_keys_spells(self, input_mgr, player):
         if input_mgr.consume_action(Action.MENU_UP):
-            self.spell_cursor = (self.spell_cursor - 1) % len(SPELL_ORDER)
+            self.spell_cursor = (self.spell_cursor - 1) % 3
         if input_mgr.consume_action(Action.MENU_DOWN):
-            self.spell_cursor = (self.spell_cursor + 1) % len(SPELL_ORDER)
+            self.spell_cursor = (self.spell_cursor + 1) % 3
         if input_mgr.consume_action(Action.CONFIRM):
-            spell_id = SPELL_ORDER[self.spell_cursor]
-            if meets_requirements(player.stats, spell_id):
-                player.selected_spell = spell_id
+            player.selected_spell = spells_for(player.profession)[self.spell_cursor]
 
     @staticmethod
     def _glow_alpha():
@@ -472,14 +478,17 @@ class Paperdoll:
         f_body = font(14)
         f_btn = font(13, bold=True)
         spell_cx = self.px + _PANEL_W // 2
-        for i, spell_id in enumerate(SPELL_ORDER):
+        # Estagio M1: o trio de magias vem do kit da profissao ATUAL - as
+        # 3 sempre disponiveis (ter a profissao ja e o requisito), sem mais
+        # o estado "bloqueada"/"falta X" que so existia quando cada magia
+        # tinha seu proprio limiar de atributo independente da profissao.
+        spell_ids = spells_for(player.profession)
+        for i, spell_id in enumerate(spell_ids):
             spell = SPELLS[spell_id]
             y = top + _SPELL_START_Y + i * _SPELL_BLOCK_H
             if i == self.spell_cursor:
                 self._draw_glow(surface, pygame.Rect(self.px + 12, y - 8, _PANEL_W - 24, _SPELL_BLOCK_H - 8))
-            unlocked = meets_requirements(player.stats, spell_id)
             is_selected = player.selected_spell == spell_id
-            status_color = (110, 230, 140) if unlocked else (220, 90, 90)
 
             # Stage G4 - fixed left gutter, independent of the row's
             # centered text block below (spell_cx), so it doesn't need to
@@ -497,27 +506,18 @@ class Paperdoll:
             cost_bits = [f"Mana {spell['mana_cost']}"]
             if spell.get("cooldown"):
                 cost_bits.append(f"CD {spell['cooldown']:.0f}s")
-            req_bits = [f"{label} {have}/{need}" for label, have, need in missing_requirements(player.stats, spell_id)]
-            if not req_bits:
-                status_text = " | ".join(cost_bits) + " - Desbloqueada"
-            else:
-                status_text = " | ".join(cost_bits) + " - falta " + ", ".join(req_bits)
-            draw_text(surface, status_text, f_body, status_color, spell_cx, y + 42, shadow=False)
+            status_text = " | ".join(cost_bits)
+            draw_text(surface, status_text, f_body, (110, 230, 140), spell_cx, y + 42, shadow=False)
 
-            rect = self.select_buttons[spell_id]
-            if is_selected:
-                color, label = (30, 210, 90), "Selecionada"
-            elif unlocked:
-                color, label = (60, 100, 200), "Selecionar"
-            else:
-                color, label = (55, 55, 60), "Bloqueada"
+            rect = self.select_buttons[i]
+            color, label = ((30, 210, 90), "Selecionada") if is_selected else ((60, 100, 200), "Selecionar")
             pygame.draw.rect(surface, color, rect, border_radius=6)
             pygame.draw.rect(surface, (200, 200, 210), rect, 1, border_radius=6)
             draw_text(surface, label, f_btn, (240, 240, 245), rect.centerx, rect.y + 6, shadow=False)
 
         f_hint = font(14)
         draw_text(surface, "TAB troca aba | W/S seleciona | ESPACO seleciona magia | C/ESC - Fechar", f_hint, SUBTEXT,
-                  self.px + _PANEL_W // 2, top + _SPELL_START_Y + len(SPELL_ORDER) * _SPELL_BLOCK_H + 10)
+                  self.px + _PANEL_W // 2, top + _SPELL_START_Y + len(spell_ids) * _SPELL_BLOCK_H + 10)
 
     def _draw_bestiary(self, surface, player, save_state, top):
         f_key = font(12, bold=True)

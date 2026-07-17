@@ -90,6 +90,33 @@ STATUS_EFFECTS = {
     "shock":    StatusEffectDef(5.0, None, None, None, 1.0, 1.15, frozenset({"antidote"})),
 }
 
+# Estagio M1 (leva de conteudo - kits de classe): 3 status novos, aplicados
+# pelo JOGADOR num Enemy/Boss (mesmo `target.status.apply(...)` que Nova de
+# Gelo ja usa pra "slow"), nunca no proprio jogador - por isso ficam fora de
+# ORIGINAL_DEBUFF_IDS/STATUS_DISPLAY/STATUS_HELP (paginas de ajuda listam só
+# o que pode acontecer COM o jogador, não o que ele causa).
+STATUS_EFFECTS.update({
+    # Raizes Prendentes (Druida): velocidade zerada, mas o alvo ainda ataca -
+    # so reusa o eixo speed_mult ja existente no valor extremo (0.0), sem
+    # precisar de um eixo novo so pra "imobilizado".
+    "root": StatusEffectDef(4.0, None, None, None, 0.0, 1.0, frozenset()),
+    # Impacto Sismico (Campeao): alem de speed_mult=0.0 (como root acima),
+    # Enemy.update() (game/enemy.py) checa este id especificamente pra
+    # tambem travar o ataque (nao só o movimento) - é o que diferencia
+    # "atordoado" de "enraizado".
+    "stun": StatusEffectDef(1.6, None, None, None, 0.0, 1.0, frozenset()),
+    # Provocacao (Cavaleiro): unico status "positivo" pro alvo (velocidade
+    # +) que o jogo aplica de proposito - o inimigo fica mais agressivo em
+    # cima de quem provocou, nao mais fraco. Ainda mora em STATUS_EFFECTS
+    # (mesmo carrier/API), só que speed_mult > 1.0 em vez de < 1.0.
+    "provoked": StatusEffectDef(5.0, None, None, None, 1.35, 1.0, frozenset()),
+})
+
+# Grito de Guerra (Guerreiro): +25% dano fisico por 10s, self-aplicado -
+# via _buff() (definido logo abaixo), igual toda pocao/elixir; por isso
+# fica depois deles em vez de junto com root/stun/provoked acima (_buff
+# ainda nao existiria nesse ponto do arquivo).
+
 # Stage K20: the 7 ids above, as a single shared source of truth - before
 # this, game/debug_panel.py, game/balance_config.py, and (soon)
 # game/paperdoll.py's Help tab each redeclared this same set locally to
@@ -113,6 +140,9 @@ def _buff(duration, **kwargs):
                   speed_mult=1.0, damage_taken_mult=1.0, cureable_by=frozenset())
     fields.update(kwargs)
     return StatusEffectDef(duration, **fields)
+
+
+STATUS_EFFECTS["grito_de_guerra"] = _buff(10.0, physical_damage_mult=1.25)
 
 
 # Stage K12: ~22 new timed potion/elixir buffs, applied via game/items.py's

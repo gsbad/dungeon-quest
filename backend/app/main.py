@@ -55,6 +55,22 @@ BALANCE_DEFAULTS = {
     "spell.fireball.mana_cost": 8, "spell.fireball.cooldown": 2.0, "spell.fireball.spell_base": 12,
     "spell.frost_nova.mana_cost": 12, "spell.frost_nova.cooldown": 3.0, "spell.frost_nova.spell_base": 14,
     "spell.healing_light.mana_cost": 15, "spell.healing_light.cooldown": 7.0, "spell.healing_light.heal_frac": 0.25,
+    # Estagio M1 (leva de conteudo - kits de classe): 13 magias novas por
+    # profissao - mesmo padrao "spell.<id>.<field>" acima, sem plumbing
+    # novo (game/balance_config.py ja e generico por dict).
+    "spell.investida_brutal.mana_cost": 10, "spell.investida_brutal.cooldown": 2.5, "spell.investida_brutal.spell_base": 16,
+    "spell.grito_de_guerra.mana_cost": 14, "spell.grito_de_guerra.cooldown": 14.0,
+    "spell.terremoto.mana_cost": 24, "spell.terremoto.cooldown": 9.0, "spell.terremoto.spell_base": 22,
+    "spell.veneno_mortal.mana_cost": 10, "spell.veneno_mortal.cooldown": 4.0, "spell.veneno_mortal.spell_base": 6,
+    "spell.passo_sombrio.mana_cost": 12, "spell.passo_sombrio.cooldown": 6.0, "spell.passo_sombrio.teleport_dist": 160,
+    "spell.laminas_giratorias.mana_cost": 22, "spell.laminas_giratorias.cooldown": 9.0, "spell.laminas_giratorias.spell_base": 20,
+    "spell.provocacao.mana_cost": 8, "spell.provocacao.cooldown": 8.0,
+    "spell.impacto_sismico.mana_cost": 26, "spell.impacto_sismico.cooldown": 12.0, "spell.impacto_sismico.spell_base": 10,
+    "spell.raizes_prendentes.mana_cost": 14, "spell.raizes_prendentes.cooldown": 9.0,
+    "spell.totem_curativo.mana_cost": 18, "spell.totem_curativo.cooldown": 14.0, "spell.totem_curativo.heal_frac": 0.05,
+    "spell.armadilha.mana_cost": 10, "spell.armadilha.cooldown": 5.0, "spell.armadilha.spell_base": 18,
+    "spell.julgamento.mana_cost": 20, "spell.julgamento.cooldown": 10.0, "spell.julgamento.spell_base": 10,
+    "spell.danca_das_laminas.mana_cost": 20, "spell.danca_das_laminas.cooldown": 10.0, "spell.danca_das_laminas.spell_base": 9,
     # Stage K23: Dash (game/player.py's DASH_* constants) - not a mana-cost
     # SPELLS entry (no mana cost, gated on Destreza instead), but tunable
     # from the admin panel's Magias tab alongside the 3 above. "player" (not

@@ -557,6 +557,13 @@ class Enemy:
             self.knockback_vy *= ease
             return
 
+        # Estagio M1: Impacto Sismico's "stun" - speed_mult already zeroed
+        # movement above (same axis "root" uses), this additionally freezes
+        # chase/attack entirely instead of just standing still while still
+        # taking a swing - the one behavioral difference between stun/root.
+        if self.status.has("stun"):
+            return
+
         px = player.x + player.width / 2
         py = player.y + player.height / 2
         ex = self.x + self.width / 2

@@ -7,6 +7,7 @@ from game.assets import (
     create_spell_icon, create_sword_icon, create_potion_icon, create_dash_icon, create_pickaxe_icon,
 )
 from game.items import ITEMS
+from game.spells import SPELLS
 
 TAP_MAX_DURATION = 0.35
 TAP_MAX_MOVEMENT = 18
@@ -635,18 +636,21 @@ class InputManager:
             rad = math.radians(angle_deg)
             return atk.cx + math.cos(rad) * arc_distance, atk.cy - math.sin(rad) * arc_distance
 
+        # Estagio M1: InputManager e construido uma unica vez em main.py,
+        # antes de qualquer Player existir - inicializa com o DEFAULT_KIT
+        # (game/class_kits.py, as mesmas 3 magias que todo mundo tinha
+        # antes deste estagio) e GameplayState.__init__()/o toast de troca
+        # de profissao (game/states.py) chamam refresh_spell_buttons() com
+        # a profissao real assim que ela é conhecida/muda.
+        from game.class_kits import DEFAULT_SPELLS
         cast_actions = [Action.CAST_1, Action.CAST_2, Action.CAST_3]
-        from game.spells import ORDER as SPELL_ORDER
         self.spell_buttons = []
-        for angle_deg, action, spell_id in zip(arc_angles_deg, cast_actions, SPELL_ORDER):
+        for angle_deg, action, spell_id in zip(arc_angles_deg, cast_actions,
+                                                 [DEFAULT_SPELLS["offense"], DEFAULT_SPELLS["utility"], DEFAULT_SPELLS["ultimate"]]):
             bx, by = _arc_pos(angle_deg)
-            # Stage J13: fireball/frost_nova aim like the attack button
-            # (drag to aim, auto-fires while held - see GameplayState.update).
-            # Healing Light has no direction to aim, so it keeps the old
-            # fire-once-on-press behavior untouched.
             btn = VirtualButton(bx, by, spell_btn_radius, "", action,
                                  icon=create_spell_icon(spell_id),
-                                 aimable=(spell_id != "healing_light"))
+                                 aimable=SPELLS.get(spell_id, {}).get("aimable", True))
             self.spell_buttons.append(btn)
 
         # Stage J14: dashes along the current aim vector - aimable=True so
@@ -708,6 +712,23 @@ class InputManager:
         self.debug_button = VirtualButton(
             self.joystick.cx, self.joystick.cy - self.joystick.radius - debug_gap - debug_btn_radius,
             debug_btn_radius, "DBG", Action.DEBUG_PANEL)
+
+    def refresh_spell_buttons(self, profession):
+        """Estagio M1: mesma ideia de refresh_item_icons() logo abaixo,
+        pro arco de magias moveis - chamado por GameplayState.__init__()
+        (cobre personagem novo/save carregado) e pelo toast de troca de
+        profissao (game/states.py) sempre que um respec muda o kit.
+        Também reseta btn._scaled_icon (não só btn.icon) - sem isso o
+        VirtualButton.draw() cacheado mostraria o icone antigo pra sempre
+        depois do primeiro frame já ter desenhado algo."""
+        from game.class_kits import spells_for
+        spell_ids = spells_for(profession)
+        for btn, spell_id in zip(self.spell_buttons, spell_ids):
+            # .action (CAST_1/2/3) stays fixed - only WHICH spell sits in
+            # that slot changes with profession, never the key it fires.
+            btn.icon = create_spell_icon(spell_id)
+            btn._scaled_icon = None
+            btn.aimable = SPELLS.get(spell_id, {}).get("aimable", True)
 
     def refresh_item_icons(self, player):
         """Stage K12: item_buttons are built once at InputManager

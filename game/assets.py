@@ -1516,6 +1516,64 @@ def create_spell_icon(spell_id):
         pygame.draw.line(s, gold, (3, 3), (13, 13), 1)
         pygame.draw.line(s, gold, (13, 3), (3, 13), 1)
         pygame.draw.circle(s, bright, (8, 8), 2)
+    # Estagio M1 (leva de conteudo - kits de classe): 13 icones novos, mesmo
+    # estilo minimalista (poucas primitivas, 16x16) das 3 originais acima.
+    elif spell_id == "investida_brutal":
+        pygame.draw.polygon(s, (230, 90, 60), [(2, 8), (10, 3), (10, 6), (14, 6), (14, 10), (10, 10), (10, 13)])
+    elif spell_id == "grito_de_guerra":
+        pygame.draw.circle(s, (255, 160, 60), (8, 8), 3)
+        for dx, dy in [(0, -6), (0, 6), (-6, 0), (6, 0)]:
+            pygame.draw.line(s, (255, 190, 100), (8, 8), (8 + dx, 8 + dy), 2)
+    elif spell_id == "terremoto":
+        c = (150, 110, 60)
+        pygame.draw.line(s, c, (1, 12), (6, 8), 2)
+        pygame.draw.line(s, c, (6, 8), (9, 12), 2)
+        pygame.draw.line(s, c, (9, 12), (15, 7), 2)
+    elif spell_id == "veneno_mortal":
+        green = (110, 200, 90)
+        pygame.draw.polygon(s, green, [(8, 2), (4, 9), (8, 14), (12, 9)])
+        pygame.draw.circle(s, (60, 140, 50), (8, 9), 2)
+    elif spell_id == "passo_sombrio":
+        purple = (150, 90, 200)
+        for i, (x, y) in enumerate([(3, 13), (6, 10), (9, 7), (12, 4)]):
+            r = 1 + i // 2
+            c = tuple(min(255, v + i * 15) for v in purple)
+            pygame.draw.circle(s, c, (x, y), r)
+    elif spell_id == "laminas_giratorias":
+        silver = (215, 218, 225)
+        pygame.draw.line(s, silver, (2, 2), (14, 14), 2)
+        pygame.draw.line(s, silver, (14, 2), (2, 14), 2)
+    elif spell_id == "provocacao":
+        red = (220, 60, 60)
+        pygame.draw.rect(s, red, (7, 2, 2, 8))
+        pygame.draw.rect(s, red, (7, 12, 2, 2))
+    elif spell_id == "impacto_sismico":
+        brown = (160, 120, 60)
+        pygame.draw.circle(s, brown, (8, 8), 3)
+        for dx, dy in [(-6, -6), (6, -6), (-6, 6), (6, 6), (0, -7), (0, 7)]:
+            pygame.draw.line(s, (190, 150, 90), (8, 8), (8 + dx, 8 + dy), 1)
+    elif spell_id == "raizes_prendentes":
+        green = (90, 150, 70)
+        pygame.draw.line(s, green, (8, 14), (8, 6), 2)
+        pygame.draw.line(s, green, (8, 9), (3, 4), 1)
+        pygame.draw.line(s, green, (8, 9), (13, 4), 1)
+        pygame.draw.line(s, green, (8, 6), (5, 2), 1)
+    elif spell_id == "totem_curativo":
+        pygame.draw.rect(s, (120, 85, 50), (7, 5, 2, 10))
+        pygame.draw.circle(s, (110, 220, 130), (8, 4), 3)
+    elif spell_id == "armadilha":
+        gray = (170, 170, 178)
+        for x in range(2, 15, 3):
+            pygame.draw.polygon(s, gray, [(x, 10), (x + 1, 6), (x + 2, 10)])
+    elif spell_id == "julgamento":
+        gold = (255, 220, 120)
+        pygame.draw.line(s, gold, (8, 2), (8, 14), 2)
+        pygame.draw.line(s, gold, (4, 6), (12, 6), 2)
+        pygame.draw.circle(s, (255, 245, 200), (8, 2), 2, 1)
+    elif spell_id == "danca_das_laminas":
+        silver = (215, 218, 225)
+        for off in (-3, 0, 3):
+            pygame.draw.line(s, silver, (2 + off, 3), (11 + off, 12), 1)
     _SPELL_ICON_CACHE[spell_id] = s
     return s
 
