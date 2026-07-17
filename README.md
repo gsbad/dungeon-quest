@@ -13,11 +13,11 @@ Um action-RPG 2D top-down estilo Zelda, feito em Python com pygame — projeto i
 
 ## 🕹️ Sobre o jogo
 
-Uma campanha em **3 atos** (13 fases, incluindo uma secreta), com sistema de atributos/profissões estilo Ultima Online, 15 classes com kit próprio de ataque+magias, 20 famílias de monstro com 3 variações cada, clima dinâmico, afixos de monstro (Paragon/Campeão), 5 níveis de dificuldade e um Bestiário/Atlas pra acompanhar o que já foi descoberto.
+Uma campanha em **6 atos** (26 fases, incluindo duas secretas), com sistema de atributos/profissões estilo Ultima Online, 15 classes com kit próprio de ataque+magias, 20 famílias de monstro com 3 variações cada, clima dinâmico, afixos de monstro (Paragon/Campeão), 5 níveis de dificuldade e um Bestiário/Atlas pra acompanhar o que já foi descoberto.
 
 ### Destaques
 
-- **3 atos, 4 bosses únicos** — cada um com sprite, sala e padrão de ataque próprios (Senhor da Guerra Orc, Necromante, Rei das Sombras, e o Cacodemônio da fase secreta).
+- **6 atos, 11 bosses únicos** — cada um com sprite, sala e padrão de ataque próprios (Senhor da Guerra Orc, Necromante, Rei das Sombras, Ursa Ancestral, Imperatriz das Aranhas, Barão Sanguinário, Colosso Rúnico, Arquibruxa, Senhor da Alcateia, e dois secretos: Cacodemônio e Dragão Primordial).
 - **15 classes, cada uma com ataque básico e kit de 3 magias autorais** (47 magias no total) — Guerreiro/Assassino/Mago/Feiticeiro/Cavaleiro/Duelista/Cavaleiro Arcano/Paladino/Campeão/Monge/Xamã/Ranger/Arcanista/Druida/Templário, cada trio seguindo o padrão ofensiva (recarga curta) / utilitária / ultimate. Inclui sistemas próprios como provocação, atordoamento, raiz, teleporte curto, totem de cura, armadilha e execução (bônus contra alvos feridos).
 - **89 monstros comuns em 20 famílias** (Rato, Aranha, Sapo, Goblin, Esqueleto, Minotauro, Lobo, Urso, Orc, Drake, Demônio, Vampiro, Fantasma, Golem, Geleia, Caranguejo, Saurio, Bruxa, Lobisomem, Zumbi...), cada família com 3 variações de poder próprias (stats/sprite/comportamento independentes, nunca um reskin de cor) — **qual variação aparece depende da dificuldade escolhida**, então jogar em Inferno mostra monstros visivelmente diferentes de Normal, não só números maiores.
 - **Atributos e profissões**: FOR/DES/INT/SAB/VIG/SOR determinam 16 profissões possíveis (5 puras + 10 híbridas + Aventureiro), sem nada "guardado" — é só a leitura dos pontos gastos.

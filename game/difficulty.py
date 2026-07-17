@@ -1,6 +1,6 @@
 """
-Difficulty tiers (Stage B5). Each tier replays the same 12-level campaign
-with the dial turned up - deliberately NOT through flat damage/hp
+Difficulty tiers (Stage B5). Each tier replays the same 25-level campaign
+(Stage Q2) with the dial turned up - deliberately NOT through flat damage/hp
 multipliers (the original design brief explicitly asked for something more
 thought-through than that), but through the same levers Stages B1/B3/B4
 already built:
@@ -20,8 +20,8 @@ already built:
     change to the fight, not a bigger number.
 
 Tiers unlock sequentially by clearing the previous one (reaching the
-"victory" result at level 12) - see is_unlocked(). Clearing Inferno is
-what gates the secret level (13, Cacodemon) open.
+"victory" result at level 25) - see is_unlocked(). Clearing Inferno is
+what gates the secret levels (13, Cacodemon; 26, Drake Anciao) open.
 """
 
 DIFFICULTIES = {
@@ -57,7 +57,7 @@ def next_difficulty(diff_id):
 
 def is_unlocked(diff_id, cleared_difficulties):
     """normal is always unlocked; every other tier requires the *previous*
-    tier's campaign (level 12, "victory") to have been cleared at least
+    tier's campaign (level 25, "victory") to have been cleared at least
     once - a ladder, not independent switches."""
     if diff_id == ORDER[0]:
         return True

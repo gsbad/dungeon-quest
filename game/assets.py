@@ -1250,6 +1250,29 @@ BOSS_SPRITES = {
                     "accent": ((240,240,245), (255,210,200))},
     "cacodemon":   {"rig": "cacodemon",
                     "body": ((140,35,10), (140,35,10))},
+    # Stage Q2: Atos 4-6 + boss secreto - mesmo padrao (1 rig bespoke por
+    # boss, sem reaproveitar sprite de mob) que os 4 bosses originais.
+    "ursa_ancestral":     {"rig": "ursa_ancestral",
+                            "body": ((80,55,35), (110,45,30)),
+                            "accent": ((230,220,200), (255,190,120))},
+    "imperatriz_aranha":  {"rig": "imperatriz_aranha",
+                            "body": ((55,35,70), (85,30,80)),
+                            "accent": ((180,40,200), (255,60,220))},
+    "barao_sanguinario":  {"rig": "barao_sanguinario",
+                            "body": ((35,5,10), (60,5,15)),
+                            "accent": ((210,190,190), (255,40,40))},
+    "colosso_runico":     {"rig": "colosso_runico",
+                            "body": ((70,70,80), (75,60,90)),
+                            "accent": ((80,200,255), (140,120,255))},
+    "arquibruxa":         {"rig": "arquibruxa",
+                            "body": ((40,15,55), (65,10,70)),
+                            "accent": ((120,255,140), (200,255,120))},
+    "senhor_da_alcateia": {"rig": "senhor_da_alcateia",
+                            "body": ((45,40,35), (65,35,30)),
+                            "accent": ((235,225,210), (255,210,80))},
+    "dragao_primordial":  {"rig": "dragao_primordial",
+                            "body": ((30,70,50), (70,30,20)),
+                            "accent": ((255,210,60), (255,120,30))},
 }
 
 
@@ -1434,11 +1457,218 @@ def _paint_cacodemon(s, SC, phase, body, accent=None):
     _boss_legs(s, SC, body)
 
 
+def _paint_ursa_ancestral(s, SC, phase, body, accent):
+    # Broad hulking bear - wider torso than the humanoid bosses, round ears,
+    # a protruding snout instead of a flat face.
+    for y in range(7,18):
+        for x in range(3,21):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    for y in range(2,9):
+        for x in range(6,18):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    # Round ears
+    for (x,y) in [(6,1),(7,1),(16,1),(17,1)]:
+        pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    # Snout
+    snout = accent
+    for y in range(6,9):
+        for x in range(9,15):
+            pygame.draw.rect(s, snout, (x*SC,y*SC,SC,SC))
+    pygame.draw.rect(s, BLACK, (11*SC,7*SC,SC*2,SC))  # nose
+    eye_color = (255,200,60) if phase == 1 else (255,80,30)
+    for x in [8,15]:
+        pygame.draw.rect(s, eye_color, (x*SC,4*SC,SC,SC))
+    _boss_arms(s, SC, body, y0=9, y1=17)
+    _boss_claws(s, SC, y=16, color=accent)
+    _boss_legs(s, SC, body)
+    if phase == 2:
+        _boss_edge_aura(s, SC, (220,60,10))
+
+
+def _paint_imperatriz_aranha(s, SC, phase, body, accent):
+    # Compact bulbous body with 8 spindly legs radiating out (line-drawn,
+    # not the shared _boss_arms/_boss_legs block-limbs every humanoid boss
+    # uses) - the one non-humanoid silhouette among the 7 new bosses.
+    cx, cy = 12*SC, 12*SC
+    pygame.draw.ellipse(s, body, (7*SC,7*SC,SC*10,SC*10))
+    pygame.draw.ellipse(s, body, (9*SC,3*SC,SC*6,SC*6))  # head
+    leg_color = accent
+    leg_w = max(2, SC//2)
+    for i, (dx, dy) in enumerate([(-1,-1),(-1,-0.4),(-1,0.4),(-1,1),
+                                    (1,-1),(1,-0.4),(1,0.4),(1,1)]):
+        knee = (cx + dx*9*SC, cy + dy*10*SC)
+        tip = (cx + dx*13*SC, cy + dy*13*SC)
+        pygame.draw.line(s, leg_color, (cx, cy), knee, leg_w)
+        pygame.draw.line(s, leg_color, knee, tip, leg_w)
+    # Eye cluster + fangs
+    eye_color = (255,240,255) if phase == 1 else (255,120,255)
+    for (x,y) in [(10,5),(13,5),(11,6),(12,6)]:
+        pygame.draw.rect(s, eye_color, (x*SC,y*SC,SC,SC))
+    pygame.draw.rect(s, (230,230,235), (10*SC,8*SC,SC,SC*2))
+    pygame.draw.rect(s, (230,230,235), (13*SC,8*SC,SC,SC*2))
+    if phase == 2:
+        _boss_edge_aura(s, SC, (200,40,220))
+
+
+def _paint_barao_sanguinario(s, SC, phase, body, accent):
+    # Humanoid vampire lord - tall stiff collar (2 flared triangles at the
+    # shoulders) instead of necromancer's trapezoid cloak, pale face, red
+    # eyes, no snout/tusks.
+    for y in range(8,18):
+        for x in range(5,19):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    for y in range(2,9):
+        for x in range(7,17):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    collar = accent
+    pygame.draw.polygon(s, collar, [(4*SC,10*SC),(9*SC,8*SC),(9*SC,12*SC)])
+    pygame.draw.polygon(s, collar, [(20*SC,10*SC),(15*SC,8*SC),(15*SC,12*SC)])
+    face = (225,215,215)
+    for y in range(4,8):
+        for x in range(9,15):
+            pygame.draw.rect(s, face, (x*SC,y*SC,SC,SC))
+    eye_color = (200,20,20) if phase == 1 else (255,50,40)
+    for x in [9,14]:
+        pygame.draw.rect(s, eye_color, (x*SC,5*SC,SC,SC))
+    pygame.draw.rect(s, WHITE, (10*SC,7*SC,SC,SC))
+    pygame.draw.rect(s, WHITE, (13*SC,7*SC,SC,SC))
+    _boss_arms(s, SC, body)
+    _boss_claws(s, SC, color=(220,210,210))
+    _boss_legs(s, SC, body)
+    if phase == 2:
+        _boss_edge_aura(s, SC, (200,10,20))
+
+
+def _paint_colosso_runico(s, SC, phase, body, accent):
+    # Slab-sided golem - one continuous blocky mass (no separate neck/head
+    # silhouette like the humanoid bosses), glowing rune-lines on the chest.
+    for y in range(3,18):
+        for x in range(4,20):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    rune = accent
+    for (x,y) in [(8,7),(9,7),(14,7),(15,7),(11,10),(12,10),(9,13),(14,13)]:
+        pygame.draw.rect(s, rune, (x*SC,y*SC,SC,SC))
+    eye_color = accent
+    for x in [9,14]:
+        pygame.draw.rect(s, eye_color, (x*SC,4*SC,SC,SC*2))
+    _boss_arms(s, SC, body, y0=8, y1=17)
+    _boss_claws(s, SC, y=16, color=(50,50,58))
+    _boss_legs(s, SC, body)
+    if phase == 2:
+        _boss_edge_aura(s, SC, (120,90,255))
+
+
+def _paint_arquibruxa(s, SC, phase, body, accent):
+    # Same flared-trapezoid cloak silhouette as necromancer (both are robed
+    # spellcasters) but a pointed witch hat instead of a rounded hood, and
+    # glowing eyes visible instead of a bare skull.
+    for y in range(8,18):
+        x0, x1 = _shade_lerp_row(y, 8, 17, 9, 0, 15, 24)
+        x0, x1 = max(0,x0), min(24,x1)
+        for x in range(x0, x1):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    hat = accent
+    pygame.draw.polygon(s, hat, [(12*SC,0),(7*SC,7*SC),(17*SC,7*SC)])
+    for y in range(6,9):
+        for x in range(9,15):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    eye_color = (140,255,160) if phase == 1 else (220,255,120)
+    for x in [10,13]:
+        pygame.draw.rect(s, eye_color, (x*SC,7*SC,SC,SC))
+    _boss_arms(s, SC, body)
+    for x in [0,1,2,3]:
+        pygame.draw.rect(s, body, (x*SC,14*SC,SC,SC))
+    for x in [20,21,22,23]:
+        pygame.draw.rect(s, body, (x*SC,14*SC,SC,SC))
+    pygame.draw.rect(s, (210,200,190), (1*SC,15*SC,SC*2,SC))
+    pygame.draw.rect(s, (210,200,190), (20*SC,15*SC,SC*2,SC))
+    if phase == 2:
+        _boss_edge_aura(s, SC, (60,220,90))
+
+
+def _paint_senhor_da_alcateia(s, SC, phase, body, accent):
+    # Hunched lupine humanoid - pointed ears, a narrow muzzle (not a wide
+    # bear snout), visible fur-tuft rows, a small tail.
+    for y in range(9,18):
+        for x in range(4,20):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    for y in range(3,10):
+        for x in range(7,17):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    pygame.draw.polygon(s, body, [(7*SC,3*SC),(6*SC,0),(9*SC,2*SC)])
+    pygame.draw.polygon(s, body, [(17*SC,3*SC),(18*SC,0),(15*SC,2*SC)])
+    muzzle = accent
+    for y in range(7,10):
+        for x in range(10,14):
+            pygame.draw.rect(s, muzzle, (x*SC,y*SC,SC,SC))
+    pygame.draw.rect(s, BLACK, (11*SC,8*SC,SC*2,SC))
+    eye_color = (255,220,60) if phase == 1 else (255,140,30)
+    for x in [8,15]:
+        pygame.draw.rect(s, eye_color, (x*SC,5*SC,SC,SC))
+    fur = (0,0,0,40)
+    for y in [11,14]:
+        for x in range(5,19,2):
+            r = pygame.Surface((SC,SC), pygame.SRCALPHA)
+            r.fill(fur)
+            s.blit(r, (x*SC,y*SC))
+    _boss_arms(s, SC, body, y0=10, y1=17)
+    _boss_claws(s, SC, y=16, color=accent)
+    _boss_legs(s, SC, body)
+    pygame.draw.polygon(s, body, [(3*SC,17*SC),(0,20*SC),(3*SC,19*SC)])
+    if phase == 2:
+        _boss_edge_aura(s, SC, (255,150,20))
+
+
+def _paint_dragao_primordial(s, SC, phase, body, accent):
+    # Biggest silhouette of the 7 - broad wings, horns, a long snout, a
+    # scaled chest (alternating-tone rows), a tail stub. The final secret
+    # boss, deliberately the most visually elaborate.
+    for y in range(7,18):
+        for x in range(4,20):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    for y in range(2,9):
+        for x in range(7,17):
+            pygame.draw.rect(s, body, (x*SC,y*SC,SC,SC))
+    wing = accent
+    pygame.draw.polygon(s, wing, [(4*SC,9*SC),(0,3*SC),(1*SC,14*SC),(4*SC,12*SC)])
+    pygame.draw.polygon(s, wing, [(20*SC,9*SC),(24*SC,3*SC),(23*SC,14*SC),(20*SC,12*SC)])
+    horn = (60,50,20)
+    pygame.draw.polygon(s, horn, [(8*SC,2*SC),(7*SC,0),(10*SC,2*SC)])
+    pygame.draw.polygon(s, horn, [(16*SC,2*SC),(17*SC,0),(14*SC,2*SC)])
+    # Snout
+    snout = (min(255, body[0]+40), min(255, body[1]+25), body[2])
+    for y in range(6,9):
+        for x in range(9,15):
+            pygame.draw.rect(s, snout, (x*SC,y*SC,SC,SC))
+    eye_color = (255,230,60) if phase == 1 else (255,110,30)
+    for x in [8,15]:
+        pygame.draw.rect(s, eye_color, (x*SC,4*SC,SC,SC))
+    scale = (0,0,0,35)
+    for y in [9,12,15]:
+        for x in range(6,18,2):
+            r = pygame.Surface((SC,SC), pygame.SRCALPHA)
+            r.fill(scale)
+            s.blit(r, (x*SC,y*SC))
+    _boss_arms(s, SC, body, y0=9, y1=17)
+    _boss_claws(s, SC, y=16, color=(230,220,180))
+    _boss_legs(s, SC, body)
+    pygame.draw.polygon(s, body, [(3*SC,17*SC),(0,22*SC),(4*SC,19*SC)])
+    if phase == 2:
+        _boss_edge_aura(s, SC, (255,140,20))
+
+
 _BOSS_RIG_PAINTERS = {
     "orc_warlord": _paint_orc_warlord,
     "necromancer": _paint_necromancer,
     "shadow_king": _paint_shadow_king,
     "cacodemon": _paint_cacodemon,
+    "ursa_ancestral": _paint_ursa_ancestral,
+    "imperatriz_aranha": _paint_imperatriz_aranha,
+    "barao_sanguinario": _paint_barao_sanguinario,
+    "colosso_runico": _paint_colosso_runico,
+    "arquibruxa": _paint_arquibruxa,
+    "senhor_da_alcateia": _paint_senhor_da_alcateia,
+    "dragao_primordial": _paint_dragao_primordial,
 }
 
 

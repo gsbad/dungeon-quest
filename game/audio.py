@@ -170,6 +170,20 @@ class AudioManager:
             _tone_samples(130, 0.12, "square", 0.6, sr),
             _sweep_samples(200, 100, 0.1, 0.5, sr),
         )
+        # Stage Q2: Atos 4-6 + boss secreto.
+        self._sounds["attack_ursa_ancestral"] = _build_sound(_tone_samples(75, 0.22, "square", 0.6, sr))
+        self._sounds["attack_imperatriz_aranha"] = _build_sound(_sweep_samples(650, 950, 0.07, 0.4, sr))
+        self._sounds["attack_barao_sanguinario"] = _build_sound(_sweep_samples(220, 110, 0.2, 0.5, sr))
+        self._sounds["attack_colosso_runico"] = _build_sound(
+            _tone_samples(60, 0.28, "square", 0.6, sr),
+            _tone_samples(400, 0.1, "sine", 0.4, sr),
+        )
+        self._sounds["attack_arquibruxa"] = _build_sound(_sweep_samples(400, 800, 0.15, 0.45, sr))
+        self._sounds["attack_senhor_da_alcateia"] = _build_sound(_tone_samples(95, 0.14, "square", 0.6, sr))
+        self._sounds["attack_dragao_primordial"] = _build_sound(
+            _tone_samples(110, 0.18, "square", 0.6, sr),
+            _sweep_samples(300, 700, 0.12, 0.5, sr),
+        )
 
         # Stage H7 - a short looping title-screen theme. No music file
         # exists (or ever will, per this project's "everything generated

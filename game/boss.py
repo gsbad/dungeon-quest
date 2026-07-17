@@ -95,6 +95,19 @@ BOSS_PATTERNS = {
     "orc_warlord": {1: ["charge", "triple"], 2: ["charge", "charge", "circle"]},
     "necromancer": {1: ["summon", "circle", "curse"], 2: ["summon", "spiral", "curse"]},
     "shadow_king": {1: ["circle", "triple", "spiral"], 2: ["circle", "triple", "spiral", "circle_aimed"]},
+    # Stage Q2: Atos 4-6 + boss secreto - todos remixam o pool ja existente
+    # (nenhum pattern novo precisou ser escrito) pra dar personalidade sem
+    # inventar mecanica nova por boss. "summon" fica exclusivo do
+    # necromancer de proposito - _pattern_summon/states.py:2142 sempre
+    # invoca "skeleton" fixo, entao reusar em outro boss faria um Urso
+    # invocar esqueletos, o que nao faz sentido tematico nenhum.
+    "ursa_ancestral": {1: ["charge", "triple"], 2: ["charge", "charge", "circle_aimed"]},
+    "imperatriz_aranha": {1: ["triple", "spiral"], 2: ["triple", "spiral", "circle_aimed"]},
+    "barao_sanguinario": {1: ["curse", "triple"], 2: ["curse", "charge", "circle"]},
+    "colosso_runico": {1: ["circle", "triple"], 2: ["circle", "circle", "spiral"]},
+    "arquibruxa": {1: ["curse", "circle"], 2: ["curse", "spiral", "circle_aimed"]},
+    "senhor_da_alcateia": {1: ["charge", "triple"], 2: ["charge", "charge", "charge"]},
+    "dragao_primordial": {1: ["circle", "triple", "spiral"], 2: ["circle_aimed", "spiral", "triple", "charge"]},
 }
 
 

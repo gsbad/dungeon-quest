@@ -56,6 +56,15 @@ BOSS_REGISTRY = {
     "necromancer": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="necromancer", enrage_frac=ef, audio_mgr=am), 48, 80),
     "shadow_king": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="shadow_king", enrage_frac=ef, audio_mgr=am), 48, 80),
     "cacodemon": (lambda x, y, ef=0.5, am=None: CacodemonBoss(x, y, audio_mgr=am), 40, 100),
+    # Stage Q2: Atos 4-6 + boss secreto - todos reusam a mesma Boss class
+    # (so cacodemon tem chassi bespoke), so precisam de 1 linha cada aqui.
+    "ursa_ancestral": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="ursa_ancestral", enrage_frac=ef, audio_mgr=am), 48, 80),
+    "imperatriz_aranha": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="imperatriz_aranha", enrage_frac=ef, audio_mgr=am), 48, 80),
+    "barao_sanguinario": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="barao_sanguinario", enrage_frac=ef, audio_mgr=am), 48, 80),
+    "colosso_runico": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="colosso_runico", enrage_frac=ef, audio_mgr=am), 48, 80),
+    "arquibruxa": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="arquibruxa", enrage_frac=ef, audio_mgr=am), 48, 80),
+    "senhor_da_alcateia": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="senhor_da_alcateia", enrage_frac=ef, audio_mgr=am), 48, 80),
+    "dragao_primordial": (lambda x, y, ef=0.5, am=None: Boss(x, y, boss_id="dragao_primordial", enrage_frac=ef, audio_mgr=am), 48, 80),
 }
 
 
@@ -300,7 +309,7 @@ class ConfirmResetState:
 class DifficultySelectState:
     """Map-select screen (Stage B5): pick which of the 5 tiers to play.
     Locked tiers (per game.difficulty.is_unlocked) show but can't be
-    selected - unlocking is sequential, cleared by reaching level 12's
+    selected - unlocking is sequential, cleared by reaching level 25's
     "victory" at the tier below."""
 
     def __init__(self, screen, input_mgr, audio_mgr, cleared_difficulties):
@@ -2667,6 +2676,13 @@ class VictoryState:
         self.continue_button = TextButton("[ ENTER ] - Continuar", SW//2, 420)
         secret_label = "[ ESPACO ] - Nivel Secreto" if secret_unlocked else "Nivel Secreto - vença o Inferno para desbloquear"
         self.secret_button = TextButton(secret_label, SW//2, 500, pad_y=10)
+        # Stage Q2: um segundo nivel secreto (Dragao Primordial, fase 26) -
+        # mesmo gate de desbloqueio que o primeiro (Cacodemonio), so
+        # clicavel/tocavel (sem tecla dedicada propria, ao contrario do
+        # primeiro que usa Action.SECRET) pra nao precisar de um Action novo
+        # no keybind system so pra isso.
+        secret2_label = "Nivel Secreto: Furia do Dragao" if secret_unlocked else "Nivel Secreto 2 - vença o Inferno para desbloquear"
+        self.secret2_button = TextButton(secret2_label, SW//2, 534, pad_y=8)
 
     def handle_event(self, event):
         if self.secret_unlocked:
@@ -2676,6 +2692,9 @@ class VictoryState:
             if self.input.tapped_rect(self.secret_button.rect):
                 self.audio.play("menu_select")
                 return "secret"
+            if self.input.tapped_rect(self.secret2_button.rect):
+                self.audio.play("menu_select")
+                return "secret2"
         if self.input.consume_action(Action.CONFIRM):
             self.audio.play("menu_select")
             return "CONTINUAR"
@@ -2710,7 +2729,12 @@ class VictoryState:
         draw_text(self.screen, "VITORIA!", f1, (255, glow, 50), SW//2, 140)
 
         f2 = font(24)
-        draw_text(self.screen, "O Rei das Sombras foi derrotado!", f2, (220,220,180), SW//2, 235)
+        # Stage Q2: generico de proposito - o boss final da campanha deixou
+        # de ser sempre o Rei das Sombras (Ato 3) quando os Atos 4-6 foram
+        # encadeados depois dele; nomear um boss especifico aqui exigiria
+        # passar o boss_id ate este draw(), que nenhum outro dado de
+        # VictoryState hoje precisa.
+        draw_text(self.screen, "O ultimo tirano foi derrotado!", f2, (220,220,180), SW//2, 235)
         draw_text(self.screen, "A paz voltou as terras do reino.", f2, (200,200,160), SW//2, 268)
 
         f3 = font(18, bold=True) if self.unlocked_next else font(18)
@@ -2734,6 +2758,7 @@ class VictoryState:
         f_ins = font(16)
         secret_color = (180,200,180) if self.secret_unlocked else (110,100,100)
         self.secret_button.draw(self.screen, f_ins, secret_color)
+        self.secret2_button.draw(self.screen, f_ins, secret_color)
 
         f5 = font(14)
         draw_text(self.screen, "Criado por Gustavo Sa",
@@ -2868,7 +2893,7 @@ class GameStateManager:
     def _continue_level(self):
         diff_id = self.save_state["progression"]["current_difficulty"]
         highest = self.save_state["progression"]["highest_level_cleared"].get(diff_id, 0)
-        if highest >= 12:
+        if highest >= 25:
             # This tier's final boss is already cleared - move on to the
             # next difficulty (already unlocked, since clearing tier N is
             # exactly what unlocks tier N+1) instead of re-fighting the
@@ -2877,8 +2902,8 @@ class GameStateManager:
             if nd:
                 self.save_state["progression"]["current_difficulty"] = nd
                 return 1
-            return 12  # Inferno has no next tier - keep replaying its final boss
-        return min(highest + 1, 12)
+            return 25  # Inferno has no next tier - keep replaying its final boss
+        return min(highest + 1, 25)
 
     def _is_fullscreen(self):
         # Stage G6: on the web build, the real source of truth is the
@@ -3133,7 +3158,7 @@ class GameStateManager:
             self.save_state["progression"]["current_difficulty"] = diff_id
             self.player = self._player_from_save()
             highest = self.save_state["progression"]["highest_level_cleared"].get(diff_id, 0)
-            start_level = min(highest + 1, 12)
+            start_level = min(highest + 1, 25)
             self._persist()
             self.state = TransitionState(self.screen, start_level, self.player)
             self.play_time = 0.0
@@ -3173,6 +3198,14 @@ class GameStateManager:
             remote_players = getattr(self.state, "remote_players", None)
             self.player = self._player_from_save()
             self.state = TransitionState(self.screen, 13, self.player, coop=coop, remote_players=remote_players)
+            self.play_time = 0.0
+        elif result == "secret2":
+            # Stage Q2: mesma logica do "secret" acima, so que pra fase 26
+            # (Dragao Primordial) em vez da 13 (Cacodemonio).
+            coop = getattr(self.state, "coop", None)
+            remote_players = getattr(self.state, "remote_players", None)
+            self.player = self._player_from_save()
+            self.state = TransitionState(self.screen, 26, self.player, coop=coop, remote_players=remote_players)
             self.play_time = 0.0
         elif result == "secret_victory":
             self.audio.play("victory")

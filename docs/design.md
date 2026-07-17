@@ -253,7 +253,7 @@ Implementação: `InputManager` (`game/input_system.py`) ganhou `Action.MENU_LEF
 
 ## Atalhos de teste (dev-only)
 
-`M`/`N` (`Action.DEV_NEXT_LEVEL`/`DEV_PREV_LEVEL`) avançam/voltam um nível da campanha (`GameplayState._dev_jump`), ignorando boss vivo ou saída bloqueada — deixa qualquer uma das 13 fases alcançável pra teste sem precisar jogar a campanha inteira a cada verificação. Reusa o mesmo caminho de transição (`next_state = "next:N"`) que a saída normal de fase já usa, então nenhum estado novo foi criado. Efeito colateral aceito: como qualquer transição de nível, atualiza `highest_level_cleared` mesmo sem a fase ter sido de fato cumprida — é uma ferramenta de debug, não uma mecânica de jogo, então isso não é tratado como bug.
+`M`/`N` (`Action.DEV_NEXT_LEVEL`/`DEV_PREV_LEVEL`) avançam/voltam um nível da campanha (`GameplayState._dev_jump`), ignorando boss vivo ou saída bloqueada — deixa qualquer uma das 26 fases alcançável pra teste sem precisar jogar a campanha inteira a cada verificação. Reusa o mesmo caminho de transição (`next_state = "next:N"`) que a saída normal de fase já usa, então nenhum estado novo foi criado. Efeito colateral aceito: como qualquer transição de nível, atualiza `highest_level_cleared` mesmo sem a fase ter sido de fato cumprida — é uma ferramenta de debug, não uma mecânica de jogo, então isso não é tratado como bug.
 
 ## Correções de escopo aplicadas depois da primeira implementação
 
@@ -262,7 +262,7 @@ Implementação: `InputManager` (`game/input_system.py`) ganhou `Action.MENU_LEF
 
 ## Dificuldade (Stage B5)
 
-5 tiers (`game/difficulty.py`): Normal, Dificil, Muito Dificil, Pesadelo, Inferno. Cada um é a mesma campanha de 12 fases jogada de novo — não multiplicadores simples de dano/vida (pedido explícito do usuário), e sim os mesmos mecanismos que os Stages B1/B3/B4 já construíram, com o dial girado:
+5 tiers (`game/difficulty.py`): Normal, Dificil, Muito Dificil, Pesadelo, Inferno. Cada um é a mesma campanha jogada de novo (25 fases desde o Estágio Q2, eram 12 antes) — não multiplicadores simples de dano/vida (pedido explícito do usuário), e sim os mesmos mecanismos que os Stages B1/B3/B4 já construíram, com o dial girado:
 
 | Mecanismo | O que faz | Reusa |
 |---|---|---|
@@ -336,10 +336,12 @@ O que era 1 boss único (Rei das Sombras) + 1 fase secreta virou 3 atos, cada um
 | 9 | Salão dos Ecos | combate | dark horse, acólito, feiticeira | 24 |
 | 10 | Abismo de Cinzas | combate | fire hound, ogro, elemental de pedra | 28 |
 | 11 | Corredor Final | combate | quimera, lyzardman, esqueleto sombrio | 32 |
-| 12 | Trono das Trevas | boss (final da campanha, `victory:"victory"`) | Rei das Sombras | — |
+| 12 | Trono das Trevas | boss (final do Ato 3) | Rei das Sombras | — |
 | 13 | Fase Secreta: INFERNO | boss (`victory:"secret_victory"`) | Cacodemon | — |
 
 Recompensa dos 3 bosses escalada à mão pra refletir a posição na campanha (não pela fórmula de ML, que é só pra mobs comuns): Orc Warlord 100 XP/40 ouro, Necromante 200/80, Rei das Sombras 300/120 (subiu de 150/60 — deixou de ser o único boss do jogo pra ser o final do Ato 3). `game/states.py`'s `_continue_level()` (cap do botão CONTINUAR) e o alvo da transição `"secret"` foram atualizados de `4`/`5` pra `12`/`13`.
+
+**Desatualizado pelo Estágio Q2**: a fase 12 deixou de ser o final da campanha (`victory:"victory"` moveu pra fase 25) e agora encadeia (`next: 14`) pros Atos 4-6 — ver a seção "Atos 4-6 e boss secreto novo (Estágio Q2)" mais abaixo pra tabela completa/atualizada.
 
 **Individualização de mobs comuns (Stage B4b, fases 5/6/7/9/10/11):** o parágrafo acima ficou desatualizado - as 6 fases de combate dos Atos 2/3 tinham cada uma seu próprio `monster_level`, mas reusavam só `goblin`/`skeleton`/`dark_knight` recolorados (via `swamp_troll`/`cursed_mage`/`crypt_wraith`/`ash_fiend`/`royal_guard`) em vez de um elenco visualmente próprio. Corrigido junto com os bosses: 17 arquétipos novos (ver tabela de mobs comuns no Bestiário acima), cada um com seu rig em `game/assets.py` e ataque em `game/enemy.py`'s `ENEMY_FLAVOR` — `skeleton`/`goblin`/`dark_knight` continuam intactos, usados só nas fases 1-3. `Enemy._shoot_at_player()` ganhou um parâmetro opcional `flavor["ranged_shape"]` (`"spread3"`/`"spread5"`/`"circle6"`, default `"single"` = comportamento antigo inalterado) pros 3 mobs cujo ataque pedia mais que um tiro reto (treant, imp, elemental_pedra) — a mesma técnica de leque/rajada circular que `game/boss.py` já usava, adaptada pra `Enemy`/`EnemyProjectile` em vez de `Boss`/`Projectile`. Nenhum mob comum ganhou charge/dash ou invocação — essas continuam exclusivas de boss (exigiriam a máquina de estados de `Boss._update_charge`/o dreno de `pending_summons`, fora do escopo pedido). Cenário: fase 6 ganhou `"cursed_floor"` (pedra + runas roxas) e fase 9 ganhou `"ritual_floor"` (pedra pálida + círculo arcano), fase 7 passou a reusar `"crypt_floor"` (já existia, criado pro Necromante); fases 5/10/11 mantiveram `swamp`/`lava`/`boss_floor` (já combinavam com o elenco novo).
 
@@ -549,5 +551,49 @@ Decisão principal deste estágio: em vez de autorar fases/atos novos do zero (c
 **Achado ao vivo**: a primeira versão deste estágio pôs Rato/Lobo/Urso na fase 1 (a escolha mais óbvia tematicamente - floresta). O harness de coop pegou uma regressão real na hora (downed via PvP e quebra de bloco passaram a falhar, sem erro de página nenhum) - um screenshot mostrou o motivo: os monstros novos, mais rápidos que skeleton/goblin (Rato/Lobo chegam a 140/135 de velocidade base contra 70/110), perseguiam/empurravam os jogadores perto do spawn o bastante pra desalinhar o posicionamento pixel-preciso que vários testes de coop assumem (mesma premissa "tela == mundo perto do canto" que o harness já documentava). Corrigido movendo os 3 pra fase 2, que nenhum teste de coop visita.
 
 **Fora do escopo deste estágio, de propósito**: nenhuma fase/ato novo foi criado (o número de fases continua 13 - 3 atos + secreta) - a variedade nova inteira foi absorvida pelas fases existentes via o sistema de tier-por-dificuldade acima, sem precisar desenhar layout novo nenhum. Novos bosses temáticos (ex: um boss Orc dedicado, já que a família existe agora) ficam pra uma iteração futura caso o usuário queira.
+
+**Superado pelo Estágio Q2**: depois de jogar esta leva, o usuário rejeitou essa abordagem de propósito - reaproveitar as 9 fases existentes não é a mesma coisa que fases/bosses novos de verdade, mesmo que a variedade de monstro tenha crescido. Ver "Atos 4-6 e boss secreto novo (Estágio Q2)" abaixo pro redesenho real.
+
+## Correção pós-playtest: hotbar de magias manual + aba Ajuda completa (Estágio Q1)
+
+Duas peças de feedback direto depois de jogar a leva de conteúdo M/N/O/P:
+
+**Hotbar de magias deixou de ser automática por profissão.** A aba Magias do Paperdoll (`game/paperdoll.py`) antes trocava as 3 magias do hotbar (F/Q/R) automaticamente pra combinar com a profissão atual a cada respec - decisão do jogo, não do jogador. Agora lista as 47 magias inteiras (`SPELLS`, `game/spells.py`) com paginação lateral (`Carousel`, mesmo padrão da aba Ajuda/Conquistas e do overlay de Itens), e o jogador escolhe manualmente quais 3 ficam no hotbar (`player.hotbar_spells`, evict-oldest-of-3 - clicar numa 4ª magia remove a mais antiga, nunca menos de 3). `Player._spell_action`/`input_system.py`'s botões móveis passaram a indexar por `player.hotbar_spells` em vez de `class_kits.spells_for(profession)` - a troca de profissão não toca mais no hotbar.
+
+**Aba Ajuda ganhou páginas de referência pras 47 magias e pro catálogo de itens**, e os nomes de poção mostrados lá foram corrigidos - `game/status_effects.py`'s `STATUS_HELP` ainda tinha os nomes antigos por cor (`"Poção Preta"`) do sistema pré-renomeação (Stage K12 renomeou os itens em `game/items.py` pra nomes descritivos como `"Poção do Véu Arcano"`, mas nunca atualizou o dict paralelo que a aba Ajuda lê) - único lugar do jogo com esse texto desatualizado, já que o inventário/loja sempre leram `ITEMS` direto. `item_tooltip_line()` (`game/items.py`) também passou a traduzir os ids de `cures` (`"poison"` → `"Veneno"`) em vez de mostrar a string crua.
+
+**Rolagem do mouse agora navega qualquer menu** - um único hook novo em `InputManager.feed()` (`game/input_system.py`) injeta `Action.MENU_UP`/`MENU_DOWN` em resposta a `pygame.MOUSEWHEEL`, a mesma Action que W/S/setas já disparavam - nenhum menu individual precisou de código novo, já que todos já respondiam a essas Actions pra paginação/cursor.
+
+## Atos 4-6 e boss secreto novo (Estágio Q2)
+
+Depois do Estágio Q1, o usuário insistiu no ponto que o Estágio O tinha deixado de lado: monstros novos não são a mesma coisa que fases/bosses novos. Pediu uma análise real da quantidade de monstros/variações e uma proposta concreta de quantas fases/bosses fazem sentido - confirmado com o usuário via AskUserQuestion: **13 fases novas, 6 bosses de Ato + 1 boss secreto novo**.
+
+**Análise que embasou a proposta**: 21 famílias × 3 tiers = 63 monstros com tier + 6 standalone = 69 arquétipos, mas só 3 famílias tinham payoff de boss (Orc/Skeleton/Demônio) - 18 famílias sem boss nenhum, apesar de todo tier 3 já ter nome de "boss" (`rainha_aranha`, `urso_ancestral`, `lobisomem_alfa`...). A campanha continuava com só 12 fases (3 Atos) + 1 secreta.
+
+**Estrutura**: 3 Atos novos, cada um mais denso que os originais (2 fases de combate + 2 bosses, contra 3 combate + 1 boss dos Atos 1-3) - entrega os 6 bosses de Ato confirmados sem dobrar demais o tamanho da campanha. Cada fase de combate foca 2 famílias tematicamente coerentes (não 5-7 misturadas como o Estágio O deixou), e o boss seguinte é o payoff de uma delas.
+
+| Fase | Título | Tipo | Boss/Famílias | ML |
+|---|---|---|---|---|
+| 14 | Trilha da Alcateia | combate | lobo, urso | 36 |
+| 15 | Covil da Ursa Ancestral | boss | Ursa Ancestral | — |
+| 16 | Teia Esquecida | combate | aranha, sapo | 40 |
+| 17 | Covil da Imperatriz | boss | Imperatriz das Aranhas | — |
+| 18 | Cripta dos Sussurros | combate | vampiro, fantasma | 44 |
+| 19 | Salão do Barão Sanguinário | boss | Barão Sanguinário | — |
+| 20 | Salão de Ferro e Pedra | combate | golem, caranguejo | 48 |
+| 21 | Núcleo do Colosso Rúnico | boss | Colosso Rúnico | — |
+| 22 | Pântano da Convocação | combate | bruxa, saurio | 52 |
+| 23 | Covil da Arquibruxa | boss | Arquibruxa | — |
+| 24 | Vale da Alcateia Selvagem | combate | lobisomem, minotauro | 56 |
+| 25 | Trono do Senhor da Alcateia | boss (**final da campanha**, `victory:"victory"`) | Senhor da Alcateia | — |
+| 26 | Fase Secreta: Fúria do Dragão | boss (`victory:"secret_victory"`, 2º segredo) | Dragão Primordial | — |
+
+**Ids de boss deliberadamente diferentes do etype do mob tier 3 da mesma família** (`ursa_ancestral` boss ≠ `urso_ancestral` mob, `imperatriz_aranha` ≠ `rainha_aranha`, `barao_sanguinario` ≠ `lorde_vampiro`, `colosso_runico` ≠ `golem_runico`, `arquibruxa` ≠ `bruxa_suprema`, `senhor_da_alcateia` ≠ `lobisomem_alfa`, `dragao_primordial` ≠ `drake_anciao`) - evita colisão de chave em `BESTIARY`/`ENEMY_ARCHETYPES` vs `BOSS_ARCHETYPES`, que usam o mesmo namespace de string. Narrativamente também funciona melhor: o boss é o líder LENDÁRIO da família, não só mais um exemplar forte dela.
+
+**Todos os 7 bosses novos reusam a classe `Boss` compartilhada** (não o chassi bespoke do `CacodemonBoss`) - só precisam de uma entrada em `BOSS_ARCHETYPES` (`game/stats.py`, stats/nome/recompensa), uma em `BOSS_PATTERNS` (`game/boss.py`, remix do pool já existente - `circle`/`triple`/`spiral`/`circle_aimed`/`charge`/`curse`, sem mecânica nova nenhuma), um rig bespoke em `_paint_<id>` (`game/assets.py`, grid 24×24, reusa os helpers compartilhados `_boss_arms`/`_boss_claws`/`_boss_legs`/`_boss_edge_aura`) e uma linha em `BOSS_REGISTRY` (`game/states.py`). `"summon"` ficou de fora do remix de propósito - `_pattern_summon` sempre invoca `"skeleton"` fixo (`game/states.py`), reusar em outro boss faria um Urso invocar esqueletos.
+
+**Splice na corrente principal, achado pela pesquisa**: `LEVEL_MAPS` é inteiramente data-driven, sem literais `level_num==N` fora de 2 lugares. A fase 12 mudou de `"victory":"victory","next":None` pra `"victory":None,"next":14` (deixou de ser o fim da campanha, virou checkpoint do meio); a fase 25 herdou o `"victory":"victory"`. A fase 13 (Cacodemon) ficou **completamente intocada** - é alcançada por um literal isolado em `VictoryState`/`GameStateManager._transition()` (`game/states.py`), não pela corrente `next`, então nada precisou mudar lá. Só 2 lugares tinham o literal `12` hardcoded como "última fase" (`_continue_level()` e o branch `"difficulty:"`) e viraram `25`. A fase 26 (Dragão Primordial) segue o mesmo padrão da 13 - um segundo botão "Nível Secreto" em `VictoryState`, resultado `"secret2"`, mesmo gate de desbloqueio (`"inferno" in cleared_difficulties`).
+
+**Verificação**: as 13 fases novas + 7 bosses novos instanciam sem erro via `game.level.Level`/`game.boss.Boss` direto (teste headless). Harness de coop completo roda limpo com o código novo em produção (splice da corrente incluído). Caminhada ao vivo via Playwright pelas 26 fases (atalho dev `M`/`Enter`, `game/states.py`'s `_dev_jump`) sem nenhum erro de página - confirmado visualmente que os títulos/nomes de boss corretos aparecem nas fases 15/17/19/21/23/24/25 (cada boss com HUD/barra de vida próprios) e que o combate/dano funciona de verdade (o personagem parado matou o tempo suficiente pra ser derrotado por um boss numa das voltas, confirmando que os padrões de ataque realmente causam dano).
 
 **Verificação**: as 13 fases foram construídas nos 3 tiers cada (39 combinações), sem erro - fase 1 no tier fraco spawna `goblin/skeleton`, no tier forte spawna `death_knight/lider_goblin` (confirmando que o tier realmente muda o roster). Harness de coop completo roda limpo, depois do fix do achado ao vivo acima.

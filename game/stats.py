@@ -420,6 +420,41 @@ BOSS_ARCHETYPES = {
         name="Rei das Sombras", strength=10, dexterity=0, vigor=83.33, luck=0,
         weapon_base=3, base_speed=80, xp_reward=300, gold_reward=120,
     ),
+    # Stage Q2: Atos 4-6 + boss secreto novo - payoff de boss pras familias
+    # que so tinham um tier 3 "elite" (mob Inferno comum) mas nenhum
+    # encontro de Boss de verdade. Nomes/ids deliberadamente DIFERENTES do
+    # etype do tier 3 da mesma familia (ex. "ursa_ancestral" != mob
+    # "urso_ancestral") pra nao colidir com ENEMY_ARCHETYPES/BESTIARY, que
+    # usam o mesmo namespace de string - o boss e o lider LENDARIO da
+    # familia, nao só mais um exemplar forte dela.
+    "ursa_ancestral": dict(
+        name="Ursa Ancestral", strength=10, dexterity=0, vigor=100.0, luck=0,
+        weapon_base=3.3, base_speed=85, xp_reward=380, gold_reward=150,
+    ),
+    "imperatriz_aranha": dict(
+        name="Imperatriz das Aranhas", strength=10, dexterity=0, vigor=115.0, luck=0,
+        weapon_base=3.5, base_speed=100, xp_reward=420, gold_reward=170,
+    ),
+    "barao_sanguinario": dict(
+        name="Barao Sanguinario", strength=10, dexterity=0, vigor=135.0, luck=0,
+        weapon_base=3.7, base_speed=90, xp_reward=470, gold_reward=190,
+    ),
+    "colosso_runico": dict(
+        name="Colosso Runico", strength=10, dexterity=0, vigor=155.0, luck=0,
+        weapon_base=3.9, base_speed=65, xp_reward=520, gold_reward=210,
+    ),
+    "arquibruxa": dict(
+        name="Arquibruxa", strength=10, dexterity=0, vigor=175.0, luck=0,
+        weapon_base=4.1, base_speed=70, xp_reward=570, gold_reward=230,
+    ),
+    "senhor_da_alcateia": dict(
+        name="Senhor da Alcateia", strength=10, dexterity=0, vigor=195.0, luck=0,
+        weapon_base=4.3, base_speed=110, xp_reward=620, gold_reward=250,
+    ),
+    "dragao_primordial": dict(
+        name="Dragao Primordial", strength=10, dexterity=0, vigor=230.0, luck=0,
+        weapon_base=4.8, base_speed=95, xp_reward=750, gold_reward=300,
+    ),
 }
 
 # Per-monster-level growth (Stage B1 "divergence" pass) - same curve for

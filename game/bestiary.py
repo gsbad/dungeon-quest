@@ -83,6 +83,23 @@ BESTIARY = {
                       "description": "O tirano final do reino - mestre em rajadas de magia sombria em todas as direçoes."},
     "cacodemon":    {"name": "Cacodemonio",
                       "description": "Demonio infernal da fase secreta - um demonio humanoide, chifrudo e de olho unico, que cospe fogo em todas as direçoes."},
+
+    # Stage Q2: Atos 4-6 - payoff de boss pras familias de monstro que so
+    # tinham um tier 3 elite ate aqui.
+    "ursa_ancestral":     {"name": "Ursa Ancestral",
+                            "description": "A matriarca da alcateia de ursos, envelhecida ate virar lenda - suas investidas esmagam qualquer coisa no caminho."},
+    "imperatriz_aranha":  {"name": "Imperatriz das Aranhas",
+                            "description": "Governa o ninho de aranhas do Ato 4 - dispara rajadas venenosas de multiplos angulos ao mesmo tempo."},
+    "barao_sanguinario":  {"name": "Barao Sanguinario",
+                            "description": "Um vampiro nobre e antigo - suas maldiçoes a distancia enfraquecem quem ousa desafia-lo."},
+    "colosso_runico":     {"name": "Colosso Runico",
+                            "description": "Um golem gigante gravado com runas de guerra - lento, mas cada rajada radial e devastadora."},
+    "arquibruxa":         {"name": "Arquibruxa",
+                            "description": "Lidera o covil de bruxas do Ato 6 - maldicoes a distancia combinadas com rajadas espirais de energia."},
+    "senhor_da_alcateia": {"name": "Senhor da Alcateia",
+                            "description": "O lobisomem mais forte que ja liderou uma alcateia - enlouquece e investe repetidamente quando ferido."},
+    "dragao_primordial":  {"name": "Dragao Primordial",
+                            "description": "O boss secreto mais poderoso do reino - um dragao ancestral que domina todo o repertorio de ataque a distancia."},
 }
 
 # Full-name translations for the 2-3 letter STATUS_DISPLAY codes
