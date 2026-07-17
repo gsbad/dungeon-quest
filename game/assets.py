@@ -1574,6 +1574,135 @@ def create_spell_icon(spell_id):
         silver = (215, 218, 225)
         for off in (-3, 0, 3):
             pygame.draw.line(s, silver, (2 + off, 3), (11 + off, 12), 1)
+    # Estagio M2 (leva de conteudo - kits de classe): 31 icones novos,
+    # mesmo estilo minimalista de sempre.
+    elif spell_id == "raio_de_gelo":
+        ice = (170, 220, 255)
+        pygame.draw.polygon(s, ice, [(8, 1), (5, 8), (8, 8), (6, 15), (12, 6), (9, 6)])
+    elif spell_id == "explosao_arcana":
+        purple = (170, 100, 230)
+        pygame.draw.circle(s, purple, (8, 8), 4)
+        for dx, dy in [(0, -7), (0, 7), (-7, 0), (7, 0), (-5, -5), (5, -5), (-5, 5), (5, 5)]:
+            pygame.draw.circle(s, (200, 150, 250), (8 + dx, 8 + dy), 1)
+    elif spell_id == "correntes_malditas":
+        dark = (90, 40, 110)
+        for cy in (4, 8, 12):
+            pygame.draw.circle(s, dark, (8, cy), 3, 1)
+    elif spell_id == "chama_negra":
+        pygame.draw.polygon(s, (40, 20, 40), [(8, 1), (5, 8), (6, 14), (10, 14), (11, 8)])
+        pygame.draw.polygon(s, (90, 40, 100), [(8, 5), (6, 10), (10, 10)])
+    elif spell_id == "tempestade_sombria":
+        dark = (70, 30, 90)
+        for x in (3, 7, 11):
+            pygame.draw.ellipse(s, dark, (x - 2, 3, 6, 4))
+        pygame.draw.line(s, (140, 90, 200), (8, 8), (6, 14), 1)
+    elif spell_id == "investida_do_guardiao":
+        pygame.draw.polygon(s, (210, 200, 90), [(2, 8), (9, 4), (9, 6), (14, 6), (14, 10), (9, 10), (9, 12)])
+    elif spell_id == "escudo_de_ferro":
+        gray = (150, 150, 158)
+        pygame.draw.polygon(s, gray, [(8, 1), (13, 3), (13, 8), (8, 15), (3, 8), (3, 3)])
+        pygame.draw.polygon(s, (100, 100, 108), [(8, 1), (13, 3), (13, 8), (8, 15), (3, 8), (3, 3)], 1)
+    elif spell_id == "corte_cruzado":
+        orange = (230, 140, 60)
+        pygame.draw.line(s, orange, (2, 5), (14, 11), 2)
+        pygame.draw.line(s, orange, (2, 11), (14, 5), 2)
+    elif spell_id == "ripostar":
+        silver = (215, 218, 225)
+        pygame.draw.arc(s, silver, (2, 2, 12, 12), 0.5, 4.5, 2)
+        pygame.draw.polygon(s, silver, [(11, 2), (14, 3), (12, 6)])
+    elif spell_id == "lamina_arcana":
+        blue = (110, 170, 255)
+        pygame.draw.line(s, blue, (3, 13), (13, 3), 2)
+        pygame.draw.circle(s, (200, 225, 255), (13, 3), 2)
+    elif spell_id == "escudo_arcano":
+        blue = (100, 150, 230)
+        pygame.draw.polygon(s, blue, [(8, 1), (13, 3), (13, 8), (8, 15), (3, 8), (3, 3)], 2)
+    elif spell_id == "explosao_runica":
+        blue = (110, 170, 255)
+        pygame.draw.circle(s, blue, (8, 8), 4, 1)
+        for dx, dy in [(0, -6), (0, 6), (-6, 0), (6, 0)]:
+            pygame.draw.line(s, blue, (8, 8), (8 + dx, 8 + dy), 1)
+    elif spell_id == "aura_sagrada":
+        gold = (255, 225, 130)
+        pygame.draw.circle(s, gold, (8, 8), 6, 1)
+        pygame.draw.circle(s, gold, (8, 8), 2)
+    elif spell_id == "cura_divina":
+        gold = (255, 220, 120)
+        pygame.draw.rect(s, gold, (6, 2, 4, 12))
+        pygame.draw.rect(s, gold, (2, 6, 12, 4))
+    elif spell_id == "furia_do_campeao":
+        red = (230, 70, 70)
+        pygame.draw.circle(s, red, (8, 9), 4)
+        for dx, dy in [(0, -7), (-5, -5), (5, -5)]:
+            pygame.draw.line(s, (255, 140, 100), (8, 9), (8 + dx, 9 + dy), 1)
+    elif spell_id == "resistencia_inabalavel":
+        brown = (150, 120, 80)
+        pygame.draw.polygon(s, brown, [(8, 1), (13, 3), (13, 8), (8, 15), (3, 8), (3, 3)])
+    elif spell_id == "palma_espiritual":
+        teal = (140, 220, 200)
+        pygame.draw.circle(s, teal, (8, 8), 5, 1)
+        pygame.draw.circle(s, teal, (8, 8), 2)
+    elif spell_id == "meditacao":
+        teal = (140, 220, 200)
+        pygame.draw.circle(s, teal, (8, 8), 5, 1)
+        pygame.draw.circle(s, (200, 245, 235), (8, 8), 2)
+    elif spell_id == "chute_giratorio":
+        teal = (140, 220, 200)
+        pygame.draw.arc(s, teal, (1, 1, 14, 14), 0, 5, 2)
+    elif spell_id == "raio_da_natureza":
+        green = (120, 200, 90)
+        pygame.draw.polygon(s, green, [(9, 1), (5, 8), (8, 8), (6, 15), (12, 7), (9, 7)])
+    elif spell_id == "espirito_do_lobo":
+        gray = (210, 210, 215)
+        pygame.draw.polygon(s, gray, [(8, 4), (4, 12), (8, 10), (12, 12)])
+        pygame.draw.polygon(s, gray, [(5, 5), (7, 3), (7, 6)])
+        pygame.draw.polygon(s, gray, [(11, 5), (9, 3), (9, 6)])
+    elif spell_id == "disparo_perfurante":
+        brown = (180, 150, 90)
+        pygame.draw.line(s, brown, (2, 8), (13, 8), 2)
+        pygame.draw.polygon(s, brown, [(13, 5), (13, 11), (16, 8)])
+    elif spell_id == "chuva_de_flechas":
+        brown = (180, 150, 90)
+        for x in (3, 7, 11):
+            pygame.draw.line(s, brown, (x, 2), (x - 2, 10), 1)
+            pygame.draw.polygon(s, brown, [(x - 3, 9), (x - 1, 9), (x - 2, 12)])
+    elif spell_id == "prisma_arcano":
+        pink = (200, 130, 250)
+        pygame.draw.polygon(s, pink, [(8, 2), (13, 13), (3, 13)], 1)
+        pygame.draw.polygon(s, pink, [(8, 2), (13, 13), (3, 13)])
+    elif spell_id == "tempestade_astral":
+        purple = (170, 110, 230)
+        for x, y in [(4, 4), (11, 5), (7, 9), (12, 12)]:
+            pygame.draw.circle(s, purple, (x, y), 1)
+        pygame.draw.circle(s, (220, 190, 255), (8, 8), 1)
+    elif spell_id == "meteoro":
+        pygame.draw.circle(s, (200, 90, 40), (10, 10), 4)
+        pygame.draw.line(s, (255, 170, 80), (2, 2), (7, 7), 2)
+    elif spell_id == "regeneracao_natural":
+        green = (110, 220, 130)
+        pygame.draw.rect(s, green, (7, 3, 2, 10))
+        pygame.draw.rect(s, green, (3, 7, 10, 2))
+    elif spell_id == "furia_da_natureza":
+        green = (90, 180, 70)
+        pygame.draw.circle(s, green, (8, 8), 4)
+        for dx, dy in [(0, -7), (0, 7), (-7, 0), (7, 0)]:
+            pygame.draw.line(s, (140, 220, 110), (8, 8), (8 + dx, 8 + dy), 1)
+    elif spell_id == "luz_purificadora":
+        gold = (255, 240, 200)
+        pygame.draw.rect(s, gold, (7, 2, 2, 12))
+        pygame.draw.rect(s, gold, (2, 7, 12, 2))
+    elif spell_id == "escudo_divino":
+        gold = (255, 220, 130)
+        pygame.draw.polygon(s, gold, [(8, 1), (13, 3), (13, 8), (8, 15), (3, 8), (3, 3)], 2)
+        pygame.draw.circle(s, gold, (8, 7), 2)
+    elif spell_id == "sentenca_celestial":
+        gold = (255, 230, 150)
+        pygame.draw.circle(s, gold, (8, 8), 3)
+        for i in range(8):
+            angle = (2 * math.pi / 8) * i
+            x2 = 8 + math.cos(angle) * 7
+            y2 = 8 + math.sin(angle) * 7
+            pygame.draw.line(s, gold, (8, 8), (x2, y2), 1)
     _SPELL_ICON_CACHE[spell_id] = s
     return s
 

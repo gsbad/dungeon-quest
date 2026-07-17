@@ -162,6 +162,171 @@ SPELLS = {
         "spell_base": 9,
         "aimable": False,
     },
+
+    # --- Estagio M2: 31 magias novas, kits completos das 13 profissoes
+    # restantes. Cada uma usa um dos 4 "shapes" genericos ja estabelecidos
+    # (projetil/aoe-ao-redor/buff-proprio/cura) - ver os _cast_generic_*
+    # em game/states.py, que os _cast_<id> individuais so encaminham pra.
+
+    # --- Mago (Bola de Fogo reusa "fireball" ja existente) ---
+    "raio_de_gelo": {
+        "name": "Raio de Gelo", "description": "Projetil gelado que aplica Lentidao.",
+        "mana_cost": 9, "cooldown": 2.5, "spell_base": 10,
+        "status_effect": "slow", "status_chance": 0.8, "color": (140, 210, 255),
+    },
+    "explosao_arcana": {
+        "name": "Explosao Arcana", "description": "Explosao magica em area ao redor.",
+        "mana_cost": 22, "cooldown": 8.0, "spell_base": 20, "radius": 130,
+        "dtype": "magic", "aimable": False,
+    },
+
+    # --- Feiticeiro ---
+    "correntes_malditas": {
+        "name": "Correntes Malditas", "description": "Projetil amaldicoado que aplica Fraqueza.",
+        "mana_cost": 9, "cooldown": 2.5, "spell_base": 9,
+        "status_effect": "weakness", "status_chance": 0.7, "color": (90, 40, 110),
+    },
+    "chama_negra": {
+        "name": "Chama Negra", "description": "Projetil sombrio que aplica Fogo.",
+        "mana_cost": 11, "cooldown": 3.5, "spell_base": 8,
+        "status_effect": "burn", "status_chance": 0.9, "color": (40, 20, 40),
+    },
+    "tempestade_sombria": {
+        "name": "Tempestade Sombria", "description": "Tempestade magica em area, enfraquece quem for atingido.",
+        "mana_cost": 24, "cooldown": 9.0, "spell_base": 18, "radius": 130,
+        "dtype": "magic", "status_to_enemy": "weakness", "aimable": False,
+    },
+
+    # --- Cavaleiro (Provocacao ja existe) ---
+    "investida_do_guardiao": {
+        "name": "Investida do Guardiao", "description": "Investida curta, dano fisico ao redor.",
+        "mana_cost": 10, "cooldown": 3.0, "spell_base": 14, "radius": 80,
+    },
+    "escudo_de_ferro": {
+        "name": "Escudo de Ferro", "description": "+35% defesa fisica, +20% defesa magica por 12s.",
+        "mana_cost": 20, "cooldown": 16.0, "buff_id": "escudo_de_ferro", "aimable": False,
+    },
+
+    # --- Duelista (Danca das Laminas ja existe) ---
+    "corte_cruzado": {
+        "name": "Corte Cruzado", "description": "Corte em X, dano fisico ao redor.",
+        "mana_cost": 9, "cooldown": 2.5, "spell_base": 13, "radius": 75, "aimable": False,
+    },
+    "ripostar": {
+        "name": "Ripostar", "description": "+20% critico, +15% defesa fisica por 8s.",
+        "mana_cost": 12, "cooldown": 12.0, "buff_id": "ripostar", "aimable": False,
+    },
+
+    # --- Cavaleiro Arcano ---
+    "lamina_arcana": {
+        "name": "Lamina Arcana", "description": "Lamina de energia, dano magico ao redor.",
+        "mana_cost": 10, "cooldown": 2.5, "spell_base": 13, "radius": 75,
+        "dtype": "magic", "aimable": False,
+    },
+    "escudo_arcano": {
+        "name": "Escudo Arcano", "description": "+35% defesa magica por 12s.",
+        "mana_cost": 14, "cooldown": 12.0, "buff_id": "escudo_arcano", "aimable": False,
+    },
+    "explosao_runica": {
+        "name": "Explosao Runica", "description": "Runas explodem em area ao redor.",
+        "mana_cost": 23, "cooldown": 9.0, "spell_base": 20, "radius": 125,
+        "dtype": "magic", "aimable": False,
+    },
+
+    # --- Paladino (Julgamento ja existe) ---
+    "aura_sagrada": {
+        "name": "Aura Sagrada", "description": "+15% dano fisico e magico por 8s.",
+        "mana_cost": 12, "cooldown": 10.0, "buff_id": "aura_sagrada", "aimable": False,
+    },
+    "cura_divina": {
+        "name": "Cura Divina", "description": "Cura 35% da vida maxima.",
+        "mana_cost": 20, "cooldown": 9.0, "heal_frac": 0.35, "aimable": False,
+    },
+
+    # --- Campeao (Impacto Sismico ja existe) ---
+    "furia_do_campeao": {
+        "name": "Furia do Campeao", "description": "+25% dano fisico por 10s.",
+        "mana_cost": 12, "cooldown": 10.0, "buff_id": "furia_do_campeao", "aimable": False,
+    },
+    "resistencia_inabalavel": {
+        "name": "Resistencia Inabalavel", "description": "+30% defesa fisica e magica, -10% velocidade, por 12s.",
+        "mana_cost": 16, "cooldown": 12.0, "buff_id": "resistencia_inabalavel", "aimable": False,
+    },
+
+    # --- Monge ---
+    "palma_espiritual": {
+        "name": "Palma Espiritual", "description": "Golpe espiritual, dano fisico ao redor.",
+        "mana_cost": 8, "cooldown": 2.0, "spell_base": 11, "radius": 65, "aimable": False,
+    },
+    "meditacao": {
+        "name": "Meditacao", "description": "+60% regen. de vida e mana por 8s.",
+        "mana_cost": 10, "cooldown": 14.0, "buff_id": "meditacao", "aimable": False,
+    },
+    "chute_giratorio": {
+        "name": "Chute Giratorio", "description": "Chute giratorio, dano fisico pesado em area.",
+        "mana_cost": 20, "cooldown": 8.0, "spell_base": 18, "radius": 110, "aimable": False,
+    },
+
+    # --- Xama (Totem Curativo ja existe) ---
+    "raio_da_natureza": {
+        "name": "Raio da Natureza", "description": "Projetil de energia natural.",
+        "mana_cost": 8, "cooldown": 2.0, "spell_base": 10, "color": (120, 200, 90),
+    },
+    "espirito_do_lobo": {
+        "name": "Espirito do Lobo", "description": "+25% velocidade, +20% velocidade de ataque por 10s.",
+        "mana_cost": 18, "cooldown": 13.0, "buff_id": "espirito_do_lobo", "aimable": False,
+    },
+
+    # --- Ranger (Armadilha ja existe) ---
+    "disparo_perfurante": {
+        "name": "Disparo Perfurante", "description": "Flechada forte e precisa.",
+        "mana_cost": 10, "cooldown": 3.0, "spell_base": 14, "color": (180, 150, 90),
+    },
+    "chuva_de_flechas": {
+        "name": "Chuva de Flechas", "description": "Chuva de flechas em area ao redor.",
+        "mana_cost": 20, "cooldown": 8.0, "spell_base": 17, "radius": 120, "aimable": False,
+    },
+
+    # --- Arcanista ---
+    "prisma_arcano": {
+        "name": "Prisma Arcano", "description": "Projetil de luz arcana.",
+        "mana_cost": 9, "cooldown": 2.2, "spell_base": 11, "color": (180, 120, 255),
+    },
+    "tempestade_astral": {
+        "name": "Tempestade Astral", "description": "Tempestade de estrelas em area ao redor.",
+        "mana_cost": 16, "cooldown": 7.0, "spell_base": 13, "radius": 95,
+        "dtype": "magic", "aimable": False,
+    },
+    "meteoro": {
+        "name": "Meteoro", "description": "Meteoro cai sobre uma area grande ao redor.",
+        "mana_cost": 26, "cooldown": 11.0, "spell_base": 24, "radius": 140,
+        "dtype": "magic", "aimable": False,
+    },
+
+    # --- Druida (Raizes Prendentes ja existe) ---
+    "regeneracao_natural": {
+        "name": "Regeneracao Natural", "description": "+80% regen. de vida por 10s.",
+        "mana_cost": 10, "cooldown": 9.0, "buff_id": "regeneracao_natural", "aimable": False,
+    },
+    "furia_da_natureza": {
+        "name": "Furia da Natureza", "description": "A natureza se volta contra os inimigos ao redor.",
+        "mana_cost": 22, "cooldown": 9.0, "spell_base": 19, "radius": 120, "aimable": False,
+    },
+
+    # --- Templario ---
+    "luz_purificadora": {
+        "name": "Luz Purificadora", "description": "Cura 20% da vida maxima. Recarga curta.",
+        "mana_cost": 14, "cooldown": 6.0, "heal_frac": 0.20, "aimable": False,
+    },
+    "escudo_divino": {
+        "name": "Escudo Divino", "description": "+25% defesa fisica e magica por 13s.",
+        "mana_cost": 16, "cooldown": 13.0, "buff_id": "escudo_divino", "aimable": False,
+    },
+    "sentenca_celestial": {
+        "name": "Sentenca Celestial", "description": "Julgamento celestial em area ao redor.",
+        "mana_cost": 25, "cooldown": 10.0, "spell_base": 21, "radius": 130,
+        "dtype": "magic", "aimable": False,
+    },
 }
 
 ORDER = ["fireball", "frost_nova", "healing_light"]  # legacy default kit order

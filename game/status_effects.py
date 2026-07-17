@@ -144,6 +144,21 @@ def _buff(duration, **kwargs):
 
 STATUS_EFFECTS["grito_de_guerra"] = _buff(10.0, physical_damage_mult=1.25)
 
+# Estagio M2 (kits de classe): buffs de auto-lancamento das 13 profissoes
+# restantes - mesmo _buff() helper/shape de grito_de_guerra acima.
+STATUS_EFFECTS.update({
+    "escudo_de_ferro":         _buff(12.0, physical_defense_mult=1.35, magic_defense_mult=1.20),
+    "ripostar":                _buff(8.0, crit_chance_add=0.20, physical_defense_mult=1.15),
+    "escudo_arcano":           _buff(12.0, magic_defense_mult=1.35),
+    "aura_sagrada":            _buff(8.0, physical_damage_mult=1.15, magic_damage_mult=1.15),
+    "furia_do_campeao":        _buff(10.0, physical_damage_mult=1.25),
+    "resistencia_inabalavel":  _buff(12.0, physical_defense_mult=1.30, magic_defense_mult=1.30, speed_mult=0.90),
+    "meditacao":               _buff(8.0, hp_regen_mult=1.60, mana_regen_mult=1.60),
+    "espirito_do_lobo":        _buff(10.0, speed_mult=1.25, attack_speed_mult=1.20),
+    "regeneracao_natural":     _buff(10.0, hp_regen_mult=1.80),
+    "escudo_divino":           _buff(13.0, physical_defense_mult=1.25, magic_defense_mult=1.25),
+})
+
 
 # Stage K12: ~22 new timed potion/elixir buffs, applied via game/items.py's
 # use_item() -> player.status.apply(item["buff"]) - same StatusEffectCarrier

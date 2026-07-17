@@ -1598,6 +1598,109 @@ class GameplayState:
             for _ in range(6):
                 self.level_up_particles.append(Particle(px, py, (215, 218, 225)))
 
+    # ------------------------------------------------------------------
+    # Estagio M2 (leva de conteudo - kits de classe): 31 magias novas pras
+    # 13 profissoes restantes. Todas encaixam num dos 4 "shapes" ja
+    # estabelecidos no Estagio M1 (projetil/AoE-ao-redor/buff-proprio/
+    # cura) - em vez de repetir o corpo inteiro 31 vezes, cada magia so
+    # tem um metodo `_cast_<id>` de 1 linha delegando pro genérico certo
+    # (getattr(self, f"_cast_{spell_id}") em _attempt_cast continua
+    # funcionando sem mudar - o NOME do metodo é o que importa pro
+    # dispatch, nao o corpo).
+    # ------------------------------------------------------------------
+
+    def _cast_generic_projectile(self, spell):
+        px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
+        speed = 320
+        dmg = self.player.magic_damage(spell["spell_base"])
+        self.player_projectiles.append(
+            Projectile(px, py, self.player.aim_dx * speed, self.player.aim_dy * speed, dmg,
+                       spell.get("color", (255, 255, 255)),
+                       status_effect=spell.get("status_effect"),
+                       status_chance=spell.get("status_chance", 0.0),
+                       dtype=spell.get("dtype", "magic"))
+        )
+
+    def _cast_generic_aoe(self, spell):
+        dmg = self.player.magic_damage(spell["spell_base"])
+        radius = spell.get("radius", 100)
+        px, py = self._aoe_around_player(dmg, radius, dtype=spell.get("dtype", "physical"),
+                                          status_to_enemy=spell.get("status_to_enemy"))
+        for _ in range(10):
+            self.level_up_particles.append(Particle(px, py, spell.get("color", (200, 200, 200))))
+
+    def _cast_generic_buff(self, spell):
+        self.player.status.apply(spell["buff_id"])
+        px, py = self.player.x + self.player.width / 2, self.player.y + self.player.height / 2
+        for _ in range(12):
+            self.level_up_particles.append(Particle(px, py, spell.get("color", (255, 220, 150))))
+
+    def _cast_generic_heal(self, spell):
+        heal_frac = spell["heal_frac"] * self.player.stats.healing_power
+        self.player.hp = min(self.player.max_hp, self.player.hp + self.player.max_hp * heal_frac)
+        for _ in range(14):
+            self.level_up_particles.append(
+                Particle(self.player.x + self.player.width / 2,
+                         self.player.y + self.player.height / 2, (255, 240, 200))
+            )
+
+    # --- Mago ---
+    def _cast_raio_de_gelo(self, spell): self._cast_generic_projectile(spell)
+    def _cast_explosao_arcana(self, spell): self._cast_generic_aoe(spell)
+
+    # --- Feiticeiro ---
+    def _cast_correntes_malditas(self, spell): self._cast_generic_projectile(spell)
+    def _cast_chama_negra(self, spell): self._cast_generic_projectile(spell)
+    def _cast_tempestade_sombria(self, spell): self._cast_generic_aoe(spell)
+
+    # --- Cavaleiro ---
+    def _cast_investida_do_guardiao(self, spell): self._cast_generic_aoe(spell)
+    def _cast_escudo_de_ferro(self, spell): self._cast_generic_buff(spell)
+
+    # --- Duelista ---
+    def _cast_corte_cruzado(self, spell): self._cast_generic_aoe(spell)
+    def _cast_ripostar(self, spell): self._cast_generic_buff(spell)
+
+    # --- Cavaleiro Arcano ---
+    def _cast_lamina_arcana(self, spell): self._cast_generic_aoe(spell)
+    def _cast_escudo_arcano(self, spell): self._cast_generic_buff(spell)
+    def _cast_explosao_runica(self, spell): self._cast_generic_aoe(spell)
+
+    # --- Paladino ---
+    def _cast_aura_sagrada(self, spell): self._cast_generic_buff(spell)
+    def _cast_cura_divina(self, spell): self._cast_generic_heal(spell)
+
+    # --- Campeao ---
+    def _cast_furia_do_campeao(self, spell): self._cast_generic_buff(spell)
+    def _cast_resistencia_inabalavel(self, spell): self._cast_generic_buff(spell)
+
+    # --- Monge ---
+    def _cast_palma_espiritual(self, spell): self._cast_generic_aoe(spell)
+    def _cast_meditacao(self, spell): self._cast_generic_buff(spell)
+    def _cast_chute_giratorio(self, spell): self._cast_generic_aoe(spell)
+
+    # --- Xama ---
+    def _cast_raio_da_natureza(self, spell): self._cast_generic_projectile(spell)
+    def _cast_espirito_do_lobo(self, spell): self._cast_generic_buff(spell)
+
+    # --- Ranger ---
+    def _cast_disparo_perfurante(self, spell): self._cast_generic_projectile(spell)
+    def _cast_chuva_de_flechas(self, spell): self._cast_generic_aoe(spell)
+
+    # --- Arcanista ---
+    def _cast_prisma_arcano(self, spell): self._cast_generic_projectile(spell)
+    def _cast_tempestade_astral(self, spell): self._cast_generic_aoe(spell)
+    def _cast_meteoro(self, spell): self._cast_generic_aoe(spell)
+
+    # --- Druida ---
+    def _cast_regeneracao_natural(self, spell): self._cast_generic_buff(spell)
+    def _cast_furia_da_natureza(self, spell): self._cast_generic_aoe(spell)
+
+    # --- Templario ---
+    def _cast_luz_purificadora(self, spell): self._cast_generic_heal(spell)
+    def _cast_escudo_divino(self, spell): self._cast_generic_buff(spell)
+    def _cast_sentenca_celestial(self, spell): self._cast_generic_aoe(spell)
+
     def update(self, dt):
         # Stage L5/L6 (docs/coop-implementation-plan.md): processa
         # mensagens de rede coop TODO frame, não só enquanto o painel está
@@ -2128,6 +2231,14 @@ class GameplayState:
                                    "kbx": proj.x, "kby": proj.y, "player_id": net_coop.get_player_id()})
                 else:
                     target.take_damage(proj.damage, dtype=proj.dtype, knockback_from=(proj.x, proj.y))
+                    # Estagio M2 (kits de classe): projeteis do jogador
+                    # carregavam status_effect/status_chance (game/boss.py's
+                    # Projectile, mesmo campo que projeteis de boss/inimigo
+                    # ja usam) mas este loop nunca aplicava - Raio de Gelo/
+                    # Correntes Malditas (magias novas) precisam disso pra
+                    # aplicar Lentidao/Fraqueza no impacto.
+                    if proj.status_effect and target.alive and hasattr(target, "status") and random.random() < proj.status_chance:
+                        target.status.apply(proj.status_effect)
                     if not target.alive and hasattr(target, "etype"):
                         self.level.credit_kill(self.player, target)
                 proj.alive = False
