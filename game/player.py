@@ -10,7 +10,7 @@ from game.stats import StatBlock, xp_to_next, MAX_LEVEL, POINTS_PER_LEVEL, mitig
 from game.status_effects import StatusEffectCarrier, DirectedBonusCarrier
 from game.professions import determine_profession
 from game.spells import SPELLS
-from game.class_kits import spells_for, basic_attack_for
+from game.class_kits import basic_attack_for, DEFAULT_SPELLS
 from game.combat_fx import (
     FloatingNumber, PHYSICAL_COLOR, MAGIC_COLOR, DOT_COLOR,
     knockback_vector, KNOCKBACK_DURATION,
@@ -105,7 +105,7 @@ def hotbar_slots(player):
     actually visible anywhere in the hotbar, same None-key/kind-branch shape
     as attack/dash above."""
     from game.theme import SW
-    spell_ids = [("spell", s) for s in spells_for(player.profession)]
+    spell_ids = [("spell", s) for s in player.hotbar_spells]
     item_ids = [("item", i) for i in player.hotbar_items]
     attack_w = _HOTBAR_SLOT
     spell_w = len(spell_ids) * _HOTBAR_SLOT + (len(spell_ids) - 1) * _HOTBAR_GAP
@@ -179,7 +179,13 @@ class Player:
         # the original 3 potions so a player who never opens "SEUS ITENS"
         # sees the exact hotbar the game always had.
         self.hotbar_items = ["health_potion", "mana_potion", "antidote"]
-        self.selected_spell = spells_for(self.profession)[0]
+        # Estagio M-correcao: quais 3 das 47 magias (game/spells.py) vao
+        # nos slots F/Q/R - escolha do JOGADOR (aba Magias do Paperdoll),
+        # nunca trocada automaticamente por profissao/respec. Default
+        # inicial e o trio classico (fireball/frost_nova/healing_light,
+        # o mesmo F/Q/R de sempre) ate o jogador mexer.
+        self.hotbar_spells = list(DEFAULT_SPELLS.values())
+        self.selected_spell = self.hotbar_spells[0]
         self.spell_cooldowns = {}
         # Pity counter for game/affixes.py's Paragon roll - not persisted
         # (it's a short-lived streak-breaker, not meaningful progress).
@@ -1137,12 +1143,11 @@ class Player:
             label = keybinds.display_key(action_name)
             return "SPC" if label == "SPACE" else label
 
-        # Estagio M1: posicional contra o kit da profissao ATUAL em vez de
-        # por nome literal - antes so existiam essas 3 magias no jogo
-        # inteiro, agora cada profissao tem seu proprio trio nessas mesmas
-        # 3 posicoes (game/class_kits.py's spells_for()).
+        # Estagio M-correcao: posicional contra a selecao MANUAL do
+        # jogador (self.hotbar_spells, aba Magias do Paperdoll) - nunca
+        # mais amarrado a profissao automaticamente.
         _cast_actions = ["CAST_1", "CAST_2", "CAST_3"]
-        _spell_action = dict(zip(spells_for(self.profession), _cast_actions))
+        _spell_action = dict(zip(self.hotbar_spells, _cast_actions))
         item_i = 0
         for i, (kind, key, rect) in enumerate(hotbar_slots(self)):
             # Stage H10: on touch devices, both spell casting and item use

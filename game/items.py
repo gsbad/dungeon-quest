@@ -61,7 +61,9 @@ def item_tooltip_line(item_id):
     if "heal_mana_frac" in item:
         parts.append(f"Restaura {round(item['heal_mana_frac'] * 100)}% da mana")
     if "cures" in item:
-        parts.append("Cura: " + ", ".join(sorted(item["cures"])))
+        from game.status_effects import STATUS_HELP
+        names = [STATUS_HELP.get(cure_id, (cure_id, ""))[0] for cure_id in sorted(item["cures"])]
+        parts.append("Cura: " + ", ".join(names))
     if "buff" in item:
         from game.status_effects import STATUS_HELP
         _, desc = STATUS_HELP.get(item["buff"], (item["buff"], ""))

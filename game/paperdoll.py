@@ -1,14 +1,13 @@
 import math
 import pygame
 from game.theme import font, SW, SH, ACCENT_GOLD, SUBTEXT, PANEL_FILL, PANEL_BORDER
-from game.ui import Panel, draw_text, Carousel
+from game.ui import Panel, draw_text, Carousel, draw_tooltip
 from game.assets import (
     create_player_sprite, create_attribute_icon, create_level_thumbnail,
     create_debuff_icon, create_spell_icon, create_trophy_icon, create_stance_icon,
 )
 from game.achievements import ACHIEVEMENTS, check_unlocks
 from game.spells import SPELLS
-from game.class_kits import spells_for
 from game.input_system import Action, HELP_ENTRIES
 from game.stats import mitigate
 from game.bestiary import (
@@ -100,8 +99,12 @@ _BESTIARY_ROWS = math.ceil(len(BESTIARY_ORDER) / _BESTIARY_COLS)
 _BESTIARY_DETAIL_Y = (_BESTIARY_GRID_Y + _BESTIARY_ROWS * _BESTIARY_CELL
                       + (_BESTIARY_ROWS - 1) * _BESTIARY_GAP + 20)
 
-_SPELL_START_Y = _HEADER_H + 16
-_SPELL_BLOCK_H = 100
+_SPELL_START_Y = _HEADER_H + 34  # +18 a mais que outras abas - linha "Hotbar: X/3" ocupa esse espaco extra
+# Correcao pos-leva-de-conteudo: lista compacta (1 linha por magia + tooltip
+# no hover pra descricao/custo, igual ItemsOverlay) - precisa caber muito
+# mais que as 3 magias de antes.
+_SPELL_ROW_H = 30
+_SPELL_ROWS_PER_PAGE = 9
 
 
 class Paperdoll:
@@ -133,6 +136,11 @@ class Paperdoll:
         arrow_cy = self.py + _PANEL_H // 2
         self.help_carousel = Carousel(self.px, _PANEL_W, arrow_cy)
         self.achievements_carousel = Carousel(self.px, _PANEL_W, arrow_cy)
+        # Correcao pos-leva-de-conteudo: a aba Magias agora lista as 47
+        # magias do jogo inteiro (nao mais so o trio "da profissao atual"
+        # - selecao de hotbar e decisao MANUAL do jogador, nunca automatica)
+        # - mesma paginacao lateral que Ajuda/Conquistas ja usam.
+        self.spells_carousel = Carousel(self.px - 34, _PANEL_W + 68, arrow_cy)
 
         # Tab bar width is derived from however many tabs _TAB_ORDER has -
         # was hardcoded for exactly 3 (Stage E4); Stage F3/F4 added a 4th
@@ -175,15 +183,16 @@ class Paperdoll:
             self.minus_buttons[attr] = pygame.Rect(self.px + 260, y - 14, 28, 28)
             self.plus_buttons[attr] = pygame.Rect(self.px + 300, y - 14, 28, 28)
 
-        # Estagio M1: posicional (indice 0-2), nao mais por spell_id - o
-        # trio de magias em si agora depende da profissao ATUAL do
-        # jogador (game/class_kits.py's spells_for()), que pode mudar em
-        # tempo real (respec) depois deste __init__ já ter rodado uma vez.
-        self.select_buttons = []
-        for i in range(3):
-            y = self.py + _CONTENT_TOP + _SPELL_START_Y + i * _SPELL_BLOCK_H
-            btn_x = self.px + _PANEL_W // 2 - 55
-            self.select_buttons.append(pygame.Rect(btn_x, y + 66, 110, 26))
+        # Correcao pos-leva-de-conteudo: um botao por magia (todas as 47,
+        # nao mais so 3) - só as da pagina atual (spells_carousel) sao
+        # desenhadas/clicaveis a cada frame, mas o dict cobre todo mundo
+        # de uma vez (mesmo padrao de ItemsOverlay.hotbar_buttons em
+        # game/merchant.py).
+        self._spell_ids = list(SPELLS)
+        self.spell_toggle_buttons = {}
+        for i, spell_id in enumerate(self._spell_ids):
+            y = self.py + _CONTENT_TOP + _SPELL_START_Y + (i % _SPELL_ROWS_PER_PAGE) * _SPELL_ROW_H
+            self.spell_toggle_buttons[spell_id] = pygame.Rect(self.px + _PANEL_W - 140, y - 12, 118, 26)
 
         self._portrait_cache = {}
         self._bestiary_sprite_cache = {}
@@ -253,14 +262,31 @@ class Paperdoll:
                     player.refresh_profession()
                 return
 
+    def _select_spell_hotbar(self, player, spell_id, input_mgr=None):
+        """Correcao pos-leva-de-conteudo: o hotbar de magias sempre tem
+        EXATAMENTE 3 (F/Q/R sao fixos) - diferente do toggle de itens
+        (game/merchant.py, aceita 0-3 livremente), clicar numa magia JA no
+        hotbar não remove (deixaria só 2 slots com magia real); clicar
+        numa magia nova sempre evict-oldest-and-add, igual ao 4o pick de
+        item ja fazia. Escolha 100% do jogador - nunca trocado sozinho
+        por profissao/respec."""
+        if spell_id not in player.hotbar_spells:
+            if len(player.hotbar_spells) >= 3:
+                player.hotbar_spells.pop(0)
+            player.hotbar_spells.append(spell_id)
+            if input_mgr is not None:
+                input_mgr.refresh_spell_buttons(player.hotbar_spells)
+        player.selected_spell = spell_id
+
     def _handle_tap_spells(self, input_mgr, player):
-        # Estagio M1: qualquer uma das 3 magias do kit atual ja e sempre
-        # selecionavel - "ter a profissao" e o unico requisito agora, sem
-        # mais um estado "bloqueada" por atributo.
-        spells = spells_for(player.profession)
-        for i, rect in enumerate(self.select_buttons):
-            if input_mgr.tapped_rect(rect):
-                player.selected_spell = spells[i]
+        if self.spells_carousel.handle_tap(input_mgr):
+            self.spell_cursor = self.spells_carousel.page * _SPELL_ROWS_PER_PAGE
+            return
+        page_start = self.spells_carousel.page * _SPELL_ROWS_PER_PAGE
+        page_ids = self._spell_ids[page_start:page_start + _SPELL_ROWS_PER_PAGE]
+        for spell_id in page_ids:
+            if input_mgr.tapped_rect(self.spell_toggle_buttons[spell_id]):
+                self._select_spell_hotbar(player, spell_id, input_mgr)
                 return
 
     def handle_keys(self, input_mgr, player, save_state=None):
@@ -321,12 +347,17 @@ class Paperdoll:
                 player.refresh_profession()
 
     def _handle_keys_spells(self, input_mgr, player):
+        n = len(self._spell_ids)
         if input_mgr.consume_action(Action.MENU_UP):
-            self.spell_cursor = (self.spell_cursor - 1) % 3
+            self.spell_cursor = (self.spell_cursor - 1) % n
+            self.spells_carousel.page = self.spell_cursor // _SPELL_ROWS_PER_PAGE
         if input_mgr.consume_action(Action.MENU_DOWN):
-            self.spell_cursor = (self.spell_cursor + 1) % 3
+            self.spell_cursor = (self.spell_cursor + 1) % n
+            self.spells_carousel.page = self.spell_cursor // _SPELL_ROWS_PER_PAGE
+        if self.spells_carousel.handle_keys(input_mgr):
+            self.spell_cursor = self.spells_carousel.page * _SPELL_ROWS_PER_PAGE
         if input_mgr.consume_action(Action.CONFIRM):
-            player.selected_spell = spells_for(player.profession)[self.spell_cursor]
+            self._select_spell_hotbar(player, self._spell_ids[self.spell_cursor], input_mgr)
 
     @staticmethod
     def _glow_alpha():
@@ -338,7 +369,7 @@ class Paperdoll:
         surface.blit(glow, rect.topleft)
         pygame.draw.rect(surface, (255, 225, 120), rect, 2, border_radius=6)
 
-    def draw(self, surface, player, save_state=None, forced=False):
+    def draw(self, surface, player, save_state=None, forced=False, mouse_pos=None):
         overlay = pygame.Surface((SW, SH), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
         surface.blit(overlay, (0, 0))
@@ -359,7 +390,7 @@ class Paperdoll:
         if self.active_tab == "stats":
             self._draw_stats(surface, player, save_state, content_top, forced=forced and player.unspent_points > 0)
         elif self.active_tab == "spells":
-            self._draw_spells(surface, player, save_state, content_top)
+            self._draw_spells(surface, player, save_state, content_top, mouse_pos)
         elif self.active_tab == "bestiary":
             self._draw_bestiary(surface, player, save_state, content_top)
         elif self.active_tab == "atlas":
@@ -471,53 +502,62 @@ class Paperdoll:
             hint_color = SUBTEXT
         draw_text(surface, hint, f_hint, hint_color, cx, top + _HINT_Y)
 
-    def _draw_spells(self, surface, player, save_state, top):
+    def _draw_spells(self, surface, player, save_state, top, mouse_pos=None):
         self._draw_header(surface, player, save_state, top)
 
-        f_name = font(17, bold=True)
-        f_body = font(14)
-        f_btn = font(13, bold=True)
-        spell_cx = self.px + _PANEL_W // 2
-        # Estagio M1: o trio de magias vem do kit da profissao ATUAL - as
-        # 3 sempre disponiveis (ter a profissao ja e o requisito), sem mais
-        # o estado "bloqueada"/"falta X" que so existia quando cada magia
-        # tinha seu proprio limiar de atributo independente da profissao.
-        spell_ids = spells_for(player.profession)
-        for i, spell_id in enumerate(spell_ids):
+        f_hb = font(14, bold=True)
+        hb_line = f"Hotbar: {len(player.hotbar_spells)}/3 - clique/ESPACO numa magia pra colocar nela"
+        draw_text(surface, hb_line, f_hb, (230, 200, 80), self.px + _PANEL_W // 2, top + _HEADER_H + 4, shadow=False)
+
+        f_row = font(13)
+        f_btn = font(11, bold=True)
+        label_x = self.px + 48
+        self.spells_carousel.set_num_pages((len(self._spell_ids) + _SPELL_ROWS_PER_PAGE - 1) // _SPELL_ROWS_PER_PAGE)
+        page_start = self.spells_carousel.page * _SPELL_ROWS_PER_PAGE
+        page_ids = self._spell_ids[page_start:page_start + _SPELL_ROWS_PER_PAGE]
+
+        row_in_page = self.spell_cursor - page_start
+        if 0 <= row_in_page < len(page_ids):
+            y = top + _SPELL_START_Y + row_in_page * _SPELL_ROW_H
+            self._draw_glow(surface, pygame.Rect(self.px + 14, y - 13, _PANEL_W - 28, _SPELL_ROW_H - 4))
+
+        import game.keybinds as keybinds
+        for row_in_page, spell_id in enumerate(page_ids):
             spell = SPELLS[spell_id]
-            y = top + _SPELL_START_Y + i * _SPELL_BLOCK_H
-            if i == self.spell_cursor:
-                self._draw_glow(surface, pygame.Rect(self.px + 12, y - 8, _PANEL_W - 24, _SPELL_BLOCK_H - 8))
-            is_selected = player.selected_spell == spell_id
+            y = top + _SPELL_START_Y + row_in_page * _SPELL_ROW_H
+            in_hotbar = spell_id in player.hotbar_spells
+            is_active = player.selected_spell == spell_id
 
-            # Stage G4 - fixed left gutter, independent of the row's
-            # centered text block below (spell_cx), so it doesn't need to
-            # restructure that existing layout.
-            icon = pygame.transform.scale(create_spell_icon(spell_id), (28, 28))
-            surface.blit(icon, (self.px + 20, y - 4))
+            icon = pygame.transform.scale(create_spell_icon(spell_id), (20, 20))
+            surface.blit(icon, (self.px + 22, y - 10))
 
-            import game.keybinds as keybinds
-            spell_key = keybinds.display_key(SPELL_ACTIONS[i])
-            draw_text(surface, f"{spell_key} - {spell['name']}", f_name, (230, 225, 240),
-                      spell_cx, y, shadow=False)
-            draw_text(surface, spell["description"], f_body, (195, 195, 210),
-                      spell_cx, y + 22, shadow=False)
+            name_color = (255, 225, 130) if is_active else (215, 215, 225)
+            slot_label = ""
+            if in_hotbar:
+                slot_idx = player.hotbar_spells.index(spell_id)
+                slot_label = f"[{keybinds.display_key(SPELL_ACTIONS[slot_idx])}] "
+            draw_text(surface, f"{slot_label}{spell['name']}", f_row, name_color,
+                      label_x, y - 8, shadow=False, align="left")
+
+            hb_rect = self.spell_toggle_buttons[spell_id]
+            pygame.draw.rect(surface, (150, 110, 20) if in_hotbar else (45, 45, 52), hb_rect, border_radius=6)
+            pygame.draw.rect(surface, (200, 200, 210), hb_rect, 1, border_radius=6)
+            label = "Na hotbar" if in_hotbar else "Selecionar"
+            draw_text(surface, label, f_btn, (255, 255, 255) if in_hotbar else (210, 210, 220),
+                      hb_rect.centerx, hb_rect.y + 7, shadow=False)
 
             cost_bits = [f"Mana {spell['mana_cost']}"]
             if spell.get("cooldown"):
-                cost_bits.append(f"CD {spell['cooldown']:.0f}s")
-            status_text = " | ".join(cost_bits)
-            draw_text(surface, status_text, f_body, (110, 230, 140), spell_cx, y + 42, shadow=False)
+                cost_bits.append(f"CD {spell['cooldown']:.1f}s")
+            tip = [spell["name"], spell["description"], " | ".join(cost_bits)]
+            row_rect = pygame.Rect(self.px + 14, y - 13, _PANEL_W - 28, _SPELL_ROW_H - 4)
+            draw_tooltip(surface, mouse_pos, row_rect, tip, SW, SH)
 
-            rect = self.select_buttons[i]
-            color, label = ((30, 210, 90), "Selecionada") if is_selected else ((60, 100, 200), "Selecionar")
-            pygame.draw.rect(surface, color, rect, border_radius=6)
-            pygame.draw.rect(surface, (200, 200, 210), rect, 1, border_radius=6)
-            draw_text(surface, label, f_btn, (240, 240, 245), rect.centerx, rect.y + 6, shadow=False)
-
-        f_hint = font(14)
-        draw_text(surface, "TAB troca aba | W/S seleciona | ESPACO seleciona magia | C/ESC - Fechar", f_hint, SUBTEXT,
-                  self.px + _PANEL_W // 2, top + _SPELL_START_Y + len(spell_ids) * _SPELL_BLOCK_H + 10)
+        f_hint = font(13)
+        hint_y = top + _SPELL_START_Y + _SPELL_ROWS_PER_PAGE * _SPELL_ROW_H + 6
+        draw_text(surface, "TAB troca aba | W/S ou rolagem do mouse navega | A/D pagina | ESPACO/clique seleciona pra hotbar | C/ESC - Fechar",
+                  f_hint, SUBTEXT, self.px + _PANEL_W // 2, hint_y)
+        self.spells_carousel.draw(surface, font(13), indicator_y=hint_y + 20)
 
     def _draw_bestiary(self, surface, player, save_state, top):
         f_key = font(12, bold=True)
@@ -714,6 +754,10 @@ class Paperdoll:
         from game.stances import STANCE_DESCRIPTIONS
         stance_names = list(STANCE_DESCRIPTIONS.keys())
 
+        from game.items import ITEMS
+        spell_ids = list(SPELLS)
+        item_ids = list(ITEMS)
+
         pages = []
         for i in range(0, len(debuff_ids), per_page_status):
             pages.append({"kind": "status", "title": "DEBUFFS", "ids": debuff_ids[i:i + per_page_status]})
@@ -721,6 +765,14 @@ class Paperdoll:
             pages.append({"kind": "status", "title": "BUFFS (POCOES/ELIXIRES)", "ids": buff_ids[i:i + per_page_status]})
         for i in range(0, len(stance_names), per_page_status):
             pages.append({"kind": "stances", "title": "POSTURAS", "names": stance_names[i:i + per_page_status]})
+        # Stage Q: reference pages for the 47 authored spells and the item
+        # catalog - the Magias tab lets the player PICK spells, this tab
+        # just documents what every one of them (not just the equipped 3)
+        # does, same as items already got documented via the merchant.
+        for i in range(0, len(spell_ids), per_page_status):
+            pages.append({"kind": "spells", "title": "MAGIAS (TODAS)", "ids": spell_ids[i:i + per_page_status]})
+        for i in range(0, len(item_ids), per_page_status):
+            pages.append({"kind": "items", "title": "ITENS", "ids": item_ids[i:i + per_page_status]})
         pages += [
             {"kind": "shortcuts", "title": "ATALHOS", "entries": HELP_ENTRIES[i:i + per_page_shortcuts]}
             for i in range(0, len(HELP_ENTRIES), per_page_shortcuts)
@@ -805,6 +857,57 @@ class Paperdoll:
                     draw_text(surface, line, f_desc, (205, 205, 220), text_x, dy, shadow=False, align="left")
                     dy += 15
                 y = max(y + 48, dy + 12)
+        elif page["kind"] == "spells":
+            # Stage Q: every authored spell, not just the 3 on the hotbar -
+            # same icon+name+prose layout as status/stances above, sourced
+            # from game.spells.SPELLS directly so a new spell just shows up
+            # here without any hand-kept list.
+            f_name = font(15, bold=True)
+            f_desc = font(13)
+            icon_size = 28
+            icon_x = self.px + 38
+            text_x = icon_x + icon_size + 12
+            desc_max_w = self.px + _PANEL_W - 38 - text_x
+            y = top + 40
+            for spell_id in page["ids"]:
+                spell = SPELLS[spell_id]
+                icon = pygame.transform.scale(create_spell_icon(spell_id), (icon_size, icon_size))
+                surface.blit(icon, (icon_x, y))
+                draw_text(surface, spell["name"], f_name, ACCENT_GOLD, text_x, y - 1, shadow=False, align="left")
+                cost_bits = [f"Mana {spell['mana_cost']}"]
+                if spell.get("cooldown"):
+                    cost_bits.append(f"CD {spell['cooldown']:.1f}s")
+                full_desc = f"{spell['description']} ({' | '.join(cost_bits)})"
+                dy = y + 16
+                for line in self._wrap_text(full_desc, f_desc, desc_max_w):
+                    draw_text(surface, line, f_desc, (205, 205, 220), text_x, dy, shadow=False, align="left")
+                    dy += 15
+                y = max(y + 44, dy + 12)
+        elif page["kind"] == "items":
+            # Stage Q: consumable catalog (potions/elixirs/antidote) with
+            # CURRENT names - item_tooltip_line() is the same helper the
+            # merchant uses, so this can never drift from what the shop
+            # actually shows.
+            from game.items import ITEMS, item_tooltip_line
+            from game.assets import create_potion_icon
+            f_name = font(15, bold=True)
+            f_desc = font(13)
+            icon_size = 28
+            icon_x = self.px + 38
+            text_x = icon_x + icon_size + 12
+            desc_max_w = self.px + _PANEL_W - 38 - text_x
+            y = top + 40
+            for item_id in page["ids"]:
+                item = ITEMS[item_id]
+                icon = pygame.transform.scale(create_potion_icon(item_id), (icon_size, icon_size))
+                surface.blit(icon, (icon_x, y))
+                draw_text(surface, f"{item['name']} ({item['price']}g)", f_name, ACCENT_GOLD,
+                          text_x, y - 1, shadow=False, align="left")
+                dy = y + 16
+                for line in self._wrap_text(item_tooltip_line(item_id), f_desc, desc_max_w):
+                    draw_text(surface, line, f_desc, (205, 205, 220), text_x, dy, shadow=False, align="left")
+                    dy += 15
+                y = max(y + 44, dy + 12)
 
         self.help_carousel.draw(surface, font(13), indicator_y=self.py + _PANEL_H - 48)
         f_hint = font(14)

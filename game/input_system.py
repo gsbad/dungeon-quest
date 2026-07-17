@@ -98,9 +98,7 @@ HELP_ENTRIES = [
     ("WASD / Setas", "Mover o personagem"),
     ("Mouse", "Mirar ataques/feiticos na direcao do cursor"),
     ("ESPACO", "Atacar corpo a corpo", "ATTACK"),
-    ("F", "Conjurar Bola de Fogo", "CAST_1"),
-    ("Q", "Conjurar Nova de Gelo", "CAST_2"),
-    ("R", "Conjurar Luz Curativa / Reiniciar (na tela de pausa ou de morte)", "CAST_3"),
+    ("F / Q / R", "Conjurar as 3 magias escolhidas na aba Magias (menu Personagem) - R tambem reinicia na tela de pausa ou de morte"),
     ("X", "Investida (Dash)", "DASH"),
     ("E", "Picareta - quebra blocos e cava em busca da chave escondida", "PICKAXE"),
     ("1 / 2 / 3", "Usar item (slots do hotbar)"),
@@ -713,16 +711,17 @@ class InputManager:
             self.joystick.cx, self.joystick.cy - self.joystick.radius - debug_gap - debug_btn_radius,
             debug_btn_radius, "DBG", Action.DEBUG_PANEL)
 
-    def refresh_spell_buttons(self, profession):
+    def refresh_spell_buttons(self, spell_ids):
         """Estagio M1: mesma ideia de refresh_item_icons() logo abaixo,
         pro arco de magias moveis - chamado por GameplayState.__init__()
-        (cobre personagem novo/save carregado) e pelo toast de troca de
-        profissao (game/states.py) sempre que um respec muda o kit.
+        (cobre personagem novo/save carregado) e pela aba Magias do
+        Paperdoll sempre que o jogador troca a selecao manual (Estagio
+        M-correcao: nao muda mais sozinho num respec - so quando o
+        jogador de fato escolhe). spell_ids: a lista de 3 do momento
+        (player.hotbar_spells), ja resolvida por quem chama.
         Também reseta btn._scaled_icon (não só btn.icon) - sem isso o
         VirtualButton.draw() cacheado mostraria o icone antigo pra sempre
         depois do primeiro frame já ter desenhado algo."""
-        from game.class_kits import spells_for
-        spell_ids = spells_for(profession)
         for btn, spell_id in zip(self.spell_buttons, spell_ids):
             # .action (CAST_1/2/3) stays fixed - only WHICH spell sits in
             # that slot changes with profession, never the key it fires.
@@ -866,6 +865,15 @@ class InputManager:
                 self._capture_callback = None
                 cb(f"MOUSE{event.button}")
                 return
+        if event.type == pygame.MOUSEWHEEL:
+            # Rolagem do mouse navega qualquer menu que já responde a
+            # MENU_UP/MENU_DOWN (cursor de linha, paginação por W/S) - sem
+            # código novo por menu, já que injeta a MESMA Action que W/S/
+            # setas já disparam. event.y > 0 = rolou pra cima.
+            if event.y > 0:
+                self._press_action(Action.MENU_UP)
+            elif event.y < 0:
+                self._press_action(Action.MENU_DOWN)
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_w, pygame.K_UP):
                 self._press_action(Action.MENU_UP)

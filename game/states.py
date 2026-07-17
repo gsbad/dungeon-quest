@@ -30,7 +30,7 @@ from game.input_system import (
 from game.audio import SoundButton
 from game.stats import POINTS_PER_LEVEL, MAX_LEVEL, difficulty_tier_index
 from game.spells import SPELLS
-from game.class_kits import spells_for, basic_attack_for
+from game.class_kits import basic_attack_for
 from game.difficulty import DIFFICULTIES, ORDER as DIFFICULTY_ORDER, next_difficulty, is_unlocked
 from game.affixes import AFFIXES
 from game.theme import (
@@ -742,8 +742,10 @@ class GameplayState:
         # items this player actually has selected.
         self.input.refresh_item_icons(self.player)
         # Estagio M1: mesma razao - o arco de magias moveis foi construido
-        # com o DEFAULT_KIT antes de qualquer Player existir.
-        self.input.refresh_spell_buttons(self.player.profession)
+        # com o DEFAULT_KIT antes de qualquer Player existir. Estagio
+        # M-correcao: repoe pra self.player.hotbar_spells (selecao manual
+        # do jogador), nao mais derivado da profissao.
+        self.input.refresh_spell_buttons(self.player.hotbar_spells)
 
         # Paragon rolls (Stage B3) - upgrades some already-spawned enemies
         # in place; Level itself stays unaware Paragon exists at all. Then
@@ -2056,7 +2058,7 @@ class GameplayState:
             # which the earlier soak test predates and never exercised.
             keys = pygame.key.get_pressed()
             mouse = pygame.mouse.get_pressed(num_buttons=3)
-            player_spells = spells_for(self.player.profession)
+            player_spells = self.player.hotbar_spells
             if self.input.is_action_held("ATTACK", keys, mouse):
                 self.player.try_attack()
             if self.input.is_action_held("CAST_1", keys, mouse):
@@ -2070,7 +2072,7 @@ class GameplayState:
             if atk_btn.active and atk_btn.has_aim:
                 self.player.set_aim(atk_btn.aim_dx, atk_btn.aim_dy)
                 self.player.try_attack()
-            player_spells = spells_for(self.player.profession)
+            player_spells = self.player.hotbar_spells
             for i, btn in enumerate(self.input.spell_buttons):
                 if btn.active and btn.has_aim:
                     self.player.set_aim(btn.aim_dx, btn.aim_dy)
@@ -2347,9 +2349,10 @@ class GameplayState:
             self.msg_timer = 2.5
             self.msg_text = f"Profissao alterada: {self.player.pending_profession_change}!"
             self.audio.play("menu_select")
-            # Estagio M1: um respec troca o kit de magias inteiro - repoe o
-            # arco movel pra mostrar as 3 magias novas, nao mais as antigas.
-            self.input.refresh_spell_buttons(self.player.profession)
+            # Estagio M-correcao: um respec NAO troca mais o kit de magias
+            # (self.player.hotbar_spells e escolha manual do jogador na aba
+            # Magias, nunca automatica) - so o ataque basico/postura mudam
+            # com a profissao agora, o arco movel de magias fica como está.
             self.player.pending_profession_change = None
 
         # Check death - Stage L9 (docs/coop-implementation-plan.md): em
@@ -2469,7 +2472,8 @@ class GameplayState:
 
         # Paperdoll overlay
         if self.paperdoll_open:
-            self.paperdoll.draw(self.screen, self.player, self.save_state, forced=self.level_up_forced)
+            self.paperdoll.draw(self.screen, self.player, self.save_state, forced=self.level_up_forced,
+                                 mouse_pos=self.input.mouse_pos())
 
         # Itens overlay
         if self.items_open:
