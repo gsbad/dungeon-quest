@@ -758,10 +758,24 @@ class Player:
         # dash speeds can tunnel straight through a 1-tile-wide border wall
         # before any overlap is ever detected. Cheaper and lower-risk than
         # making every movement branch swept-collision-aware.
+        #
+        # Bugfix (PvP knockback "sent flying off the map"): this used to
+        # clamp to the raw [0, level_width/height] rectangle, which is the
+        # OUTER edge of the level INCLUDING the solid border wall ring
+        # (every LEVEL_MAPS layout's row/col 0 and last row/col is '#' by
+        # convention - see game/level.py's _is_border()). A knockback tunnel
+        # landed the player at x=0 (or the mirrored bound on the other 3
+        # edges) - inside/behind the border wall tile itself, not back on
+        # the floor - since the resolvers above never got a chance to see
+        # an overlap (the player hopped clean over the wall in one step,
+        # nothing to collide with at the destination). Clamping one full
+        # TILE in from each edge instead lands back on the first walkable
+        # floor tile, same as _resolve_collisions_x/y would have done had
+        # the tunnel been slow enough to be caught normally.
         if level_width is not None:
-            self.x = max(0.0, min(self.x, level_width - self.width))
+            self.x = max(TILE, min(self.x, level_width - TILE - self.width))
         if level_height is not None:
-            self.y = max(0.0, min(self.y, level_height - self.height))
+            self.y = max(TILE, min(self.y, level_height - TILE - self.height))
 
     def try_attack(self):
         if self.downed:

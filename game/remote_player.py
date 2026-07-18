@@ -79,11 +79,18 @@ class RemotePlayer:
         return pygame.Rect(self.x, self.y, self.width, self.height)
 
     def apply_snapshot(self, x, y, direction="down", attacking=False, hp=None, max_hp=None,
-                        downed=False, downed_timer=0.0):
+                        downed=False, downed_timer=0.0, profession=None):
         """Chamado quando uma mensagem de posição chega pela rede - nunca
         teleporta self.x/self.y direto, só move o alvo que update()
         persegue a cada frame (exceto na primeiríssima snapshot, onde
-        aparecer já no lugar certo é melhor que deslizar da origem)."""
+        aparecer já no lugar certo é melhor que deslizar da origem).
+
+        Bugfix round 3: profession piggybacks on this same "pos" snapshot
+        (game/states.py) instead of a one-time value at connect - it can
+        change mid-run (stat respec), and only None (missing/older peer,
+        or a message that raced ahead of the profession field) is ignored
+        so a real profession already applied never gets clobbered back to
+        the Aventureiro fallback."""
         self.target_x = x
         self.target_y = y
         if self.x is None:
@@ -96,6 +103,8 @@ class RemotePlayer:
             self.max_hp = max_hp
         self.downed = downed
         self.downed_timer = downed_timer
+        if profession is not None:
+            self.profession = profession
 
     def say(self, text):
         """Stage L14: mesmo método/shape de Player.say() - chamado quando

@@ -1209,7 +1209,10 @@ class Level:
             ex_col, ex_row = self.data["exit"]
             self.exit_rect = pygame.Rect(ex_col * TILE, ex_row * TILE, TILE, TILE)
 
-        self._pick_key_tile()
+        # Bugfix: the key tile is no longer picked here - it's decided by
+        # _spawn_treasure_marks() once the "mapa do tesouro" 10 X's appear
+        # (see update()), so the key is always buried under one of them
+        # instead of an entirely independent random tile.
 
     def _is_border(self, col, row):
         """Every LEVEL_MAPS layout's outer rectangle (row/col 0 and the
@@ -1218,14 +1221,31 @@ class Level:
         '#' tiles can be cracked/broken by the picareta."""
         return row == 0 or row == self.rows - 1 or col == 0 or col == self.cols - 1
 
-    def _pick_key_tile(self):
-        """Stage K14: the hidden key is buried under a floor tile (never
-        under a '#' block, per the user's spec), picked far enough from the
-        player's own start tile that it can't be dug up trivially on
-        arrival. Boss levels (data["type"] != "combat") never get a key -
-        they already transition on boss death, no exit_rect/chest at all."""
-        if self.data["type"] != "combat":
-            return
+    def _spawn_treasure_marks(self, count=10):
+        """Bugfix round (2a leva): 10 marcacoes decorativas ("X" de mapa do
+        tesouro) espalhadas pela fase, geradas quando a leva original de
+        inimigos e limpa - ver update(). Only ever called for
+        data["type"] == "combat" levels (update()'s guard) - boss levels
+        never get marks or a key, they already transition on boss death.
+
+        Bugfix (chave fora das marcacoes): a chave costumava ser sorteada
+        sozinha em _build(), num tile completamente independente das 10
+        marcacoes - o jogador podia cavar o mapa inteiro e nunca achar nada
+        sob nenhum X, porque o X e a chave nunca tinham relacao nenhuma.
+        Agora self._key_tile so e decidido AQUI, escolhido dentre os
+        proprios `picked` (nunca antes das marcacoes existirem), garantindo
+        que a chave esteja sempre embaixo de uma delas. Mesmos filtros que
+        _pick_key_tile() (removido) usava - longe do spawn, fora do spawn de
+        inimigos, fora do tile de saida - aplicados aos candidatos das
+        marcacoes tambem, ja que agora um deles vira a propria chave.
+
+        Plain random.choice/sample (nao um RNG seedado) - uma tentativa
+        anterior de seedar deterministicamente a posicao da chave (pra host/
+        guest baterem) foi revertida por ter quebrado o PvP de um jeito
+        nunca totalmente entendido (ver historico de commits); host e guest
+        continuam podendo sortear marcacoes (e portanto a chave) em posicoes
+        diferentes sem problema real, o mesmo risco que a propria chave ja
+        aceitava antes desta mudanca."""
         start_col, start_row = self.player_start_tile
         exit_tile = self.data["exit"]
         candidates = []
@@ -1241,24 +1261,10 @@ class Level:
                 if dx * dx + dy * dy < 25:
                     continue
                 candidates.append((col, row))
-        if candidates:
-            self._key_tile = random.choice(candidates)
-
-    def _spawn_treasure_marks(self, count=10):
-        """Bugfix round (2a leva): 10 marcacoes decorativas ("X" de mapa do
-        tesouro) espalhadas pela fase, geradas quando a leva original de
-        inimigos e limpa - ver update(). Plain random.choice/sample (nao um
-        RNG seedado), mesma convencao ja usada por _pick_key_tile() acima -
-        uma tentativa anterior de seedar deterministicamente a posicao da
-        chave (pra host/guest baterem) foi revertida por ter quebrado o PvP
-        de um jeito nunca totalmente entendido (ver historico de commits);
-        como estas marcacoes sao só decorativas (sem hitbox, sem item),
-        host e guest podem ver posicoes levemente diferentes sem problema
-        real, o mesmo risco que a própria chave já aceita hoje."""
-        candidates = [(col, row) for row in range(1, self.rows - 1) for col in range(1, self.cols - 1)
-                      if self.layout[row][col] == '.']
         picked = random.sample(candidates, min(count, len(candidates)))
         self.treasure_marks = [(col * TILE + TILE / 2, row * TILE + TILE / 2) for col, row in picked]
+        if picked:
+            self._key_tile = random.choice(picked)
 
     def get_player_start(self):
         col, row = self.data["player_start"]

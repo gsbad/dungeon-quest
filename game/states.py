@@ -1117,6 +1117,7 @@ class GameplayState:
             attacking=msg.get("attacking", False),
             hp=msg.get("hp"), max_hp=msg.get("max_hp"),
             downed=msg.get("downed", False), downed_timer=msg.get("downed_timer", 0.0),
+            profession=msg.get("profession"),
         )
 
     def _boss_snapshot_dict(self):
@@ -1905,6 +1906,15 @@ class GameplayState:
                     "x": self.player.x, "y": self.player.y,
                     "direction": self.player.direction, "attacking": self.player.attacking,
                     "hp": self.player.hp, "max_hp": self.player.max_hp,
+                    # Bugfix round 3: profession was never sent at all, so
+                    # every RemotePlayer rendered as Aventureiro no matter
+                    # who was actually playing (RemotePlayer.__init__/
+                    # apply_snapshot() already had the field - nothing ever
+                    # populated it). Piggybacked on this existing 12Hz
+                    # broadcast instead of a one-time value at connect time
+                    # because profession is mutable mid-run (stat respec via
+                    # pending_profession_change below).
+                    "profession": self.player.profession,
                     # Stage L9 - pra "todos caídos" e o desenho do RemotePlayer
                     # (downed_timer só pro countdown ficar exato pros outros
                     # também, não só localmente).
