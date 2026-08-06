@@ -1,15 +1,27 @@
 import pygame
 
 
+# Stage K8's draw_tooltip used to blit the tooltip inline, the instant a
+# hovered rect was found. Inside an open menu that draws its rows/panels
+# top-to-bottom, any element drawn AFTER the hovered one (a lower row, the
+# carousel arrows, a footer hint) painted straight over the tooltip. The fix
+# is to defer: draw_tooltip only records the pending tooltip, and the frame's
+# final step (flush_tooltips) blits it on top of every other element. Only one
+# element is ever under the cursor, so last-writer-wins across a frame's calls
+# naturally keeps the topmost-drawn hovered rect's tooltip.
+_pending_tooltip = None
+
+
 def draw_tooltip(surface, mouse_pos, rect, text, screen_w=None, screen_h=None):
     """Stage K8: shared hover-tooltip - checks rect.collidepoint(mouse_pos)
-    and, if it hits, draws a small dark box with `text` near the cursor.
+    and, if it hits, QUEUES a small dark box with `text` near the cursor to be
+    drawn on top of everything at the end of the frame (see flush_tooltips).
     Used for buffs/debuffs/items/spells and the HP/mana/XP bars alike, so
-    every hoverable HUD element gets the same look for free. Returns True
-    if drawn (callers don't currently need this, but it's a natural signal
-    for "only show one tooltip at a time" if that's ever needed).
+    every hoverable HUD element gets the same look for free. Returns True if a
+    tooltip was queued.
 
     `text` may be a single string or a list of strings (one per line)."""
+    global _pending_tooltip
     if mouse_pos is None or not rect.collidepoint(mouse_pos):
         return False
     from game.theme import font
@@ -27,12 +39,25 @@ def draw_tooltip(surface, mouse_pos, rect, text, screen_w=None, screen_h=None):
     box = pygame.Surface((w, h), pygame.SRCALPHA)
     box.fill((0, 0, 0, 255))
     pygame.draw.rect(box, (120, 120, 150, 255), (0, 0, w, h), 1)
+    _pending_tooltip = (box, x, y, surfs)
+    return True
+
+
+def flush_tooltips(surface):
+    """Blit the frame's queued tooltip (if any) on top of everything else, then
+    clear it. Call once at the very end of the frame draw, AFTER every HUD/menu
+    element. Anything drawn before this - menu rows, panels, arrows - can no
+    longer cover the tooltip, which is the whole point of deferring it."""
+    global _pending_tooltip
+    if _pending_tooltip is None:
+        return
+    box, x, y, surfs = _pending_tooltip
     surface.blit(box, (x, y))
     ty = y + 5
     for s in surfs:
         surface.blit(s, (x + 6, ty))
         ty += s.get_height()
-    return True
+    _pending_tooltip = None
 
 
 def draw_text(surface, text, f, color, cx, y, shadow=True, align="center"):

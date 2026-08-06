@@ -37,7 +37,7 @@ from game.theme import (
     SW, SH, font, BG_MENU, BG_GAME_OVER, BG_VICTORY, TITLE_MENU, TITLE_PAUSE,
     ACCENT_GOLD, SELECTED, UNSELECTED, SUBTEXT, PANEL_FILL, PANEL_BORDER,
 )
-from game.ui import draw_text, TextButton, Panel, ProgressBar
+from game.ui import draw_text, TextButton, Panel, ProgressBar, flush_tooltips
 
 # Maps a level's "boss" key (LEVEL_MAPS) to (BossClass, spawn_dx_from_center, spawn_y).
 # Data-driven so new levels/bosses only need a registry entry + LEVEL_MAPS metadata,
@@ -2538,6 +2538,13 @@ class GameplayState:
         # an exception - the only overlay a mobile player has no other way
         # to close (every other one already closes via a tap outside it).
         self.input.draw(self.screen, hide_controls=menu_open, debug_panel_open=self.debug_panel_open)
+
+        # Deferred hover tooltips (game/ui.py): every draw_tooltip() call above -
+        # in draw_hud, the paperdoll, the items overlay, the merchant - only
+        # QUEUED its box. Blit it here, dead last, so it lands on top of every
+        # menu row/panel/arrow instead of being painted over by whatever the
+        # menu drew after the hovered element.
+        flush_tooltips(self.screen)
 
     def _spawn_pickup(self, kind, at=None):
         sprite = self._pickup_sprites[kind]
