@@ -75,29 +75,36 @@ _ACHIEVEMENTS_START_Y = 8
 _ACHIEVEMENTS_ROW_H = 32
 
 # Atlas tab (Stage F3) - a grid of level thumbnails (same shape as the
-# Bestiary grid above) over a detail panel for the selected level. 13
-# levels at 4 cols = 4 rows, one more than Bestiary's 3 rows of 12 mobs.
+# Bestiary grid above) over a detail panel for the selected level. The
+# campaign grew from 13 to 26 levels (7 rows at 4 cols), which ran the grid
+# and its detail panel clean off the bottom of the panel - so the grid is
+# now PAGINATED at a fixed 4 rows/page (like Magias/Conquistas already are),
+# and _ATLAS_DETAIL_Y is derived from that fixed page height, not the total
+# level count. A page's worth of cells is reused across pages.
 _ATLAS_COLS = 4
 _ATLAS_CELL = 62
 _ATLAS_GAP = 8
 _ATLAS_GRID_Y = 10
-_ATLAS_DETAIL_Y = _ATLAS_GRID_Y + 4 * _ATLAS_CELL + 3 * _ATLAS_GAP + 20
+_ATLAS_ROWS_PER_PAGE = 4
+_ATLAS_PER_PAGE = _ATLAS_COLS * _ATLAS_ROWS_PER_PAGE
+_ATLAS_DETAIL_Y = (_ATLAS_GRID_Y + _ATLAS_ROWS_PER_PAGE * _ATLAS_CELL
+                   + (_ATLAS_ROWS_PER_PAGE - 1) * _ATLAS_GAP + 20)
 
-# Bestiary tab (Stage E4, individualization pass) - an icon grid (row count
-# derived from BESTIARY_ORDER's length, not hardcoded - the mob roster grew
-# from 8 to 20 common mobs + 4 bosses, so a fixed "3 rows" assumption would
-# make the detail panel overlap the grid) above a detail panel for
-# whichever entry is selected. 6 cols/56px cells (down from 4/70) keep the
-# grid width inside the panel while fitting the bigger roster in fewer rows.
+# Bestiary tab (Stage E4, individualization pass) - an icon grid above a
+# detail panel for whichever entry is selected. 6 cols/56px cells keep the
+# grid width inside the panel. Same story as Atlas above: the roster grew to
+# 69 mobs + 11 bosses (14 rows), far past what fits, so the grid is PAGINATED
+# at a fixed 4 rows/page and the detail panel sits below exactly that page
+# height. Relative to content_top (self.py + _CONTENT_TOP), same convention
+# as _DERIVED_START_Y etc. above - callers add content_top themselves.
 _BESTIARY_COLS = 6
 _BESTIARY_CELL = 56
 _BESTIARY_GAP = 6
-# Relative to content_top (self.py + _CONTENT_TOP), same convention as
-# _DERIVED_START_Y etc. above - callers add content_top themselves.
 _BESTIARY_GRID_Y = 10
-_BESTIARY_ROWS = math.ceil(len(BESTIARY_ORDER) / _BESTIARY_COLS)
-_BESTIARY_DETAIL_Y = (_BESTIARY_GRID_Y + _BESTIARY_ROWS * _BESTIARY_CELL
-                      + (_BESTIARY_ROWS - 1) * _BESTIARY_GAP + 20)
+_BESTIARY_ROWS_PER_PAGE = 4
+_BESTIARY_PER_PAGE = _BESTIARY_COLS * _BESTIARY_ROWS_PER_PAGE
+_BESTIARY_DETAIL_Y = (_BESTIARY_GRID_Y + _BESTIARY_ROWS_PER_PAGE * _BESTIARY_CELL
+                      + (_BESTIARY_ROWS_PER_PAGE - 1) * _BESTIARY_GAP + 20)
 
 _SPELL_START_Y = _HEADER_H + 34  # +18 a mais que outras abas - linha "Hotbar: X/3" ocupa esse espaco extra
 # Correcao pos-leva-de-conteudo: lista compacta (1 linha por magia + tooltip
@@ -141,6 +148,14 @@ class Paperdoll:
         # - selecao de hotbar e decisao MANUAL do jogador, nunca automatica)
         # - mesma paginacao lateral que Ajuda/Conquistas ja usam.
         self.spells_carousel = Carousel(self.px - 34, _PANEL_W + 68, arrow_cy)
+        # Bestiary/Atlas grew past a single screen too (80 mobs, 26 levels) -
+        # same lateral < > pager, placed OUTSIDE the panel edges (like Magias)
+        # so the arrows never sit on top of a grid cell. Keyboard paging on
+        # these two is implicit: the grid cursor moving down/right past the
+        # last visible cell rolls the page over (see _handle_keys_*), since
+        # left/right are already spoken for by column movement.
+        self.bestiary_carousel = Carousel(self.px - 34, _PANEL_W + 68, arrow_cy)
+        self.atlas_carousel = Carousel(self.px - 34, _PANEL_W + 68, arrow_cy)
 
         # Tab bar width is derived from however many tabs _TAB_ORDER has -
         # was hardcoded for exactly 3 (Stage E4); Stage F3/F4 added a 4th
@@ -157,11 +172,17 @@ class Paperdoll:
         for i, tab_id in enumerate(_TAB_ORDER):
             self.tab_buttons[tab_id] = pygame.Rect(tab_x0 + i * (tab_w + gap), tab_y, tab_w, tab_h)
 
+        # One PAGE of cell rects, reused across pages (Stage <content wave>:
+        # was one rect per entry laid out down the whole roster, which put
+        # every cell past row 4 - and the detail panel below them - off the
+        # panel). _draw_bestiary maps the current page's entries onto these
+        # fixed slots; slot index is page-relative, global index = page_start
+        # + slot.
         self.bestiary_buttons = []
         grid_w = _BESTIARY_COLS * _BESTIARY_CELL + (_BESTIARY_COLS - 1) * _BESTIARY_GAP
         grid_x0 = self.px + (_PANEL_W - grid_w) // 2
-        for i, key in enumerate(BESTIARY_ORDER):
-            col, row = i % _BESTIARY_COLS, i // _BESTIARY_COLS
+        for slot in range(_BESTIARY_PER_PAGE):
+            col, row = slot % _BESTIARY_COLS, slot // _BESTIARY_COLS
             x = grid_x0 + col * (_BESTIARY_CELL + _BESTIARY_GAP)
             y = self.py + _CONTENT_TOP + _BESTIARY_GRID_Y + row * (_BESTIARY_CELL + _BESTIARY_GAP)
             # (self.py + _CONTENT_TOP) matches _draw_bestiary's `top` param
@@ -170,8 +191,8 @@ class Paperdoll:
         self.atlas_buttons = []
         atlas_grid_w = _ATLAS_COLS * _ATLAS_CELL + (_ATLAS_COLS - 1) * _ATLAS_GAP
         atlas_grid_x0 = self.px + (_PANEL_W - atlas_grid_w) // 2
-        for i, level_num in enumerate(ATLAS_ORDER):
-            col, row = i % _ATLAS_COLS, i // _ATLAS_COLS
+        for slot in range(_ATLAS_PER_PAGE):
+            col, row = slot % _ATLAS_COLS, slot // _ATLAS_COLS
             x = atlas_grid_x0 + col * (_ATLAS_CELL + _ATLAS_GAP)
             y = self.py + _CONTENT_TOP + _ATLAS_GRID_Y + row * (_ATLAS_CELL + _ATLAS_GAP)
             self.atlas_buttons.append(pygame.Rect(x, y, _ATLAS_CELL, _ATLAS_CELL))
@@ -234,15 +255,29 @@ class Paperdoll:
             self.help_carousel.handle_tap(input_mgr)
 
     def _handle_tap_bestiary(self, input_mgr):
-        for i, rect in enumerate(self.bestiary_buttons):
+        if self.bestiary_carousel.handle_tap(input_mgr):
+            self.bestiary_cursor = self.bestiary_carousel.page * _BESTIARY_PER_PAGE
+            return
+        page_start = self.bestiary_carousel.page * _BESTIARY_PER_PAGE
+        for slot, rect in enumerate(self.bestiary_buttons):
+            idx = page_start + slot
+            if idx >= len(BESTIARY_ORDER):
+                break
             if input_mgr.tapped_rect(rect):
-                self.bestiary_cursor = i
+                self.bestiary_cursor = idx
                 return
 
     def _handle_tap_atlas(self, input_mgr):
-        for i, rect in enumerate(self.atlas_buttons):
+        if self.atlas_carousel.handle_tap(input_mgr):
+            self.atlas_cursor = self.atlas_carousel.page * _ATLAS_PER_PAGE
+            return
+        page_start = self.atlas_carousel.page * _ATLAS_PER_PAGE
+        for slot, rect in enumerate(self.atlas_buttons):
+            idx = page_start + slot
+            if idx >= len(ATLAS_ORDER):
+                break
             if input_mgr.tapped_rect(rect):
-                self.atlas_cursor = i
+                self.atlas_cursor = idx
                 return
 
     def _handle_tap_stats(self, input_mgr, player):
@@ -308,14 +343,18 @@ class Paperdoll:
             self.help_carousel.handle_keys(input_mgr)
 
     def _handle_keys_bestiary(self, input_mgr):
+        n = len(BESTIARY_ORDER)
         if input_mgr.consume_action(Action.MENU_LEFT):
-            self.bestiary_cursor = (self.bestiary_cursor - 1) % len(BESTIARY_ORDER)
+            self.bestiary_cursor = (self.bestiary_cursor - 1) % n
         if input_mgr.consume_action(Action.MENU_RIGHT):
-            self.bestiary_cursor = (self.bestiary_cursor + 1) % len(BESTIARY_ORDER)
+            self.bestiary_cursor = (self.bestiary_cursor + 1) % n
         if input_mgr.consume_action(Action.MENU_UP):
-            self.bestiary_cursor = (self.bestiary_cursor - _BESTIARY_COLS) % len(BESTIARY_ORDER)
+            self.bestiary_cursor = (self.bestiary_cursor - _BESTIARY_COLS) % n
         if input_mgr.consume_action(Action.MENU_DOWN):
-            self.bestiary_cursor = (self.bestiary_cursor + _BESTIARY_COLS) % len(BESTIARY_ORDER)
+            self.bestiary_cursor = (self.bestiary_cursor + _BESTIARY_COLS) % n
+        # Grid cursor drives the page (no free left/right key to page with,
+        # unlike Magias) - moving past the last visible cell rolls it over.
+        self.bestiary_carousel.page = self.bestiary_cursor // _BESTIARY_PER_PAGE
 
     def _handle_keys_atlas(self, input_mgr):
         n = len(ATLAS_ORDER)
@@ -327,6 +366,7 @@ class Paperdoll:
             self.atlas_cursor = (self.atlas_cursor - _ATLAS_COLS) % n
         if input_mgr.consume_action(Action.MENU_DOWN):
             self.atlas_cursor = (self.atlas_cursor + _ATLAS_COLS) % n
+        self.atlas_carousel.page = self.atlas_cursor // _ATLAS_PER_PAGE
 
     def _handle_keys_stats(self, input_mgr, player):
         if input_mgr.consume_action(Action.MENU_UP):
@@ -560,11 +600,18 @@ class Paperdoll:
         self.spells_carousel.draw(surface, font(13), indicator_y=hint_y + 20)
 
     def _draw_bestiary(self, surface, player, save_state, top):
+        n = len(BESTIARY_ORDER)
+        num_pages = (n + _BESTIARY_PER_PAGE - 1) // _BESTIARY_PER_PAGE
+        self.bestiary_carousel.set_num_pages(num_pages)
+        page_start = self.bestiary_carousel.page * _BESTIARY_PER_PAGE
+        page_keys = BESTIARY_ORDER[page_start:page_start + _BESTIARY_PER_PAGE]
+
         f_key = font(12, bold=True)
-        for i, key in enumerate(BESTIARY_ORDER):
-            rect = self.bestiary_buttons[i]
+        for slot, key in enumerate(page_keys):
+            rect = self.bestiary_buttons[slot]
+            idx = page_start + slot
             discovered = save_state is not None and is_discovered(save_state, player, key)
-            if i == self.bestiary_cursor:
+            if idx == self.bestiary_cursor:
                 self._draw_glow(surface, rect.inflate(6, 6))
             pygame.draw.rect(surface, (35, 30, 50), rect, border_radius=6)
             pygame.draw.rect(surface, (200, 200, 210) if discovered else (90, 90, 100), rect, 1, border_radius=6)
@@ -617,19 +664,29 @@ class Paperdoll:
             else:
                 draw_text(surface, "- Apenas ataque corpo a corpo", f_body, (200, 175, 220), cx, y, shadow=False)
 
+        # Arrows only (no centered n/N indicator - it would land on top of the
+        # detail panel's text); the page count goes in the hint line instead.
+        self.bestiary_carousel.draw(surface, font(13))
         f_hint = font(14)
-        draw_text(surface, "TAB troca aba | setas navegam | C/ESC - Fechar", f_hint, SUBTEXT,
-                  cx, self.py + _PANEL_H - 30)
+        draw_text(surface, f"TAB troca aba | setas navegam | Pagina {self.bestiary_carousel.page + 1}/{num_pages} | C/ESC - Fechar",
+                  f_hint, SUBTEXT, cx, self.py + _PANEL_H - 30)
 
     def _draw_atlas(self, surface, save_state, top):
         levels_seen = set(save_state["progression"]["levels_seen"]) if save_state else set()
         levels_seen.add(1)  # the first level is always visible, even on a fresh save
 
+        n = len(ATLAS_ORDER)
+        num_pages = (n + _ATLAS_PER_PAGE - 1) // _ATLAS_PER_PAGE
+        self.atlas_carousel.set_num_pages(num_pages)
+        page_start = self.atlas_carousel.page * _ATLAS_PER_PAGE
+        page_levels = ATLAS_ORDER[page_start:page_start + _ATLAS_PER_PAGE]
+
         f_key = font(20, bold=True)
-        for i, level_num in enumerate(ATLAS_ORDER):
-            rect = self.atlas_buttons[i]
+        for slot, level_num in enumerate(page_levels):
+            rect = self.atlas_buttons[slot]
+            idx = page_start + slot
             seen = level_num in levels_seen
-            if i == self.atlas_cursor:
+            if idx == self.atlas_cursor:
                 self._draw_glow(surface, rect.inflate(6, 6))
             pygame.draw.rect(surface, (35, 30, 50), rect, border_radius=6)
             pygame.draw.rect(surface, (200, 200, 210) if seen else (90, 90, 100), rect, 1, border_radius=6)
@@ -683,9 +740,10 @@ class Paperdoll:
             else:
                 draw_text(surface, "Clima: nenhum", f_body, (190, 210, 230), cx, y, shadow=False)
 
+        self.atlas_carousel.draw(surface, font(13))
         f_hint = font(14)
-        draw_text(surface, "TAB troca aba | setas navegam | C/ESC - Fechar", f_hint, SUBTEXT,
-                  cx, self.py + _PANEL_H - 30)
+        draw_text(surface, f"TAB troca aba | setas navegam | Pagina {self.atlas_carousel.page + 1}/{num_pages} | C/ESC - Fechar",
+                  f_hint, SUBTEXT, cx, self.py + _PANEL_H - 30)
 
     def _draw_achievements(self, surface, save_state, top):
         cx = self.px + _PANEL_W // 2
