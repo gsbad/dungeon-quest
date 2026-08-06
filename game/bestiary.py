@@ -121,6 +121,27 @@ _BOSS_PATTERN_TEXT = {
 }
 
 
+def bestiary_entry(key):
+    """Name/description for a bestiary entry, with a graceful fallback.
+
+    BESTIARY only holds hand-written flavor for the named roster (31 entries).
+    The 49 monster-family tier variants (game/stats.py's MONSTER_FAMILIES -
+    rato_gigante, lobo_alfa, rei_caranguejo, ...) are real combatants pulled
+    from ENEMY_ARCHETYPES but have no flavor text yet. This module's contract
+    (see the top docstring) is that such a mob still shows *something* - so
+    rather than KeyError-ing the detail panel (which is exactly what crashed
+    when the Bestiary tab's pager landed the cursor on one), fall back to a
+    humanized id (the ids are already display-ready Portuguese words) plus a
+    generic description. Any mob/boss id is safe to pass here."""
+    entry = BESTIARY.get(key)
+    if entry is not None:
+        return entry
+    return {
+        "name": key.replace("_", " ").title(),
+        "description": "Uma criatura da masmorra. Sua historia ainda nao foi registrada neste bestiario.",
+    }
+
+
 def is_discovered(save_state, player, key):
     """A mob/boss counts as discovered once the player has killed at least
     one - reuses game/save.py's existing kill counters (no new save field)

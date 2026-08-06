@@ -12,7 +12,7 @@ from game.input_system import Action, HELP_ENTRIES
 from game.stats import mitigate
 from game.bestiary import (
     BESTIARY, MOB_IDS, BOSS_IDS, is_discovered, mob_sprite, mob_stats, mob_attacks,
-    boss_sprite, boss_stats, boss_attacks,
+    boss_sprite, boss_stats, boss_attacks, bestiary_entry,
 )
 from game.level import LEVEL_MAPS
 from game.weather import WEATHER_TYPES, WEATHER_DISPLAY_NAME
@@ -634,7 +634,7 @@ class Paperdoll:
             draw_text(surface, "Derrote esse inimigo para descobri-lo.", f_body, SUBTEXT,
                       cx, top + _BESTIARY_DETAIL_Y + 30)
         else:
-            entry = BESTIARY[key]
+            entry = bestiary_entry(key)
             is_boss = key in BOSS_IDS
             stats = boss_stats(key) if is_boss else mob_stats(key)
             attacks = boss_attacks(key) if is_boss else mob_attacks(key)
